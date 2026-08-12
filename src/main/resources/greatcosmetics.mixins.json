@@ -1,0 +1,33 @@
+{
+	"required": true,
+	"package": "com.f4xizzz.greatcosmetics.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"LivingEntityMixin",
+		"PlayerEntityRendererMixin",
+		"PokemonRendererMixin",
+		"ItemStackAttributeMixin",
+		"RecipeManagerMixin"
+	],
+	"client": [
+		"client.ArmorFeatureRendererMixin",
+		"client.MimikeyaPriorityMixin",
+		"client.ItemRendererMixin",
+		"client.CameraMixin",
+		"client.EntityPreviewMixin",
+		"client.EntitySneakMixin",
+		"client.MinecraftClientMixin",
+		"client.ResourceManagerMixin",
+		"client.MobEntityInvoker",
+		"client.EntityRenderDispatcherMixin",
+		"client.PlayerEntityGetEquippedStackMixin",
+		"client.AbstractClientPlayerFovMixin",
+		"client.HandledScreenAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

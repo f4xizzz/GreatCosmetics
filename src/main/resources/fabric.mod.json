@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 1,
+	"id": "great-cosmetics",
+	"version": "${version}",
+	"name": "great-cosmetics",
+	"description": "Cosmetics mods for servers!",
+	"authors": [
+		"f4xizzz"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/greatcosmetics/icon.png",
+	"environment": "*",
+	"accessWidener": "greatcosmetics.accesswidener",
+	"entrypoints": {
+		"main": [
+			"com.f4xizzz.greatcosmetics.GreatCosmetics"
+		],
+		"client": [
+			"com.f4xizzz.greatcosmetics.GreatCosmeticsClient"
+		]
+	},
+	"mixins": [
+		"greatcosmetics.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.18.3",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*",
+		"cobblemon": "1.7.3"
+	}
+}
