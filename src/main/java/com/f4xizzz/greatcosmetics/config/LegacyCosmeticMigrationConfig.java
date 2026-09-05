@@ -19,7 +19,7 @@ import java.util.Map;
  */
 public class LegacyCosmeticMigrationConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File FILE = new File(DIR, "legacy_cosmetic_migration.json");
 
     public static final Map<Integer, String> oldCmdToNewCosmeticId = new HashMap<>();
@@ -30,11 +30,11 @@ public class LegacyCosmeticMigrationConfig {
 
         if (!FILE.exists()) {
             Map<String, String> defaults = new HashMap<>();
-            defaults.put("1", "exemplo_cosmetico_novo");
+            defaults.put("1", "example_new_cosmetic");
             try (FileWriter writer = new FileWriter(FILE)) {
                 GSON.toJson(defaults, writer);
             } catch (Exception ignored) {}
-            System.out.println("[GreatCosmetics] legacy_cosmetic_migration.json gerado com exemplo padrão.");
+            System.out.println("[GreatCosmetics] legacy_cosmetic_migration.json generated with a default example.");
             return;
         }
 
@@ -47,9 +47,10 @@ public class LegacyCosmeticMigrationConfig {
                     } catch (NumberFormatException ignored) {}
                 }
             }
-            System.out.println("[GreatCosmetics] legacy_cosmetic_migration.json carregado: " + oldCmdToNewCosmeticId.size() + " mapeamento(s) de migração.");
+            System.out.println("[GreatCosmetics] legacy_cosmetic_migration.json loaded: " + oldCmdToNewCosmeticId.size() + " migration mapping(s).");
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao carregar legacy_cosmetic_migration.json!");
+            System.err.println("[GreatCosmetics] Error loading legacy_cosmetic_migration.json!");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("LegacyCosmeticMigrationConfig: FAILED to load — " + e);
             e.printStackTrace();
         }
     }

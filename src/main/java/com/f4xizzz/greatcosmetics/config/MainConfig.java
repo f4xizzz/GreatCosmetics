@@ -14,7 +14,7 @@ import java.util.Map;
 
 public class MainConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
 
     // O ARQUIVO GERAL DO MOD
     private static final File CONFIG_FILE = new File(DIR, "mainconfig.conf");
@@ -39,6 +39,14 @@ public class MainConfig {
     // Classe que mapeia as opções do arquivo
     public static class ConfigData {
         public boolean autoDetectModels = true;
+
+        // --- HUD: BARRAS DE VIDA/ARMADURA QUE "SE MULTIPLICAM" ---
+        // Quando a vida MÁXIMA ou a armadura do player passa de 2 barras cheias (20 pontos), em
+        // vez de empilhar fileiras achatadas (vida) ou sumir com o excedente (armadura, que o
+        // vanilla trava em 20), o HUD mostra 1 barra + um "xN" do lado. Só tem efeito visual se
+        // algum player de fato tiver vida/armadura acima de 20 (atributo/equipamento modificado) —
+        // num servidor com atributos vanilla nunca dispara. Ver InGameHudMixin.
+        public boolean compactStatusBars = true;
 
         // --- PERMISSÃO DO DEV MODE ---
         public String devModePermission = "gc.perm.devmode";
@@ -94,11 +102,13 @@ public class MainConfig {
             ConfigData loadedData = GSON.fromJson(reader, ConfigData.class);
             if (loadedData != null) {
                 config = loadedData;
-                System.out.println("[Cosmetics] Configuração Principal (mainconfig.conf) carregada com sucesso!");
+                System.out.println("[GreatCosmetics] Main config (mainconfig.conf) loaded successfully!");
+                com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("MainConfig: mainconfig.conf loaded — " + config.slots.size() + " slots, " + config.types.size() + " types.");
                 shouldResave = true;
             }
         } catch (Exception e) {
-            System.err.println("[Cosmetics] Erro ao carregar mainconfig.conf!");
+            System.err.println("[GreatCosmetics] Error loading mainconfig.conf!");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("MainConfig: FAILED to load mainconfig.conf — " + e);
             e.printStackTrace();
         }
 
@@ -111,30 +121,27 @@ public class MainConfig {
     public static void createDefaultConfig() {
         ConfigData defaultData = new ConfigData();
 
-        // --- Criando os Slots Padrões ---
+        // --- Default slots ---
         String[] defaultSlots = {"HEAD", "FACE", "NECK", "CHEST", "BACK", "WAIST", "LEGS", "FEET", "HAND"};
         for (String s : defaultSlots) {
             SlotLimit limit = new SlotLimit();
             limit.defaultLimit = 1;
-            // Sem o .limit no final
             limit.permission = "gc.slot." + s.toLowerCase();
             defaultData.slots.put(s, limit);
         }
 
-        // --- Criando um Tipo de Exemplo ---
-        AccessoryType colar = new AccessoryType();
-        colar.slot = "NECK";
-        colar.limitPerPlayer = 1;
-        // Sem o .limit no final
-        colar.permission = "gc.type.colar";
-        defaultData.types.put("colar", colar);
+        // --- Example types ---
+        AccessoryType necklace = new AccessoryType();
+        necklace.slot = "NECK";
+        necklace.limitPerPlayer = 1;
+        necklace.permission = "gc.type.necklace";
+        defaultData.types.put("necklace", necklace);
 
-        AccessoryType cachecol = new AccessoryType();
-        cachecol.slot = "NECK";
-        cachecol.limitPerPlayer = 1;
-        // Sem o .limit no final
-        cachecol.permission = "gc.type.cachecol";
-        defaultData.types.put("cachecol", cachecol);
+        AccessoryType scarf = new AccessoryType();
+        scarf.slot = "NECK";
+        scarf.limitPerPlayer = 1;
+        scarf.permission = "gc.type.scarf";
+        defaultData.types.put("scarf", scarf);
 
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(defaultData, writer);
@@ -148,9 +155,10 @@ public class MainConfig {
     public static void saveConfig() {
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(config, writer);
-            System.out.println("[Cosmetics] Configuração Principal salva com sucesso pelo In-Game Studio!");
+            System.out.println("[GreatCosmetics] Main config saved successfully by the In-Game Studio!");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("MainConfig: mainconfig.conf saved.");
         } catch (IOException e) {
-            System.err.println("[Cosmetics] Erro fatal ao tentar salvar o mainconfig.conf!");
+            System.err.println("[GreatCosmetics] Fatal error while saving mainconfig.conf!");
             e.printStackTrace();
         }
     }

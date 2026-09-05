@@ -5,6 +5,7 @@ import com.f4xizzz.greatcosmetics.client.ClientUnlockedCosmetics;
 import com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen;
 import com.f4xizzz.greatcosmetics.config.CosmeticData;
 import com.f4xizzz.greatcosmetics.config.CosmeticsConfig;
+import com.f4xizzz.greatcosmetics.config.LangConfig;
 import com.f4xizzz.greatcosmetics.network.ClearAllCosmeticsPayload;
 import com.f4xizzz.greatcosmetics.network.EquipCosmeticPayload;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -42,7 +43,11 @@ public class AcessoriesPage extends WardrobePage {
     private int lastX, lastY, lastWidth, lastHeight;
 
     private final String[] categoryIds = {"ALL", "HEAD", "FACE", "NECK", "CHEST", "BACK", "WAIST", "LEGS", "FEET", "HAND"};
-    private final String[] categoryNames = {"Todos", "Cabeça", "Rosto", "Pescoço", "Peito", "Costas", "Cintura", "Pernas", "Pés", "Mão"};
+
+    /** Nome exibido da categoria — resolvido do Lang (config/GreatCosmetics/lang/accessories.json). */
+    private static String catName(String id) {
+        return LangConfig.legacy("accessories.category." + id.toLowerCase());
+    }
 
     private final TextFieldWidget searchField;
 
@@ -58,7 +63,7 @@ public class AcessoriesPage extends WardrobePage {
         // qualquer Screen existir, então esse aqui nunca é null.
         this.searchField = new TextFieldWidget(MinecraftClient.getInstance().textRenderer, 0, 0, 100, 16, Text.literal(""));
         this.searchField.setMaxLength(64);
-        this.searchField.setPlaceholder(Text.literal("§7🔍 Pesquisar cosmético..."));
+        this.searchField.setPlaceholder(LangConfig.text("accessories.search_placeholder"));
         // Reseta o scroll toda vez que a busca muda — sem isso, pesquisar um termo que resulta em
         // MENOS linhas que a posição de scroll atual deixava o grid "vazio" até o jogador rolar pra
         // cima de novo manualmente.
@@ -184,13 +189,16 @@ public class AcessoriesPage extends WardrobePage {
             filtered.removeIf(d -> !d.getFormattedName().replaceAll("§.", "").toLowerCase().contains(query));
         }
 
-        // Favoritos primeiro (ver ClientFavoriteCosmetics), depois ordem alfabética pelo nome
-        // EXIBIDO (não o id cru nem a String com tags de cor do DisplayName na frente — senão
-        // "<light_purple>Zeta" ordenaria antes de "Alfa" só por causa da tag). getFormattedName()
-        // já resolve DisplayName -> id capitalizado -> "Cosmético", só falta descartar os códigos §
-        // que ele devolve antes de comparar.
+        // Equipados primeiro (antes até dos favoritos), depois favoritos (ver
+        // ClientFavoriteCosmetics), depois ordem alfabética pelo nome EXIBIDO (não o id cru nem a
+        // String com tags de cor do DisplayName na frente — senão "<light_purple>Zeta" ordenaria
+        // antes de "Alfa" só por causa da tag). getFormattedName() já resolve DisplayName -> id
+        // capitalizado -> "Cosmético", só falta descartar os códigos § que ele devolve antes de
+        // comparar.
+        java.util.Set<String> equippedIds = ClientCosmeticCache.getEquipped(MinecraftClient.getInstance().player.getUuid());
         filtered.sort(java.util.Comparator
-                .comparing((CosmeticData d) -> !com.f4xizzz.greatcosmetics.client.ClientFavoriteCosmetics.isFavorite(d.id))
+                .comparing((CosmeticData d) -> !equippedIds.contains(d.id))
+                .thenComparing(d -> !com.f4xizzz.greatcosmetics.client.ClientFavoriteCosmetics.isFavorite(d.id))
                 .thenComparing(d -> d.getFormattedName().replaceAll("§.", ""), String.CASE_INSENSITIVE_ORDER)
         );
 
@@ -262,9 +270,9 @@ public class AcessoriesPage extends WardrobePage {
 
         if (hoverClear && activeTooltip == null) {
             activeTooltip = new ArrayList<>();
-            activeTooltip.add(Text.literal("§cRemover Todos os Cosméticos"));
-            activeTooltip.add(Text.literal("§7Limpa todos os cosméticos que estão"));
-            activeTooltip.add(Text.literal("§7equipados em você no momento!"));
+            activeTooltip.add(LangConfig.text("accessories.clear_all.tooltip_title"));
+            activeTooltip.add(LangConfig.text("accessories.clear_all.tooltip_1"));
+            activeTooltip.add(LangConfig.text("accessories.clear_all.tooltip_2"));
         }
 
         // ==========================================
@@ -277,7 +285,7 @@ public class AcessoriesPage extends WardrobePage {
         c.fill(x + 12, filterY, x + 12 + filterBoxW, filterY + 1, 0xFF555555);
         c.fill(x + 12, filterY + 15, x + 12 + filterBoxW, filterY + 16, 0xFF111111);
 
-        c.drawTextWithShadow(getTextRenderer(), categoryNames[currentCatIndex], x + 16, filterY + 4, 0xFFFFAA);
+        c.drawTextWithShadow(getTextRenderer(), catName(categoryIds[currentCatIndex]), x + 16, filterY + 4, 0xFFFFAA);
         c.drawTextWithShadow(getTextRenderer(), isDropdownOpen ? "▲" : "▼", x + 12 + filterBoxW - 12, filterY + 4, 0xFFAAAAAA);
 
         if (isDropdownOpen) {
@@ -294,7 +302,7 @@ public class AcessoriesPage extends WardrobePage {
                 if (hoverList) {
                     c.fill(x + 13, itemY, x + 12 + filterBoxW - 1, itemY + 14, 0xFF444444);
                 }
-                c.drawTextWithShadow(getTextRenderer(), categoryNames[i], x + 16, itemY + 3, hoverList ? 0xFFFFFF : 0xFFAAAAAA);
+                c.drawTextWithShadow(getTextRenderer(), catName(categoryIds[i]), x + 16, itemY + 3, hoverList ? 0xFFFFFF : 0xFFAAAAAA);
             }
             c.getMatrices().pop();
         }
@@ -405,32 +413,27 @@ public class AcessoriesPage extends WardrobePage {
 
                 if (data.armor > 0 || data.toughness > 0) {
                     activeTooltip.add(Text.literal(" "));
-                    activeTooltip.add(Text.literal("§7Atributos:"));
-                    if (data.armor > 0) activeTooltip.add(Text.literal(" §9🛡 §f+" + data.armor + " §7Armadura"));
-                    if (data.toughness > 0) activeTooltip.add(Text.literal(" §8❈ §f+" + data.toughness + " §7Resistência"));
+                    activeTooltip.add(LangConfig.text("accessories.tooltip.attributes"));
+                    if (data.armor > 0) activeTooltip.add(LangConfig.text("accessories.tooltip.armor", "value", data.armor));
+                    if (data.toughness > 0) activeTooltip.add(LangConfig.text("accessories.tooltip.toughness", "value", data.toughness));
                 }
 
                 if (data.EnableFly || data.isBackpack || data.AutoFeed) {
                     activeTooltip.add(Text.literal(" "));
-                    activeTooltip.add(Text.literal("§7Habilidades:"));
-                    if (data.EnableFly) activeTooltip.add(Text.literal(" §e✦ §fPermite Voar"));
+                    activeTooltip.add(LangConfig.text("accessories.tooltip.abilities"));
+                    if (data.EnableFly) activeTooltip.add(LangConfig.text("accessories.tooltip.fly"));
                     if (data.isBackpack) {
-                        // Mostra a quantidade de páginas também quando tem mais de 1 — só "X Linhas"
-                        // escondia completamente que a mochila era paginada (ex: 2 páginas de 6
-                        // linhas aparecia igualzinho a uma mochila de 1 página só de 6 linhas).
-                        String backpackInfo = data.backpackPages > 1
-                                ? data.backpackRows + " Linhas, " + data.backpackPages + " Páginas"
-                                : data.backpackRows + " Linhas";
-                        activeTooltip.add(Text.literal(" §6🎒 §fMochila §7(" + backpackInfo + ")"));
+                        String backpackInfo = LangConfig.legacy("accessories.tooltip.backpack_rows", "rows", data.backpackRows);
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.backpack", "info", backpackInfo));
                     }
-                    if (data.AutoFeed) activeTooltip.add(Text.literal(" §a🍖 §fAuto Feed"));
+                    if (data.AutoFeed) activeTooltip.add(LangConfig.text("accessories.tooltip.autofeed"));
                 }
 
                 if (data.effects != null && !data.effects.isEmpty()) {
                     activeTooltip.add(Text.literal(" "));
-                    activeTooltip.add(Text.literal("§dEfeitos Passivos:"));
+                    activeTooltip.add(LangConfig.text("accessories.tooltip.passive_effects"));
                     for (String eff : data.effects) {
-                        activeTooltip.add(Text.literal(" §5- §f").append(formatEffectForTooltip(eff)));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.effect_line").append(formatEffectForTooltip(eff)));
                     }
                 }
 
@@ -440,48 +443,48 @@ public class AcessoriesPage extends WardrobePage {
                 // não ter esse bônus nenhum pra quem só olhava o tooltip da Acessórios.
                 if (data.lure != null && data.lure.enabled) {
                     activeTooltip.add(Text.literal(" "));
-                    activeTooltip.add(Text.literal("§d§l✦ §d§lPoder de Atração (Lure):"));
+                    activeTooltip.add(LangConfig.text("accessories.tooltip.lure_header"));
 
                     if (data.lure.lureTYPE != null && !data.lure.lureTYPE.isEmpty())
-                        activeTooltip.add(Text.literal(" §7▪ §fTipo Afetado: §b" + data.lure.lureTYPE.toUpperCase()));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_type", "value", data.lure.lureTYPE.toUpperCase()));
                     if (data.lure.lureShinyMultiplier > 0)
-                        activeTooltip.add(Text.literal(" §e✨ §fShiny: §a+" + formatLureNumber(data.lure.lureShinyMultiplier) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_shiny", "value", formatLureNumber(data.lure.lureShinyMultiplier)));
                     if (data.lure.lureUltraRAREMultiplier > 0)
-                        activeTooltip.add(Text.literal(" §5🔮 §fUltra Raro: §a+" + formatLureNumber(data.lure.lureUltraRAREMultiplier) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_ultrarare", "value", formatLureNumber(data.lure.lureUltraRAREMultiplier)));
                     if (data.lure.lureHiddenAbilityMultiplier > 0)
-                        activeTooltip.add(Text.literal(" §3👁 §fHidden Ability: §a+" + formatLureNumber(data.lure.lureHiddenAbilityMultiplier) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_hidden_ability", "value", formatLureNumber(data.lure.lureHiddenAbilityMultiplier)));
                     if (data.lure.lureIV > 0)
-                        activeTooltip.add(Text.literal(" §6⭐ §fIVs Perfeitos Garantidos: §a+" + data.lure.lureIV));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_iv", "value", data.lure.lureIV));
                     if (data.lure.lureChanceIV > 0)
-                        activeTooltip.add(Text.literal(" §9🎲 §fChance de IV: §a+" + formatLurePercent(data.lure.lureChanceIV)));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_iv_chance", "value", formatLurePercent(data.lure.lureChanceIV)));
                     if (data.lure.lureExpAllMultiplier > 0)
-                        activeTooltip.add(Text.literal(" §b⚡ §fExp (Time Todo): §a+" + formatLureNumber(data.lure.lureExpAllMultiplier) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_expall", "value", formatLureNumber(data.lure.lureExpAllMultiplier)));
                     if (data.lure.lureEXP > 0)
-                        activeTooltip.add(Text.literal(" §b📘 §fExp (Principal): §a+" + formatLureNumber(data.lure.lureEXP) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_exp", "value", formatLureNumber(data.lure.lureEXP)));
                     if (data.lure.lureEV > 0)
-                        activeTooltip.add(Text.literal(" §a🐍 §fEV em Batalha: §a+" + formatLureNumber(data.lure.lureEV) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_ev", "value", formatLureNumber(data.lure.lureEV)));
                     if (data.lure.lureAmizadeMultiplier > 0)
-                        activeTooltip.add(Text.literal(" §d❤ §fAmizade: §a+" + formatLureNumber(data.lure.lureAmizadeMultiplier) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_friendship", "value", formatLureNumber(data.lure.lureAmizadeMultiplier)));
                     if (data.lure.lureChanceDeCaptura > 0)
-                        activeTooltip.add(Text.literal(" §c🎯 §fChance de Captura: §a+" + formatLureNumber(data.lure.lureChanceDeCaptura) + "x"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_capture", "value", formatLureNumber(data.lure.lureChanceDeCaptura)));
 
                     boolean hasFishingBonus = data.lure.lurePescaShiny > 0 || data.lure.lurePescaUltraRare > 0
                             || data.lure.lurePescaIvChance > 0 || data.lure.lurePescaIv > 0
                             || data.lure.lurePescaVelocidade > 0 || data.lure.lureDePesca > 0;
                     if (hasFishingBonus) {
-                        activeTooltip.add(Text.literal(" §b§l🎣 Bônus de Pesca:"));
+                        activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_header"));
                         if (data.lure.lurePescaShiny > 0)
-                            activeTooltip.add(Text.literal("   §e✨ §fShiny: §a+" + formatLureNumber(data.lure.lurePescaShiny) + "x"));
+                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_shiny", "value", formatLureNumber(data.lure.lurePescaShiny)));
                         if (data.lure.lurePescaUltraRare > 0)
-                            activeTooltip.add(Text.literal("   §5🔮 §fUltra Raro: §a+" + formatLureNumber(data.lure.lurePescaUltraRare) + "x"));
+                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_ultrarare", "value", formatLureNumber(data.lure.lurePescaUltraRare)));
                         if (data.lure.lurePescaIv > 0)
-                            activeTooltip.add(Text.literal("   §6⭐ §fIVs Garantidos: §a+" + data.lure.lurePescaIv));
+                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_iv", "value", data.lure.lurePescaIv));
                         if (data.lure.lurePescaIvChance > 0)
-                            activeTooltip.add(Text.literal("   §9🎲 §fChance de IV: §a+" + formatLurePercent(data.lure.lurePescaIvChance)));
+                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_iv_chance", "value", formatLurePercent(data.lure.lurePescaIvChance)));
                         if (data.lure.lurePescaVelocidade > 0)
-                            activeTooltip.add(Text.literal("   §3💨 §fVelocidade: §a+" + formatLurePercent(data.lure.lurePescaVelocidade)));
+                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_speed", "value", formatLurePercent(data.lure.lurePescaVelocidade)));
                         if (data.lure.lureDePesca > 0)
-                            activeTooltip.add(Text.literal("   §b🐟 §fPoder de Pesca: §a+" + formatLureNumber(data.lure.lureDePesca) + "x"));
+                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_power", "value", formatLureNumber(data.lure.lureDePesca)));
                     }
                 }
             }

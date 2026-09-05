@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class NpcCosmeticsConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File FILE = new File(DIR, "npc_cosmetics.json");
 
     public static final Map<UUID, Set<String>> EQUIPPED = new ConcurrentHashMap<>();
@@ -62,9 +62,10 @@ public class NpcCosmeticsConfig {
                     } catch (IllegalArgumentException ignored) {}
                 }
             }
-            System.out.println("[GreatCosmetics] npc_cosmetics.json carregado: " + EQUIPPED.size() + " entidade(s) com cosmético salvo.");
+            System.out.println("[GreatCosmetics] npc_cosmetics.json loaded: " + EQUIPPED.size() + " entity(ies) with a saved cosmetic.");
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao carregar npc_cosmetics.json!");
+            System.err.println("[GreatCosmetics] Error loading npc_cosmetics.json!");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("NpcCosmeticsConfig: FAILED to load npc_cosmetics.json — " + e);
             e.printStackTrace();
         }
     }
@@ -80,7 +81,7 @@ public class NpcCosmeticsConfig {
         try (FileWriter writer = new FileWriter(FILE)) {
             GSON.toJson(raw, writer);
         } catch (IOException e) {
-            System.err.println("[GreatCosmetics] Erro ao salvar npc_cosmetics.json!");
+            System.err.println("[GreatCosmetics] Error saving npc_cosmetics.json!");
             e.printStackTrace();
         }
     }

@@ -43,6 +43,10 @@ public class GreatCosmetics implements ModInitializer {
 
 	public static boolean isDebugMode = false;
 	public static final Set<UUID> activeFlyPlayers = new HashSet<>();
+	// Jogadores cujo PlayerAbilities#flySpeed está sendo controlado por um cosmético de
+	// flySpeedMultiplier AGORA (ver handleSpeedLogic) — só existe pra saber quando devolver o
+	// campo pro padrão vanilla (1x) depois de desequipar; sem isso, ver bug documentado ali.
+	private static final Set<UUID> activeFlySpeedBoostPlayers = new HashSet<>();
 
 	// --- RASTREADORES PARA OS SONS E CACHE DE ANIMAÇÃO ---
 	public static final Map<UUID, net.minecraft.util.math.Vec3d> lastPositions = new HashMap<>();
@@ -71,10 +75,9 @@ public class GreatCosmetics implements ModInitializer {
 	// em vez de rodar na hora.
 	private static Integer pendingStartupCommandsTick = null;
 
-
 	public static void debugLog(String message) {
 		if (isDebugMode) {
-			LOGGER.info("[SASCosmetics DEBUG] " + message);
+			LOGGER.info("[GreatCosmetics DEBUG] " + message);
 		}
 	}
 
@@ -93,6 +96,19 @@ public class GreatCosmetics implements ModInitializer {
 		if (isRealOperator(player)) {
 			player.sendMessage(message, actionBar);
 		}
+	}
+
+	/**
+	 * Gate de licença pros payloads server-side (ver security.ActivationManager). Num servidor
+	 * dedicado sem licença válida, avisa o jogador e devolve true (o receiver deve dar return).
+	 * Singleplayer nunca bloqueia (o ActivationManager já marca isActivated=true nesse caso).
+	 */
+	public static boolean licenseBlocked(ServerPlayerEntity player) {
+		net.minecraft.server.MinecraftServer server = player.getServer();
+		if (server == null || !server.isDedicated()) return false;
+		if (com.f4xizzz.greatcosmetics.security.ActivationManager.isModActivated()) return false;
+		player.sendMessage(LangConfig.chat("general.license.locked", server.getRegistryManager()), false);
+		return true;
 	}
 
 	// Toca som baseado na antiga SoundConfig
@@ -144,8 +160,7 @@ public class GreatCosmetics implements ModInitializer {
 		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.OpenBackpackKeybindPayload.ID, com.f4xizzz.greatcosmetics.network.OpenBackpackKeybindPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.ShowBackpackSelectorPayload.ID, com.f4xizzz.greatcosmetics.network.ShowBackpackSelectorPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.OpenSpecificBackpackPayload.ID, com.f4xizzz.greatcosmetics.network.OpenSpecificBackpackPayload.CODEC);
-		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.BackpackPageInfoPayload.ID, com.f4xizzz.greatcosmetics.network.BackpackPageInfoPayload.CODEC);
-		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.SwitchBackpackPagePayload.ID, com.f4xizzz.greatcosmetics.network.SwitchBackpackPagePayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncCatalogStatePayload.ID, com.f4xizzz.greatcosmetics.network.SyncCatalogStatePayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.OpenPcFromWardrobePayload.ID, com.f4xizzz.greatcosmetics.network.OpenPcFromWardrobePayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(SyncPokemonSkinsPayload.ID, SyncPokemonSkinsPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncSkinCatalogPayload.ID, com.f4xizzz.greatcosmetics.network.SyncSkinCatalogPayload.CODEC);
@@ -176,6 +191,12 @@ public class GreatCosmetics implements ModInitializer {
 		com.f4xizzz.greatcosmetics.config.LegacyCosmeticMigrationConfig.load();
 		TagsConfig.load();
 
+		// Liga de verdade os bônus de CosmeticData.lure nos eventos do Cobblemon (shiny, IV,
+		// hidden ability, chance de captura, exp, amizade) — sem isso "lure" era só dado exibido
+		// no lore do item, sem nenhum efeito real no jogo. Ver LureManager pro que dá e o que NÃO
+		// dá pra aplicar com a API pública do Cobblemon 1.7.3.
+		com.f4xizzz.greatcosmetics.util.LureManager.register();
+
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
 			com.f4xizzz.greatcosmetics.database.DatabaseManager.initialize();
 			com.f4xizzz.greatcosmetics.config.NpcCosmeticsConfig.load();
@@ -203,6 +224,14 @@ public class GreatCosmetics implements ModInitializer {
 			// pendingStartupCommandsTick pro motivo (server híbrido com plugins Bukkit que ainda não
 			// terminaram o próprio onEnable() nesse ponto).
 			pendingStartupCommandsTick = server.getTicks() + 100; // ~5s (20 ticks/s)
+
+			// Calcula o SHA1 real do resource pack forçado (ver refreshTextureHashAsync) — só baixa
+			// de novo em joins futuros quando o CONTEÚDO do arquivo mudar de verdade.
+			refreshTextureHashAsync(server);
+
+			// SISTEMA DE LICENÇA (ver security.ActivationManager) — singleplayer é sempre ativo;
+			// servidor dedicado precisa de license.json válido (/gc activation <key>).
+			com.f4xizzz.greatcosmetics.security.ActivationManager.checkLicenseOnStartup(server);
 		});
 
 		LangConfig.loadLang();
@@ -232,6 +261,7 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SaveMainConfigPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				if (!isRealOperator(player) && !checkPermission(player, "gc.dev")) return;
 
 				try {
@@ -243,8 +273,10 @@ public class GreatCosmetics implements ModInitializer {
 					com.f4xizzz.greatcosmetics.config.MainConfig.config = parsed;
 					com.f4xizzz.greatcosmetics.config.MainConfig.saveConfig();
 					broadcastMainConfig(context.server());
+					debugLog("SaveMainConfigPayload: MainConfig saved by " + player.getName().getString() + " e sincronizado.");
 				} catch (Exception e) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[Dev Studio] Falha ao salvar configuração: " + e.getMessage()), false);
+					debugLog("SaveMainConfigPayload: FAILED to save by " + player.getName().getString() + " — " + e);
+					player.sendMessage(LangConfig.chat("messages.devstudio.save_config_fail", context.server().getRegistryManager(), "error", e.getMessage()), false);
 				}
 			});
 		});
@@ -252,6 +284,7 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SaveCosmeticPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				if (!isRealOperator(player) && !checkPermission(player, "gc.dev")) return;
 
 				try {
@@ -266,6 +299,7 @@ public class GreatCosmetics implements ModInitializer {
 						// false: salvar pelo Dev Studio NUNCA dispara reload de textura/model no
 						// client sozinho — só o /gc reload explícito faz isso.
 						broadcastArmorCosmeticsCatalog(context.server(), false);
+						debugLog("SaveCosmeticPayload(armor): '" + payload.newId() + "' saved by " + player.getName().getString() + ".");
 					} else {
 						com.google.gson.Gson gson = new com.google.gson.Gson();
 						CosmeticData data = gson.fromJson(payload.jsonData(), CosmeticData.class);
@@ -280,9 +314,11 @@ public class GreatCosmetics implements ModInitializer {
 						invalidateCosmeticIndex();
 						CosmeticsConfig.saveConfig();
 						broadcastCosmeticsCatalog(context.server(), false);
+						debugLog("SaveCosmeticPayload: '" + payload.oldId() + "' -> '" + payload.newId() + "' saved by " + player.getName().getString() + ".");
 					}
 				} catch (Exception e) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[Dev Studio] Falha ao salvar cosmético: " + e.getMessage()), false);
+					debugLog("SaveCosmeticPayload: FAILED to save '" + payload.newId() + "' by " + player.getName().getString() + " — " + e);
+					player.sendMessage(LangConfig.chat("messages.devstudio.save_cosmetic_fail", context.server().getRegistryManager(), "error", e.getMessage()), false);
 				}
 			});
 		});
@@ -290,8 +326,9 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DeleteCosmeticPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não tem permissão pra apagar cosméticos."), true);
+					player.sendMessage(LangConfig.chat("messages.devstudio.no_perm_delete_cosmetic", context.server().getRegistryManager()), true);
 					return;
 				}
 
@@ -308,9 +345,11 @@ public class GreatCosmetics implements ModInitializer {
 						CosmeticsConfig.saveConfig();
 						broadcastCosmeticsCatalog(context.server(), false);
 					}
-					player.sendMessage(net.minecraft.text.Text.literal("§a[Dev Studio] Cosmético '" + id + "' apagado."), true);
+					debugLog("DeleteCosmeticPayload: '" + id + "' (armor=" + payload.isArmor() + ") deleted by " + player.getName().getString() + ".");
+					player.sendMessage(LangConfig.chat("messages.devstudio.cosmetic_deleted", context.server().getRegistryManager(), "id", id), true);
 				} catch (Exception e) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[Dev Studio] Falha ao apagar cosmético: " + e.getMessage()), false);
+					debugLog("DeleteCosmeticPayload: FAILED to delete '" + id + "' by " + player.getName().getString() + " — " + e);
+					player.sendMessage(LangConfig.chat("messages.devstudio.delete_cosmetic_fail", context.server().getRegistryManager(), "error", e.getMessage()), false);
 				}
 			});
 		});
@@ -318,7 +357,7 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DebugLogPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				if (isDebugMode) {
-					LOGGER.info("[SASCosmetics DEBUG] [Cliente:" + context.player().getName().getString() + "] " + payload.message());
+					LOGGER.info("[GreatCosmetics DEBUG] [Client:" + context.player().getName().getString() + "] " + payload.message());
 				}
 			});
 		});
@@ -329,6 +368,7 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.ClearPokemonSkinsPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 
 				// "gc.permission.dev" (antes usado aqui) nunca foi o node certo — em TODO o resto
 				// do mod (linhas 249/269/847/883, TagsPage, botão DEV da PartyPage) o acesso ao
@@ -337,7 +377,7 @@ public class GreatCosmetics implements ModInitializer {
 				// dentro dele, silenciosamente, por checar um permission node que não existe/nunca
 				// foi documentado nem concedido por ninguém.
 				if (!isRealOperator(player) && !checkPermission(player, "gc.dev")) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não tem permissão de DEV para limpar skins."), false);
+					player.sendMessage(LangConfig.chat("messages.devstudio.no_perm_clear_skins", context.server().getRegistryManager()), false);
 					return;
 				}
 
@@ -360,9 +400,9 @@ public class GreatCosmetics implements ModInitializer {
 
 				if (changed) {
 					playCustomSound(player, "equip_item");
-					player.sendMessage(net.minecraft.text.Text.literal("§aSkins removidas com sucesso!"), false);
+					player.sendMessage(LangConfig.chat("messages.skin.removed_success", context.server().getRegistryManager()), false);
 				} else {
-					player.sendMessage(net.minecraft.text.Text.literal("§eNenhuma skin detectada neste Pokémon."), false);
+					player.sendMessage(LangConfig.chat("messages.skin.none_detected", context.server().getRegistryManager()), false);
 				}
 			});
 		});
@@ -373,13 +413,22 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(EquipPokemonSkinPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
+
+				debugLog("EquipPokemonSkinPayload from " + player.getName().getString() + ": skinId='" + payload.skinId() + "' slot=" + payload.slot());
 
 				PokemonSkin skin = SkinConfigManager.getSkin(payload.skinId());
-				if (skin == null) return;
+				if (skin == null) {
+					debugLog("EquipPokemonSkinPayload: skin '" + payload.skinId() + "' not found in the catalog.");
+					return;
+				}
 
 				com.cobblemon.mod.common.api.storage.party.PlayerPartyStore party = com.cobblemon.mod.common.Cobblemon.INSTANCE.getStorage().getParty(player);
 				com.cobblemon.mod.common.pokemon.Pokemon targetPokemon = party.get(payload.slot());
-				if (targetPokemon == null) return;
+				if (targetPokemon == null) {
+					debugLog("EquipPokemonSkinPayload: slot " + payload.slot() + " empty in the party of " + player.getName().getString() + ".");
+					return;
+				}
 
 				boolean isOp = isRealOperator(player);
 
@@ -389,7 +438,7 @@ public class GreatCosmetics implements ModInitializer {
 				}
 
 				if (!targetPokemon.getSpecies().getName().equalsIgnoreCase(skin.getSpecies())) {
-					player.sendMessage(Text.literal("§cEste Pokémon não é compatível com esta skin!"), true);
+					player.sendMessage(LangConfig.chat("messages.skin.incompatible", context.server().getRegistryManager()), true);
 					return;
 				}
 
@@ -399,7 +448,7 @@ public class GreatCosmetics implements ModInitializer {
 					long lastApplied = com.f4xizzz.greatcosmetics.database.DatabaseManager.getSkinLastApplied(player.getUuid(), skin.getId());
 					long cooldownMs = skin.getCooldownMinutes() * 60 * 1000L;
 					if (now - lastApplied < cooldownMs) {
-						player.sendMessage(Text.literal("§cEsta skin está em tempo de recarga!"), true);
+						player.sendMessage(LangConfig.chat("messages.skin.on_cooldown", context.server().getRegistryManager()), true);
 						return;
 					}
 				}
@@ -429,15 +478,17 @@ public class GreatCosmetics implements ModInitializer {
 
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.setSkinCooldown(player.getUuid(), skin.getId(), now);
 				com.f4xizzz.greatcosmetics.command.CosmeticsCommand.syncPlayerSkins(player);
+				debugLog("EquipPokemonSkinPayload: skin '" + skin.getId() + "' applied to the Pokémon in slot " + payload.slot() + " of " + player.getName().getString() + ".");
 
 				playCustomSound(player, "equip_item");
-				player.sendMessage(Text.literal("§aSkin aplicada com sucesso!"), true);
+				player.sendMessage(LangConfig.chat("messages.skin.applied", context.server().getRegistryManager()), true);
 			});
 		});
 
 		ServerPlayNetworking.registerGlobalReceiver(ClearAllCosmeticsPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				var player = context.player();
+				if (licenseBlocked(player)) return;
 
 				java.util.List<String> equipped = new java.util.ArrayList<>(com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerEquippedCosmetics(player.getUuid()));
 
@@ -446,13 +497,15 @@ public class GreatCosmetics implements ModInitializer {
 				}
 
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(player);
-				player.sendMessage(net.minecraft.text.Text.literal("§aTodos os acessórios foram removidos!"), true);
+				debugLog("ClearAllCosmeticsPayload: " + equipped.size() + " cosmetics removed from " + player.getName().getString() + ": " + equipped);
+				player.sendMessage(LangConfig.chat("messages.cosmetic.all_removed", context.server().getRegistryManager()), true);
 				playCustomSound(player, "equip_item");
 			});
 		});
 
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.ToggleVisibilityPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
+				if (licenseBlocked(context.player())) return;
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.updatePlayerSetting(context.player().getUuid(), payload.setting(), payload.state());
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(context.player());
 			});
@@ -460,6 +513,7 @@ public class GreatCosmetics implements ModInitializer {
 
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.ToggleCosmeticVisibilityPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
+				if (licenseBlocked(context.player())) return;
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.setCosmeticHidden(context.player().getUuid(), payload.cosmeticId(), payload.hidden());
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(context.player());
 			});
@@ -473,19 +527,15 @@ public class GreatCosmetics implements ModInitializer {
 
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.OpenBackpackKeybindPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
+				if (licenseBlocked(context.player())) return;
 				BackpackManager.handleOpenRequest(context.player());
 			});
 		});
 
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.OpenSpecificBackpackPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
+				if (licenseBlocked(context.player())) return;
 				BackpackManager.openSpecificBackpack(context.player(), payload.cosmeticId());
-			});
-		});
-
-		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SwitchBackpackPagePayload.ID, (payload, context) -> {
-			context.server().execute(() -> {
-				BackpackManager.handleSwitchPage(context.player(), payload.cosmeticId(), payload.newPage());
 			});
 		});
 
@@ -495,6 +545,7 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.OpenPcFromWardrobePayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				try {
 					if (com.cobblemon.mod.common.util.PlayerExtensionsKt.isInBattle(player)) return;
 
@@ -535,15 +586,19 @@ public class GreatCosmetics implements ModInitializer {
 				// quando o servidor mandava um payload que o client não reconhecia, derrubando ele com
 				// uma mensagem genérica de erro de pacote em vez de um aviso claro pra atualizar.
 				// ==========================================
+				debugLog("JOIN: " + handler.player.getName().getString() + " connecting — starting sync.");
+
 				if (!ServerPlayNetworking.canSend(handler.player, SyncCosmeticsPayload.ID)) {
-					handler.disconnect(Text.literal(
-							"§c§lSaSCosmetics\n\n" +
-							"§7Você não tem o mod instalado ou está com uma versão desatualizada.\n" +
-							"§eAtualize o modpack e tente novamente."
-					));
+					debugLog("JOIN: " + handler.player.getName().getString() + " REJECTED — client didn't register the SyncCosmeticsPayload channel (mod missing/outdated).");
+					handler.disconnect(LangConfig.chat("messages.join.mod_missing", server.getRegistryManager()));
 					return;
 				}
 
+				// Informativo primeiro (payload informativo antes do pacote vanilla que age): o
+				// client precisa saber SE o cache dele pra esse servidor já bate ANTES do pacote
+				// de resource pack chegar, senão não dá tempo de
+				// decidir suprimir a SplashOverlay a tempo (ver ClientJoinReloadState).
+				sendCatalogStateSnapshot(handler.player, true);
 				sendForcedResourcePack(handler.player);
 
 				// 1. Sincroniza Acessórios (Antigo)
@@ -617,13 +672,14 @@ public class GreatCosmetics implements ModInitializer {
 
 				if (isRealOperator(handler.player)) {
 					int count = CosmeticsConfig.cosmeticsMap.size();
-					handler.player.sendMessage(Text.literal("§b[SASCosmetics] Sincronizado: " + count + " itens carregados."), false);
+					handler.player.sendMessage(LangConfig.chat("messages.join.synced", server.getRegistryManager(), "count", count), false);
 				}
 
 				// ARMADURA VIRADA COSMÉTICO: se o jogador já entrar com o item real no inventário
 				// (deu pra ele antes de converter, trouxe de outro servidor, etc), converte na hora.
 				checkAndConvertArmorInventory(handler.player);
 				validateEquippedCosmeticOwnership(handler.player);
+				debugLog("JOIN: sync for " + handler.player.getName().getString() + " completed.");
 			});
 		});
 
@@ -635,8 +691,11 @@ public class GreatCosmetics implements ModInitializer {
 		// studio no próximo login.
 		// ==========================================
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+			debugLog("DISCONNECT: " + handler.player.getName().getString() + " disconnecting — clearing in-memory state.");
 			WardrobeManager.forceReturnIfPending(handler.player);
 			activeCosmeticStatusEffects.remove(handler.player.getUuid());
+			activeFlyPlayers.remove(handler.player.getUuid());
+			activeFlySpeedBoostPlayers.remove(handler.player.getUuid());
 			com.f4xizzz.greatcosmetics.database.DatabaseManager.clearPlayerCache(handler.player.getUuid());
 			com.f4xizzz.greatcosmetics.util.BackpackManager.handlePlayerDisconnect(handler.player.getUuid());
 		});
@@ -644,16 +703,23 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(EquipCosmeticPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				var player = context.player();
+				if (licenseBlocked(player)) return;
 				String cosmeticId = payload.cosmeticId();
 				boolean requestedDevMode = payload.isDevMode();
 
+				debugLog("EquipCosmeticPayload from " + player.getName().getString() + ": cosmeticId='" + cosmeticId + "' devMode=" + requestedDevMode);
+
 				CosmeticData data = getCosmeticById(cosmeticId);
-				if (data == null) return;
+				if (data == null) {
+					debugLog("EquipCosmeticPayload: cosmetic '" + cosmeticId + "' not found — ignored.");
+					return;
+				}
 
 				java.util.List<String> equipped = com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerEquippedCosmetics(player.getUuid());
 				if (equipped.contains(cosmeticId)) {
+					debugLog("EquipCosmeticPayload: '" + cosmeticId + "' was already equipped — unequipping.");
 					com.f4xizzz.greatcosmetics.database.DatabaseManager.unequipCosmetic(player.getUuid(), cosmeticId);
-					player.sendMessage(net.minecraft.text.Text.literal("§cAcessório desequipado!"), true);
+					player.sendMessage(LangConfig.chat("messages.cosmetic.unequipped", context.server().getRegistryManager()), true);
 					com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(player);
 					return;
 				}
@@ -671,7 +737,8 @@ public class GreatCosmetics implements ModInitializer {
 				// verdade, e ficava "grudado" pra sempre depois que ele perdia o OP/permissão
 				// (ver validateEquippedCosmeticOwnership, que só limpa DEPOIS do fato).
 				if (!canUseDevMode && !com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), cosmeticId)) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não possui esse cosmético!"), true);
+					debugLog("EquipCosmeticPayload: " + player.getName().getString() + " does NOT own '" + cosmeticId + "' and has no bypass — blocked.");
+					player.sendMessage(LangConfig.chat("messages.cosmetic.not_owned", context.server().getRegistryManager()), true);
 					playCustomSound(player, "error_action");
 					return;
 				}
@@ -707,7 +774,8 @@ public class GreatCosmetics implements ModInitializer {
 
 				int currentInSlot = com.f4xizzz.greatcosmetics.database.DatabaseManager.getEquippedCountBySlot(player.getUuid(), slotVirtual);
 				if (currentInSlot >= slotLimit) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você já atingiu o limite de itens no slot " + slotVirtual + " (Limite: " + slotLimit + ")."), true);
+					debugLog("EquipCosmeticPayload: slot '" + slotVirtual + "' limit reached for " + player.getName().getString() + " (" + currentInSlot + "/" + slotLimit + ").");
+					player.sendMessage(LangConfig.chat("messages.cosmetic.slot_limit", context.server().getRegistryManager(), "slot", slotVirtual, "limit", slotLimit), true);
 					playCustomSound(player, "error_action");
 					return;
 				}
@@ -734,14 +802,16 @@ public class GreatCosmetics implements ModInitializer {
 
 					int currentInType = com.f4xizzz.greatcosmetics.database.DatabaseManager.getEquippedCountByType(player.getUuid(), type);
 					if (currentInType >= typeLimit) {
-						player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você já atingiu o limite para o tipo de acessório: " + type + " (Limite: " + typeLimit + ")."), true);
+						debugLog("EquipCosmeticPayload: type '" + type + "' limit reached for " + player.getName().getString() + " (" + currentInType + "/" + typeLimit + ").");
+						player.sendMessage(LangConfig.chat("messages.cosmetic.type_limit", context.server().getRegistryManager(), "type", type, "limit", typeLimit), true);
 						playCustomSound(player, "error_action");
 						return;
 					}
 				}
 
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.equipCosmetic(player.getUuid(), cosmeticId, slotVirtual, type);
-				player.sendMessage(net.minecraft.text.Text.literal("§aAcessório equipado!"), true);
+				debugLog("EquipCosmeticPayload: '" + cosmeticId + "' equipped successfully on " + player.getName().getString() + " (slot=" + slotVirtual + " type=" + type + " bypass=" + isBypassing + ").");
+				player.sendMessage(LangConfig.chat("messages.cosmetic.equipped", context.server().getRegistryManager()), true);
 				playCustomSound(player, "equip_item");
 
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(player);
@@ -754,6 +824,7 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(EquipTagPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				String tagId = payload.tagId();
 
 				TagData data = TagsConfig.getById(tagId);
@@ -772,9 +843,11 @@ public class GreatCosmetics implements ModInitializer {
 				// criava uma linha real em player_tags (equipTag() cai pro INSERT quando não
 				// existe linha ainda), fazendo a tag "vazar" como desbloqueada pra sempre depois
 				// do preview, mesmo o player nunca tendo tido ela de verdade.
+				debugLog("EquipTagPayload from " + player.getName().getString() + ": tagId='" + tagId + "' devMode=" + payload.devMode() + " realOwns=" + realOwns);
+
 				if (!realOwns) {
 					if (!payload.devMode()) {
-						player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não possui essa tag!"), true);
+						player.sendMessage(LangConfig.chat("messages.tag.not_owned", context.server().getRegistryManager()), true);
 						playCustomSound(player, "error_action");
 					}
 					return;
@@ -794,15 +867,15 @@ public class GreatCosmetics implements ModInitializer {
 					if (fallback != null && !fallback.id.equals(tagId)) {
 						com.f4xizzz.greatcosmetics.database.DatabaseManager.equipTag(player.getUuid(), fallback.id);
 						com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.applyTag(player, fallback);
-						player.sendMessage(net.minecraft.text.Text.literal("§aTag removida! Voltou pra tag do seu cargo atual."), true);
+						player.sendMessage(LangConfig.chat("messages.tag.removed_role_fallback", context.server().getRegistryManager()), true);
 					} else if (fallback != null) {
 						// A tag que ele tentou remover JÁ É a tag do cargo dele — não tem pra onde
 						// cair, então mantém equipada (bloqueia o "desequipar" de verdade).
 						com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.applyTag(player, fallback);
-						player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não pode remover a tag do seu cargo atual!"), true);
+						player.sendMessage(LangConfig.chat("messages.tag.cannot_remove_role", context.server().getRegistryManager()), true);
 					} else {
 						com.f4xizzz.greatcosmetics.database.DatabaseManager.unequipAllForPlayer(player.getUuid());
-						player.sendMessage(net.minecraft.text.Text.literal("§cTag removida!"), true);
+						player.sendMessage(LangConfig.chat("messages.tag.removed", context.server().getRegistryManager()), true);
 					}
 				} else {
 					if (currentlyEquipped != null) {
@@ -812,7 +885,7 @@ public class GreatCosmetics implements ModInitializer {
 
 					com.f4xizzz.greatcosmetics.database.DatabaseManager.equipTag(player.getUuid(), tagId);
 					com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.applyTag(player, data);
-					player.sendMessage(net.minecraft.text.Text.literal("§aTag equipada!"), true);
+					player.sendMessage(LangConfig.chat("messages.tag.equipped", context.server().getRegistryManager()), true);
 				}
 
 				playCustomSound(player, "equip_item");
@@ -832,14 +905,15 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(SaveTagPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não tem permissão pra editar tags."), true);
+					player.sendMessage(LangConfig.chat("messages.tag.no_perm_edit", context.server().getRegistryManager()), true);
 					return;
 				}
 
 				String id = payload.id() != null ? payload.id().trim().toLowerCase() : "";
 				if (id.isEmpty()) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] ID da tag não pode ser vazio."), true);
+					player.sendMessage(LangConfig.chat("messages.tag.id_empty", context.server().getRegistryManager()), true);
 					return;
 				}
 
@@ -857,8 +931,9 @@ public class GreatCosmetics implements ModInitializer {
 				TagsConfig.tagsMap.put(id, data);
 				TagsConfig.save();
 				broadcastTagsCatalog(context.server());
+				debugLog("SaveTagPayload: tag '" + id + "' saved by " + player.getName().getString() + ".");
 
-				player.sendMessage(net.minecraft.text.Text.literal("§a[Tags] Tag '" + id + "' salva com sucesso!"), true);
+				player.sendMessage(LangConfig.chat("messages.tag.saved", context.server().getRegistryManager(), "id", id), true);
 			});
 		});
 
@@ -868,8 +943,9 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(DeleteTagPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não tem permissão pra apagar tags."), true);
+					player.sendMessage(LangConfig.chat("messages.tag.no_perm_delete", context.server().getRegistryManager()), true);
 					return;
 				}
 
@@ -877,7 +953,7 @@ public class GreatCosmetics implements ModInitializer {
 				if (data == null) return;
 
 				if (data.isGroupTag) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Tags de grupo não podem ser apagadas."), true);
+					player.sendMessage(LangConfig.chat("messages.tag.group_cannot_delete", context.server().getRegistryManager()), true);
 					return;
 				}
 
@@ -885,8 +961,9 @@ public class GreatCosmetics implements ModInitializer {
 				TagsConfig.save();
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.removeAllOwnershipOfTag(data.id);
 				broadcastTagsCatalog(context.server());
+				debugLog("DeleteTagPayload: tag '" + data.id + "' deleted by " + player.getName().getString() + ".");
 
-				player.sendMessage(net.minecraft.text.Text.literal("§a[Tags] Tag '" + data.id + "' apagada."), true);
+				player.sendMessage(LangConfig.chat("messages.tag.deleted", context.server().getRegistryManager(), "id", data.id), true);
 			});
 		});
 
@@ -896,14 +973,15 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SaveEffectPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não tem permissão pra editar efeitos."), true);
+					player.sendMessage(LangConfig.chat("messages.effect.no_perm_edit", context.server().getRegistryManager()), true);
 					return;
 				}
 
 				String newId = payload.newId() != null ? payload.newId().trim() : "";
 				if (newId.isEmpty()) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] ID do efeito não pode ser vazio."), true);
+					player.sendMessage(LangConfig.chat("messages.effect.id_empty", context.server().getRegistryManager()), true);
 					return;
 				}
 
@@ -918,8 +996,9 @@ public class GreatCosmetics implements ModInitializer {
 				EffectConfig.effectsMap.put(newId, data);
 				EffectConfig.saveEffects();
 				broadcastEffectsCatalog(context.server());
+				debugLog("SaveEffectPayload: effect '" + oldId + "' -> '" + newId + "' saved by " + player.getName().getString() + ".");
 
-				player.sendMessage(net.minecraft.text.Text.literal("§a[Effects] Efeito '" + newId + "' salvo com sucesso!"), true);
+				player.sendMessage(LangConfig.chat("messages.effect.saved", context.server().getRegistryManager(), "id", newId), true);
 			});
 		});
 
@@ -929,21 +1008,26 @@ public class GreatCosmetics implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DeleteEffectPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
 				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
 				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) {
-					player.sendMessage(net.minecraft.text.Text.literal("§c[!] Você não tem permissão pra apagar efeitos."), true);
+					player.sendMessage(LangConfig.chat("messages.effect.no_perm_delete", context.server().getRegistryManager()), true);
 					return;
 				}
 
 				if (EffectConfig.effectsMap.remove(payload.id()) == null) return;
 				EffectConfig.saveEffects();
 				broadcastEffectsCatalog(context.server());
+				debugLog("DeleteEffectPayload: effect '" + payload.id() + "' deleted by " + player.getName().getString() + ".");
 
-				player.sendMessage(net.minecraft.text.Text.literal("§a[Effects] Efeito '" + payload.id() + "' apagado."), true);
+				player.sendMessage(LangConfig.chat("messages.effect.deleted", context.server().getRegistryManager(), "id", payload.id()), true);
 			});
 		});
 
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
 			BackpackManager.checkClosedBackpacks(server);
+
+			// Revalida a licença a cada 4h + checa expiração (ver security.ActivationManager).
+			com.f4xizzz.greatcosmetics.security.ActivationManager.tickPeriodicCheck(server);
 
 			if (pendingStartupCommandsTick != null && server.getTicks() >= pendingStartupCommandsTick) {
 				pendingStartupCommandsTick = null;
@@ -1224,7 +1308,7 @@ public class GreatCosmetics implements ModInitializer {
 			if (!player.getAbilities().allowFlying) {
 				player.getAbilities().allowFlying = true;
 				player.sendAbilitiesUpdate();
-				sendOpMessage(player, BackpackManager.parseMiniMessage(LangConfig.get("fly_enabled"), regs), true);
+				sendOpMessage(player, LangConfig.chat("messages.fly.enabled", regs), true);
 			}
 			activeFlyPlayers.add(player.getUuid());
 		} else if (isModFlyActive) {
@@ -1233,7 +1317,7 @@ public class GreatCosmetics implements ModInitializer {
 				player.getAbilities().allowFlying = false;
 				player.getAbilities().flying = false;
 				player.sendAbilitiesUpdate();
-				sendOpMessage(player, BackpackManager.parseMiniMessage(LangConfig.get("fly_disabled"), regs), true);
+				sendOpMessage(player, LangConfig.chat("messages.fly.disabled", regs), true);
 			}
 		}
 	}
@@ -1252,10 +1336,30 @@ public class GreatCosmetics implements ModInitializer {
 	 *  interferia no cálculo de FOV do client — por isso o multiplicador "não aumentava a
 	 *  velocidade" e ainda "diminuía o FOV"). O jeito certo é um modificador no atributo de
 	 *  movimento de verdade (GENERIC_MOVEMENT_SPEED), igual já era feito pro swim — só que ground
-	 *  fica ativo o tempo todo (não só dentro d'água). */
+	 *  fica ativo o tempo todo (não só dentro d'água).
+	 *
+	 *  BUG (2026-09): flyMult == 1.0 (sem cosmético de fly speed equipado, o caso comum) chamava
+	 *  setFlySpeed(0.05) + sendAbilitiesUpdate() do MESMO JEITO, todo segundo, pra TODO jogador —
+	 *  não só quem tem cosmético. Isso forçava o flySpeed de volta pro padrão vanilla (0.05) a cada
+	 *  isMajorTick, brigando com QUALQUER outra coisa que tivesse ajustado essa velocidade por fora
+	 *  (outro plugin/comando, edição de NBT, etc.) — o jogador via a própria velocidade "travar no
+	 *  normal" mesmo sem nenhum cosmético do GreatCosmetics equipado. Agora só mexemos em
+	 *  abilities.flySpeed quando: (a) tem boost ativo (flyMult != 1.0), ou (b) acabou de perder um
+	 *  boost que A GENTE tinha aplicado (activeFlySpeedBoostPlayers) — nesse caso devolve pro
+	 *  padrão UMA vez só e para de tocar no campo. Sem cosmético e sem boost anterior nosso = o
+	 *  campo fica intocado, livre pra qualquer outro sistema controlar. */
 	private void handleSpeedLogic(ServerPlayerEntity player, double flyMult, double groundMult, double swimMult) {
-		player.getAbilities().setFlySpeed((float) (0.05 * flyMult));
-		player.sendAbilitiesUpdate();
+		boolean hasFlySpeedBoost = flyMult != 1.0;
+		boolean hadFlySpeedBoost = activeFlySpeedBoostPlayers.contains(player.getUuid());
+		if (hasFlySpeedBoost) {
+			player.getAbilities().setFlySpeed((float) (0.05 * flyMult));
+			player.sendAbilitiesUpdate();
+			activeFlySpeedBoostPlayers.add(player.getUuid());
+		} else if (hadFlySpeedBoost) {
+			player.getAbilities().setFlySpeed(0.05F);
+			player.sendAbilitiesUpdate();
+			activeFlySpeedBoostPlayers.remove(player.getUuid());
+		}
 
 		net.minecraft.entity.attribute.EntityAttributeInstance speedAttr =
 				player.getAttributeInstance(net.minecraft.entity.attribute.EntityAttributes.GENERIC_MOVEMENT_SPEED);
@@ -1381,6 +1485,90 @@ public class GreatCosmetics implements ModInitializer {
 		return com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.getSyntheticCosmetic(idProcurado);
 	}
 
+	/** Baixa o arquivo de MainConfig#textureUrl e calcula o SHA1 real do conteúdo, atualizando
+	 *  MainConfig#textureSha1 (e salvando) se o hash mudou. Bloqueia a thread que chamar — em
+	 *  /gc reload isso é aceitável (ação manual do admin). Retorna true só se o hash mudou.
+	 *
+	 *  O motivo de existir: sem um sha1 correto e ESTÁVEL entre sessões, o client nunca consegue
+	 *  reconhecer "já tenho esse resource pack exato" (o cache nativo dele em
+	 *  .minecraft/server-resource-packs/<sha1> é indexado pelo hash) — então o pacote forçado deste
+	 *  mod parecia uma segunda "tela de loading" toda vez que o player entrava, mesmo sem nenhum
+	 *  cosmético novo. Calculando o hash de verdade a partir do arquivo (em vez de depender do admin
+	 *  digitar certo no Dev Studio), o client passa a reaproveitar o pack já baixado em sessões
+	 *  anteriores e só baixa de novo quando o CONTEÚDO do arquivo em textureUrl realmente mudar. */
+	private static boolean refreshTextureHashBlocking() throws Exception {
+		String url = MainConfig.config.textureUrl;
+		java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+				.followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+				.connectTimeout(java.time.Duration.ofSeconds(15))
+				.build();
+		java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+				.timeout(java.time.Duration.ofSeconds(30))
+				.GET()
+				.build();
+		java.net.http.HttpResponse<byte[]> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+		if (response.statusCode() != 200) {
+			throw new java.io.IOException("HTTP " + response.statusCode() + " ao baixar " + url);
+		}
+
+		java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-1");
+		byte[] hashBytes = digest.digest(response.body());
+		StringBuilder sb = new StringBuilder(hashBytes.length * 2);
+		for (byte b : hashBytes) sb.append(String.format("%02x", b));
+		String newHash = sb.toString();
+
+		String oldHash = MainConfig.config.textureSha1 != null ? MainConfig.config.textureSha1 : "";
+		if (newHash.equalsIgnoreCase(oldHash)) return false;
+
+		MainConfig.config.textureSha1 = newHash;
+		MainConfig.saveConfig();
+		debugLog("Texture hash (forced resource pack) automatically updated to " + newHash + ".");
+		return true;
+	}
+
+	/** Versão em background do refresh acima — usada no boot do servidor pra não travar a thread
+	 *  principal esperando o download (SERVER_STARTED roda ANTES do loop de tick começar; travar
+	 *  ali de verdade atrasa o servidor inteiro ficar pronto se a URL estiver lenta/fora do ar).
+	 *  Se o hash mudou (ex: primeiro boot depois de configurar a URL), reenvia o pack pra quem já
+	 *  estiver online — normal não ter ninguém ainda nesse ponto, mas é seguro de qualquer forma. */
+	public static void refreshTextureHashAsync(net.minecraft.server.MinecraftServer server) {
+		if (!MainConfig.config.forceTexture) return;
+		if (MainConfig.config.textureUrl == null || MainConfig.config.textureUrl.isBlank()) return;
+
+		new Thread(() -> {
+			try {
+				boolean changed = refreshTextureHashBlocking();
+				if (changed) {
+					server.execute(() -> {
+						for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+							sendForcedResourcePack(p);
+						}
+					});
+				}
+			} catch (Exception e) {
+				System.err.println("[GreatCosmetics] Failed to compute SHA1 of the forced resource pack ("
+						+ MainConfig.config.textureUrl + "): " + e.getMessage());
+			}
+		}, "GreatCosmetics-TextureHash").start();
+	}
+
+	/** Versão síncrona pro /gc reload — CosmeticsCommand#executeReload chama isso ANTES de reenviar
+	 *  o pack pros players já online, pra garantir que o resend usa o hash já atualizado (evita
+	 *  mandar o pacote duas vezes: uma com hash velho, outra logo depois com o novo). Retorna uma
+	 *  mensagem de erro pro feedback do comando, ou null se deu certo (ou nem tentou por estar
+	 *  desabilitado/sem URL). */
+	public static String refreshTextureHashForReload() {
+		if (!MainConfig.config.forceTexture) return null;
+		if (MainConfig.config.textureUrl == null || MainConfig.config.textureUrl.isBlank()) return null;
+
+		try {
+			refreshTextureHashBlocking();
+			return null;
+		} catch (Exception e) {
+			return e.getMessage();
+		}
+	}
+
 	/** Manda o resource pack configurado em MainConfig#forceTexture direto pro client via pacote —
 	 *  alternativa ao resource-pack/resource-pack-sha1 do server.properties, que exige reiniciar o
 	 *  servidor pra qualquer troca de URL/hash pegar. Chamado no join E em /gc reload (assim uma
@@ -1390,13 +1578,7 @@ public class GreatCosmetics implements ModInitializer {
 		if (!MainConfig.config.forceTexture) return;
 		if (MainConfig.config.textureUrl == null || MainConfig.config.textureUrl.isBlank()) return;
 
-		UUID packId;
-		try {
-			packId = UUID.fromString(MainConfig.config.textureId);
-		} catch (Exception e) {
-			packId = UUID.nameUUIDFromBytes(MainConfig.config.textureId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-		}
-
+		UUID packId = resolveForcedTexturePackId();
 		String sha1 = MainConfig.config.textureSha1 != null ? MainConfig.config.textureSha1 : "";
 
 		// required=true: o "forçar" do nome do botão — o client mostra um prompt sem opção de
@@ -1406,11 +1588,66 @@ public class GreatCosmetics implements ModInitializer {
 		));
 	}
 
+	/** textureId não precisa ser um UUID de verdade — qualquer texto vira um UUID estável via
+	 *  nameUUIDFromBytes. Extraído de sendForcedResourcePack() pra sendCatalogStateSnapshot()
+	 *  mandar o MESMO id (byte a byte) — o client precisa reconhecer, quando o pacote de resource
+	 *  pack de verdade chegar, que é ESSE pack específico (ver ServerResourcePackLoaderMixin). */
+	private static UUID resolveForcedTexturePackId() {
+		try {
+			return UUID.fromString(MainConfig.config.textureId);
+		} catch (Exception e) {
+			return UUID.nameUUIDFromBytes(MainConfig.config.textureId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		}
+	}
+
+	/** SHA-256 (hex) estável do catálogo inteiro de cosméticos+armaduras convertidas — usado pelo
+	 *  client (ver SyncCatalogStatePayload) pra decidir sozinho se o que já tem em cache pra ESSE
+	 *  servidor ainda bate com o catálogo atual, sem precisar de nenhum flag manual (ver Fase 3 do
+	 *  plano). TreeMap (não o HashMap/ConcurrentHashMap "cru" dos dois catálogos) é obrigatório
+	 *  aqui — sem isso, um restart do servidor com ZERO mudança real de config podia inverter a
+	 *  ordem de iteração e mudar o hash sozinho, forçando um recarregamento desnecessário em todo
+	 *  mundo que reentrasse. Calculado sob demanda (não cacheado) — só roda no join e no
+	 *  /gc reload, nunca por tick, então o custo de recalcular não compensa o risco de esquecer um
+	 *  ponto de invalidação e deixar o hash "mentindo" que nada mudou. */
+	public static String computeCosmeticsCatalogHash() {
+		try {
+			java.util.TreeMap<String, CosmeticData> sortedCosmetics = new java.util.TreeMap<>(CosmeticsConfig.cosmeticsMap);
+			java.util.TreeMap<String, CosmeticData> sortedArmor = new java.util.TreeMap<>(com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics);
+			com.google.gson.Gson gson = new com.google.gson.Gson();
+			String combined = "cosmetics:" + gson.toJson(sortedCosmetics) + "|armor:" + gson.toJson(sortedArmor);
+
+			java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+			byte[] digest = md.digest(combined.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			StringBuilder sb = new StringBuilder(digest.length * 2);
+			for (byte b : digest) sb.append(String.format("%02x", b));
+			return sb.toString();
+		} catch (Exception e) {
+			// Nunca deveria acontecer (SHA-256 sempre existe) — mas se acontecer, um hash vazio só
+			// faz o client sempre tratar como "mudou", nunca o contrário (fail-safe: no pior caso
+			// recarrega à toa, nunca deixa de recarregar quando devia).
+			return "";
+		}
+	}
+
+	/** Mandado ANTES de sendForcedResourcePack()/dos syncs de cosmético (join) ou antes deles no
+	 *  loop de /gc reload — ver SyncCatalogStatePayload pro porquê da ordem importar.
+	 *
+	 *  {@code joinSync} = true só no handler de JOIN (entrada no servidor); false no /gc reload —
+	 *  é o que o client usa pra saber, sem heurística de tempo, se pode suprimir a tela / pular o
+	 *  recarregamento (só quando true). Ver ClientJoinReloadState. */
+	public static void sendCatalogStateSnapshot(ServerPlayerEntity player, boolean joinSync) {
+		String textureSha1 = MainConfig.config.textureSha1 != null ? MainConfig.config.textureSha1 : "";
+		UUID texturePackId = MainConfig.config.forceTexture ? resolveForcedTexturePackId() : new UUID(0L, 0L);
+		ServerPlayNetworking.send(player, new com.f4xizzz.greatcosmetics.network.SyncCatalogStatePayload(
+				computeCosmeticsCatalogHash(), MainConfig.config.forceTexture, textureSha1, texturePackId, joinSync));
+	}
+
 	/** Reenvia o catálogo de cosméticos NORMAIS pra todo mundo já online (ver SyncCosmeticsPayload).
 	 *  {@code allowResourceReload} só deve ser true no /gc reload — o Dev Studio salvando uma
 	 *  edição manda os dados certos pro client sem disparar reloadResources() (recarga pesada de
 	 *  textura/model, perceptível na tela), que só deve acontecer quando o admin pede de propósito. */
 	public static void broadcastCosmeticsCatalog(net.minecraft.server.MinecraftServer server, boolean allowResourceReload) {
+		debugLog("broadcastCosmeticsCatalog: " + CosmeticsConfig.cosmeticsMap.size() + " cosmetics to " + server.getPlayerManager().getCurrentPlayerCount() + " players (allowResourceReload=" + allowResourceReload + ").");
 		SyncCosmeticsPayload payload = new SyncCosmeticsPayload(CosmeticsConfig.cosmeticsMap, allowResourceReload);
 		for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
 			ServerPlayNetworking.send(p, payload);
@@ -1419,6 +1656,7 @@ public class GreatCosmetics implements ModInitializer {
 
 	/** Idem, pra armaduras convertidas em cosmético (ver SyncArmorCosmeticsPayload). */
 	public static void broadcastArmorCosmeticsCatalog(net.minecraft.server.MinecraftServer server, boolean allowResourceReload) {
+		debugLog("broadcastArmorCosmeticsCatalog: " + com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics.size() + " armor pieces to " + server.getPlayerManager().getCurrentPlayerCount() + " players (allowResourceReload=" + allowResourceReload + ").");
 		com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload payload = new com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload(
 				new HashMap<>(com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics), allowResourceReload);
 		for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
@@ -1428,6 +1666,7 @@ public class GreatCosmetics implements ModInitializer {
 
 	/** Idem, pro mainconfig.conf inteiro (slots/types/config geral — ver SyncMainConfigPayload). */
 	public static void broadcastMainConfig(net.minecraft.server.MinecraftServer server) {
+		debugLog("broadcastMainConfig: syncing MainConfig to " + server.getPlayerManager().getCurrentPlayerCount() + " players.");
 		com.google.gson.Gson gson = new com.google.gson.Gson();
 		com.f4xizzz.greatcosmetics.network.SyncMainConfigPayload payload = new com.f4xizzz.greatcosmetics.network.SyncMainConfigPayload(
 				gson.toJson(com.f4xizzz.greatcosmetics.config.MainConfig.config));
@@ -1462,6 +1701,7 @@ public class GreatCosmetics implements ModInitializer {
 			String displayName = (data != null && data.DisplayName != null && !data.DisplayName.isBlank()) ? data.getChatSafeDisplayName() : cosmeticId;
 
 			inv.removeStack(i);
+			debugLog("checkAndConvertArmorInventory: real item converted to cosmetic '" + cosmeticId + "' for " + player.getName().getString() + " (inventory slot " + i + ").");
 
 			boolean unlockedNow = com.f4xizzz.greatcosmetics.database.DatabaseManager.unlockCosmetic(player.getUuid(), cosmeticId);
 
@@ -1472,13 +1712,9 @@ public class GreatCosmetics implements ModInitializer {
 			ServerPlayNetworking.send(player, new com.f4xizzz.greatcosmetics.network.GrantCosmeticPayload(cosmeticId));
 
 			if (unlockedNow) {
-				player.sendMessage(com.f4xizzz.greatcosmetics.util.BackpackManager.parseMiniMessage(
-						"<green>[Cosméticos] Sua " + displayName + " virou cosmético! Ela foi removida do seu inventário e liberada no seu guarda-roupa (/wardrobe ou vá ate a loja de roupas!).",
-						regs), false);
+				player.sendMessage(LangConfig.chat("messages.cosmetic.converted_wardrobe", regs, "name", displayName), false);
 			} else {
-				player.sendMessage(com.f4xizzz.greatcosmetics.util.BackpackManager.parseMiniMessage(
-						"<yellow>[Cosméticos] Sua " + displayName + " virou cosmético e foi removida do inventário (você já tinha ela liberada no guarda-roupa).",
-						regs), false);
+				player.sendMessage(LangConfig.chat("messages.cosmetic.converted_already", regs, "name", displayName), false);
 			}
 		}
 	}
@@ -1583,12 +1819,14 @@ public class GreatCosmetics implements ModInitializer {
 			// ao grupo. Ver comentário em syncPlayerTags() pra mais detalhes.
 			com.f4xizzz.greatcosmetics.database.DatabaseManager.removeTagOwnership(player.getUuid(), data.id);
 			com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.removeTag(player, data);
-			debugLog("Tag de grupo '" + equippedId + "' desequipada automaticamente de " + player.getName().getString() + " (não pertence mais ao grupo).");
+			debugLog("Group tag '" + equippedId + "' automatically unequipped from " + player.getName().getString() + " (no longer in the group).");
 
 			// Avisa o PLAYER também (antes só ficava no log do console/debug) — ele precisa saber
 			// que perdeu a tag por ter saído do grupo, não só ver ela sumir sem explicação.
-			player.sendMessage(net.minecraft.text.Text.literal(
-					"§c[Tags] Você perdeu a tag '" + data.displayName + "' porque não pertence mais ao grupo '" + data.id + "'."), false);
+			// data.displayName é texto em formato MiniMessage (ex: "<red>VIP") — a chave de lang
+			// concatena {name} cru, então o parse resolve as tags dele junto.
+			net.minecraft.registry.RegistryWrapper.WrapperLookup regs = player.getServerWorld().getRegistryManager();
+			player.sendMessage(LangConfig.chat("messages.tag.group_lost", regs, "name", data.displayName, "id", data.id), false);
 		}
 	}
 
@@ -1614,14 +1852,14 @@ public class GreatCosmetics implements ModInitializer {
 			if (!com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), id)) {
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.unequipCosmetic(player.getUuid(), id);
 				changed = true;
-				debugLog("Cosmético '" + id + "' desequipado automaticamente de " + player.getName().getString() + " (equipado via bypass de OP/Dev Mode, sem posse real, e o bypass não está mais ativo).");
+				debugLog("Cosmetic '" + id + "' automatically unequipped from " + player.getName().getString() + " (equipped via OP/Dev Mode bypass, no real ownership, and the bypass is no longer active).");
 			}
 		}
 
 		if (changed) {
 			com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(player);
-			player.sendMessage(net.minecraft.text.Text.literal(
-					"§c[Cosmetics] Um ou mais cosméticos de teste foram removidos porque você não tem mais acesso ao OP/Dev Mode e nunca os desbloqueou de verdade."), false);
+			net.minecraft.registry.RegistryWrapper.WrapperLookup regs = player.getServerWorld().getRegistryManager();
+			player.sendMessage(LangConfig.chat("messages.cosmetic.test_removed", regs), false);
 		}
 	}
 
@@ -1657,6 +1895,6 @@ public class GreatCosmetics implements ModInitializer {
 
 		com.f4xizzz.greatcosmetics.database.DatabaseManager.equipTag(player.getUuid(), best.id);
 		com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.applyTag(player, best);
-		debugLog("Tag de grupo '" + best.id + "' auto-equipada em " + player.getName().getString() + " (cargo atual do LuckPerms).");
+		debugLog("Tag group '" + best.id + "' auto-equipada em " + player.getName().getString() + " (cargo atual do LuckPerms).");
 	}
 }

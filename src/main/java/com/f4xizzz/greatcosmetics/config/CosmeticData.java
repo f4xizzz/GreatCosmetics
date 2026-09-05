@@ -98,12 +98,7 @@ public class CosmeticData {
 
     public boolean isBackpack = false;
     public int backpackRows = 3;
-    // Cada página é um GenericContainerScreenHandler INDEPENDENTE de backpackRows fileiras (mesmo
-    // limite vanilla de sempre, até 6) — itens de uma página nunca aparecem/misturam com outra (ver
-    // BackpackManager#openSpecificBackpackPage). 1 = comportamento de sempre, sem seta/texto de
-    // página nenhum desenhado por cima do baú.
-    public int backpackPages = 1;
-    public String backpackDisplayName = "<dark_gray>Mochila do Viajante";
+    public String backpackDisplayName = "<dark_gray>Traveler's Backpack";
     public boolean EnableFly = false;
     public boolean AutoFeed = false;
     public List<String> effects = new ArrayList<>();
@@ -170,7 +165,7 @@ public class CosmeticData {
         if (this.id != null && !this.id.trim().isEmpty()) {
             return com.f4xizzz.greatcosmetics.util.TextUtils.parseToString("<light_purple>" + this.id.substring(0, 1).toUpperCase() + this.id.substring(1));
         }
-        return com.f4xizzz.greatcosmetics.util.TextUtils.parseToString("<light_purple>Cosmético");
+        return com.f4xizzz.greatcosmetics.util.TextUtils.parseToString(com.f4xizzz.greatcosmetics.config.LangConfig.raw("items.name_fallback"));
     }
 
     /** Igual getFormattedName(), mas devolve um Text de verdade (com Style/TextColor real) em vez
@@ -194,7 +189,7 @@ public class CosmeticData {
         if (this.id != null && !this.id.trim().isEmpty()) {
             return "<light_purple>" + this.id.substring(0, 1).toUpperCase() + this.id.substring(1);
         }
-        return "<light_purple>Cosmético";
+        return com.f4xizzz.greatcosmetics.config.LangConfig.raw("items.name_fallback");
     }
 
     /** Igual getFormattedNameText(), mas quebra "\n" literal (as duas letras — nenhum campo do Dev

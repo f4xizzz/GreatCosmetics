@@ -16,7 +16,7 @@ public class ThemeManager {
                 isLightMode = Boolean.parseBoolean(content);
             }
         } catch (Exception e) {
-            System.err.println("[CobbleSAS] Falha ao carregar tema!");
+            System.err.println("[GreatCosmetics] Failed to load theme!");
         }
     }
 
@@ -25,7 +25,7 @@ public class ThemeManager {
         try {
             Files.writeString(CONFIG_PATH, String.valueOf(isLightMode));
         } catch (Exception e) {
-            System.err.println("[CobbleSAS] Falha ao salvar tema!");
+            System.err.println("[GreatCosmetics] Failed to save theme!");
         }
     }
 }

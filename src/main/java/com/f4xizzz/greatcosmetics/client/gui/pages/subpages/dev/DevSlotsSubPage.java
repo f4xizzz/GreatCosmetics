@@ -38,14 +38,25 @@ public class DevSlotsSubPage extends DevSubPage {
 
     private boolean isDraggingScrollbar = false;
 
+    private static String L(String key, Object... ph) {
+        return com.f4xizzz.greatcosmetics.config.LangConfig.legacy(key, ph);
+    }
+
     private enum RowType { STRING, INT, BUTTON }
     private static class EditorRow {
-        String label; RowType type; TextFieldWidget textField; Runnable onButtonClick;
-        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.type = type; this.textField = field; }
-        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
+        String label; String id; RowType type; TextFieldWidget textField; Runnable onButtonClick;
+        // Ver DevCosmeticsSubPage#EditorRow.tooltip — mesmo mecanismo de tooltip por hover.
+        String tooltip;
+        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.id = label; this.type = type; this.textField = field; }
+        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.id = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
+        EditorRow withId(String id) { this.id = id; return this; }
+        EditorRow withTooltip(String tooltip) { this.tooltip = tooltip; return this; }
     }
 
     private final List<EditorRow> rows = new ArrayList<>();
+
+    /** Ver DevCosmeticsSubPage#hoveredTooltipRow. */
+    private EditorRow hoveredTooltipRow = null;
 
     public DevSlotsSubPage(Wardrobe3DScreen parent, Runnable onBack) {
         super(parent, onBack);
@@ -71,46 +82,54 @@ public class DevSlotsSubPage extends DevSubPage {
 
         if (this.editingData == null) return;
 
-        addStringField("Nome (deve ser igual ao Slot do cosmético: HEAD, NECK, CHEST, BACK, WAIST, LEGS ou FEET)", this.tempId, text -> this.tempId = text);
-        addIntField("Limite Padrão (Sem VIP)", this.editingData.defaultLimit, val -> this.editingData.defaultLimit = val);
+        addStringField(L("devstudio.slot.field.name"), this.tempId, text -> this.tempId = text)
+                .withTooltip(L("devstudio.slot.tooltip.name"));
+        addIntField(L("devstudio.slot.field.default_limit"), this.editingData.defaultLimit, val -> this.editingData.defaultLimit = val)
+                .withTooltip(L("devstudio.slot.tooltip.default_limit"));
 
         // Verifica se a variável de permissão não é nula para evitar crash
         String startPerm = this.editingData.permission != null ? this.editingData.permission : "";
-        addStringField("Permissão Extra", startPerm, text -> this.editingData.permission = text);
+        addStringField(L("devstudio.slot.field.extra_permission"), startPerm, text -> this.editingData.permission = text)
+                .withTooltip(L("devstudio.slot.tooltip.extra_permission"));
 
-        this.rows.add(new EditorRow("DELETAR SLOT", () -> {
+        this.rows.add(new EditorRow(L("devstudio.slot.delete"), () -> {
             ClientMainConfigCache.config.slots.remove(this.editingId);
             ClientMainConfigCache.sendSave();
             this.hasUnsavedChanges = false;
             this.currentState = State.LIST;
             this.scrollY = 0;
-        }));
+        }).withId("delete"));
     }
 
-    private void addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
+    private EditorRow addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(128); field.setText(startVal != null ? startVal : "");
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             action.accept(text);
         });
-        this.rows.add(new EditorRow(label, RowType.STRING, field));
+        EditorRow row = new EditorRow(label, RowType.STRING, field);
+        this.rows.add(row);
+        return row;
     }
 
-    private void addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
+    private EditorRow addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(10); field.setText(String.valueOf(startVal));
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             try { if (!text.isEmpty() && !text.equals("-")) action.accept(Integer.parseInt(text)); } catch (Exception ignored) {}
         });
-        this.rows.add(new EditorRow(label, RowType.INT, field));
+        EditorRow row = new EditorRow(label, RowType.INT, field);
+        this.rows.add(row);
+        return row;
     }
 
     @Override
     public void render(DrawContext c, int mouseX, int mouseY, float delta, int x, int y, int width, int height) {
         INSTANCE = this;
         this.lastX = x; this.lastY = y; this.lastWidth = width; this.lastHeight = height;
+        this.hoveredTooltipRow = null;
 
         boolean isMouseDown = GLFW.glfwGetMouseButton(MinecraftClient.getInstance().getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
         if (!isMouseDown) {
@@ -121,12 +140,12 @@ public class DevSlotsSubPage extends DevSubPage {
 
         if (currentState == State.LIST) {
             boolean hovBack = mouseX >= x + 12 && mouseX <= x + 62 && mouseY >= topY && mouseY <= topY + 12;
-            c.drawTextWithShadow(parent.getTextRenderer(), "< Voltar", x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§aSlots", x + (width / 2) + 8, topY + 2, 0xFFFFFF);
+            c.drawTextWithShadow(parent.getTextRenderer(), L("devstudio.common.back"), x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.slot.list_title"), x + (width / 2) + 8, topY + 2, 0xFFFFFF);
 
             boolean hovNew = mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= topY + 15 && mouseY <= topY + 30;
             c.fill(x + 10, topY + 15, x + width - 10, topY + 30, hovNew ? 0xFF55FF55 : 0xFF22AA22);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "+ Novo Slot", x + (width/2), topY + 19, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.slot.new"), x + (width/2), topY + 19, 0xFFFFFF);
 
             List<String> ids = new ArrayList<>(ClientMainConfigCache.config.slots.keySet());
             int listY = topY + 35;
@@ -202,6 +221,10 @@ public class DevSlotsSubPage extends DevSubPage {
                     continue;
                 }
 
+                if (row.tooltip != null && mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= rowY - 2 && mouseY <= rowY + 30) {
+                    hoveredTooltipRow = row;
+                }
+
                 if (row.type != RowType.BUTTON) {
                     c.drawTextWithShadow(parent.getTextRenderer(), "§f" + row.label, x + 15, rowY, 0xFFFFFF);
                 }
@@ -223,6 +246,18 @@ public class DevSlotsSubPage extends DevSubPage {
         }
 
         renderExitPopup(c, mouseX, mouseY);
+
+        renderHoveredTooltip(c, mouseX, mouseY);
+    }
+
+    /** Ver DevCosmeticsSubPage#renderHoveredTooltip. */
+    private void renderHoveredTooltip(DrawContext c, int mouseX, int mouseY) {
+        if (hoveredTooltipRow == null || hoveredTooltipRow.tooltip == null) return;
+        List<Text> lines = new ArrayList<>();
+        for (String line : hoveredTooltipRow.tooltip.split("\n")) {
+            lines.add(Text.literal(line));
+        }
+        c.drawTooltip(parent.getTextRenderer(), lines, mouseX, mouseY);
     }
 
     private void drawScrollbar(DrawContext c, int x, int y, int height) {
@@ -262,7 +297,7 @@ public class DevSlotsSubPage extends DevSubPage {
 
             if (mx >= x + 10 && mx <= x + width - 10 && my >= topY + 15 && my <= topY + 30) {
                 playClick();
-                String newId = "NOVO_SLOT_" + (ClientMainConfigCache.config.slots.size() + 1);
+                String newId = "NEW_SLOT_" + (ClientMainConfigCache.config.slots.size() + 1);
                 MainConfig.SlotLimit newSlot = new MainConfig.SlotLimit();
                 newSlot.defaultLimit = 1;
                 newSlot.permission = "greatcosmetics.slot." + newId.toLowerCase();

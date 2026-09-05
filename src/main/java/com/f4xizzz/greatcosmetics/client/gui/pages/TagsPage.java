@@ -142,7 +142,7 @@ public class TagsPage extends WardrobePage {
             c.drawCenteredTextWithShadow(getTextRenderer(), "DEV", devBtnX + (devBtnW / 2), devBtnY + 3, devColor);
         }
 
-        c.drawTextWithShadow(getTextRenderer(), "§eSuas Tags", x + 12, y + 35, 0xFFFFFF);
+        c.drawTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.header"), x + 12, y + 35, 0xFFFFFF);
         c.fill(x + 12, y + 48, x + width - 12, y + 49, 0xFF444444);
 
         int listY = y + 55;
@@ -150,7 +150,7 @@ public class TagsPage extends WardrobePage {
         if (devMode) {
             boolean hovNew = over(mouseX, mouseY, x + 10, listY, width - 20, 14);
             c.fill(x + 10, listY, x + width - 10, listY + 14, hovNew ? 0xFF55FF55 : 0xFF22AA22);
-            c.drawCenteredTextWithShadow(getTextRenderer(), "+ Criar Nova Tag", x + (width / 2), listY + 3, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.create_new"), x + (width / 2), listY + 3, 0xFFFFFF);
             listY += 18;
         }
 
@@ -208,9 +208,9 @@ public class TagsPage extends WardrobePage {
                     activeTooltip.add(TextUtils.parseToText(data.description, regs));
                 }
                 if (owned) {
-                    activeTooltip.add(Text.literal(equipped ? "§cClique para remover" : "§aClique para equipar"));
+                    activeTooltip.add(com.f4xizzz.greatcosmetics.config.LangConfig.text(equipped ? "tags.tooltip.click_remove" : "tags.tooltip.click_equip"));
                 } else {
-                    activeTooltip.add(Text.literal("§cVocê não tem essa TAG!"));
+                    activeTooltip.add(com.f4xizzz.greatcosmetics.config.LangConfig.text("tags.tooltip.not_owned"));
                 }
             }
         }
@@ -228,29 +228,31 @@ public class TagsPage extends WardrobePage {
         boolean hovBack = over(mouseX, mouseY, x + 10, topY, 20, 12);
         c.drawTextWithShadow(getTextRenderer(), "<", x + 10, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
 
-        String title = editingId == null ? "§aNova Tag" : "§a" + editingId;
+        String title = editingId == null
+                ? com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.title_new")
+                : com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.title_edit", "id", editingId);
         c.drawCenteredTextWithShadow(getTextRenderer(), title, x + (width / 2), topY + 2, 0xFFFFFF);
 
         int rowY = topY + 16;
         int rowHeight = 32;
 
-        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, "ID", editingId == null ? idField : null,
+        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.field.id"), editingId == null ? idField : null,
                 editingId != null ? editingId : null);
-        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, "Display Name", displayNameField, null);
-        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, "Descrição", descriptionField, null);
-        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, "TAG (prefixo)", tagField, null);
-        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, "Permissions (separadas por vírgula)", permissionsField, null);
-        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, "Minecraft Tag", minecraftTagField, null);
+        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.field.display_name"), displayNameField, null);
+        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.field.description"), descriptionField, null);
+        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.field.tag"), tagField, null);
+        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.field.permissions"), permissionsField, null);
+        rowY = renderEditorRow(c, mouseX, mouseY, delta, x, width, rowY, rowHeight, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.field.minecraft_tag"), minecraftTagField, null);
 
         boolean hovSave = over(mouseX, mouseY, x + 10, rowY + 4, width - 20, 16);
         c.fill(x + 10, rowY + 4, x + width - 10, rowY + 20, hovSave ? 0xFF55FF55 : 0xFF22AA22);
-        c.drawCenteredTextWithShadow(getTextRenderer(), "Salvar", x + (width / 2), rowY + 8, 0xFFFFFF);
+        c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.save"), x + (width / 2), rowY + 8, 0xFFFFFF);
 
         if (!editingIsGroupTag && editingId != null) {
             int delY = rowY + 24;
             boolean hovDelete = over(mouseX, mouseY, x + 10, delY, width - 20, 16);
             c.fill(x + 10, delY, x + width - 10, delY + 16, hovDelete ? 0xFFFF5555 : 0xFFAA0000);
-            c.drawCenteredTextWithShadow(getTextRenderer(), "DELETAR TAG", x + (width / 2), delY + 4, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.editor.delete"), x + (width / 2), delY + 4, 0xFFFFFF);
         }
     }
 

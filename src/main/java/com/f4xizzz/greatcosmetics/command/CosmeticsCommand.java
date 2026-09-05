@@ -103,6 +103,15 @@ public class CosmeticsCommand {
 
             LiteralCommandNode<ServerCommandSource> mainNode = dispatcher.register(
                     CommandManager.literal("greatcosmetics")
+                            // --- COMANDO: ACTIVATION (licença do mod — ver security.ActivationManager) ---
+                            // Nunca pode ser bloqueado pelo próprio gate de licença, senão o dono não
+                            // consegue ativar. Level 4 / node = dono/console.
+                            .then(CommandManager.literal("activation")
+                                    .requires(source -> hasCmdPermission(source, "gc.command.activation"))
+                                    .then(CommandManager.argument("key", StringArgumentType.word())
+                                            .executes(context -> executeActivation(context.getSource(), StringArgumentType.getString(context, "key")))
+                                    )
+                            )
                             .then(CommandManager.literal("reload")
                                     .requires(source -> hasCmdPermission(source, "gc.command.reload"))
                                     .executes(context -> executeReload(context.getSource()))
@@ -317,6 +326,7 @@ public class CosmeticsCommand {
                                             .requires(source -> hasCmdPermission(source, "gc.command.wardrobe.setbackground"))
                                             .then(CommandManager.argument("nome", StringArgumentType.string())
                                                     .executes(context -> {
+                                                        if (isBlockedByLicense(context.getSource(), "wardrobe")) return 0;
                                                         String bgName = StringArgumentType.getString(context, "nome");
                                                         ServerPlayerEntity player = context.getSource().getPlayerOrThrow();
                                                         WardrobeManager.setStudioLocation(player, bgName);
@@ -381,53 +391,88 @@ public class CosmeticsCommand {
     }
 
     private static int denyPermission(ServerCommandSource source) {
-        source.sendFeedback(() -> Text.literal("§c[!] Você não tem permissão para usar esse comando."), false);
+        source.sendFeedback(() -> LangConfig.chat("general.error.no_permission", source.getWorld().getRegistryManager()), false);
         return 0;
+    }
+
+    // ==========================================
+    // SISTEMA DE LICENÇA (ver security.ActivationManager)
+    // ==========================================
+    /** true = comando bloqueado por falta de licença (servidor dedicado). O subcomando
+     *  {@code activation} NUNCA é bloqueado. Singleplayer nunca bloqueia. */
+    private static boolean isBlockedByLicense(ServerCommandSource source, String sub) {
+        if ("activation".equalsIgnoreCase(sub)) return false;
+        net.minecraft.server.MinecraftServer server = source.getServer();
+        if (server == null || !server.isDedicated()) return false;
+        if (com.f4xizzz.greatcosmetics.security.ActivationManager.isModActivated()) return false;
+        RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
+        source.sendError(LangConfig.chat("general.license.locked_cmd_1", regs));
+        return true;
+    }
+
+    private static int executeActivation(ServerCommandSource source, String key) {
+        net.minecraft.server.MinecraftServer server = source.getServer();
+        RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
+
+        if (server == null || !server.isDedicated()) {
+            source.sendError(LangConfig.chat("general.license.singleplayer_only", regs));
+            return 0;
+        }
+
+        source.sendFeedback(() -> LangConfig.chat("general.license.activating", regs), false);
+
+        com.f4xizzz.greatcosmetics.security.ActivationManager.tryActivateAsync(key, server).thenAccept(success -> {
+            if (success) {
+                source.sendFeedback(() -> LangConfig.chat("general.license.activate_success", regs), false);
+            } else {
+                source.sendError(LangConfig.chat("general.license.activate_fail", regs));
+            }
+        });
+        return 1;
     }
 
     // ==========================================
     // MÉTODO NOVO: PEGAR UUID DA ENTIDADE
     // ==========================================
     private static int executeUuid(ServerCommandSource source, ServerPlayerEntity executor) {
+        if (isBlockedByLicense(source, "uuid")) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         net.minecraft.entity.LivingEntity target = getTargetEntity(executor);
 
         if (target == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[GreatCosmetics] Olhe para uma entidade ou NPC (max 5 blocos) para pegar o UUID!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.uuid.no_target", regs), false);
             return 0;
         }
 
         String uuidStr = target.getUuidAsString();
         String entityName = target.getName().getString();
 
-        // Monta a mensagem utilizando o MiniMessage com click:copy_to_clipboard e um hover amigável
-        String msg = "<green>[GreatCosmetics] Entidade: <white>" + entityName + " <gray>| <green>UUID: <aqua><click:copy_to_clipboard:'" + uuidStr + "'><hover:show_text:'<yellow>Clique para copiar!'><underlined>" + uuidStr + "</underlined></hover></click>";
-
-        source.sendFeedback(() -> BackpackManager.parseMiniMessage(msg, regs), false);
+        source.sendFeedback(() -> LangConfig.chat("commands.uuid.result", regs, "name", entityName, "uuid", uuidStr), false);
         return 1;
     }
 
     private static int executeGive(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "give")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         CosmeticData data = getCosmeticById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Cosmético '" + idProcurado + "' não encontrado!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         boolean success = DatabaseManager.unlockCosmetic(target.getUuid(), idProcurado);
+        GreatCosmetics.debugLog("/gc give: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getName() + ") success=" + success);
 
         if (success) {
-            String msgText = LangConfig.getRaw("receive_item").replace("{item}", data.getChatSafeDisplayName());
-            target.sendMessage(BackpackManager.parseMiniMessage(LangConfig.getRaw("prefix") + msgText, regs), false);
+            target.sendMessage(LangConfig.chat("commands.give.received", regs, "item", data.getChatSafeDisplayName()), false);
 
             if (source.getPlayer() != target) {
-                source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Cosmético '" + idProcurado + "' desbloqueado para " + target.getName().getString() + "!", regs), false);
+                source.sendFeedback(() -> LangConfig.chat("commands.give.success_other", regs, "id", idProcurado, "player", target.getName().getString()), false);
             }
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Cosmetics] O jogador " + target.getName().getString() + " já possui o cosmético '" + idProcurado + "'!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.give.already_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
 
         return 1;
@@ -440,40 +485,44 @@ public class CosmeticsCommand {
     // ação administrativa explícita (/gc cosmetics equip), não uma troca normal do jogador.
     // ==========================================
     private static int executeForceEquip(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "cosmetics")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         CosmeticData data = getCosmeticById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Cosmético '" + idProcurado + "' não encontrado!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         DatabaseManager.unlockCosmetic(target.getUuid(), idProcurado);
         DatabaseManager.equipCosmetic(target.getUuid(), idProcurado, data.slot.name(), data.type);
         DatabaseManager.broadcastPlayerCosmetics(target);
+        GreatCosmetics.debugLog("/gc cosmetics equip: '" + idProcurado + "' force-equipped on " + target.getName().getString() + " (executor=" + source.getName() + ").");
 
-        source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Cosmético '" + idProcurado + "' forçado a equipar em " + target.getName().getString() + " (ignorando limite de slot)!", regs), false);
+        source.sendFeedback(() -> LangConfig.chat("commands.forceequip.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
         return 1;
     }
 
     private static int executeForceUnequip(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "cosmetics")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         CosmeticData data = getCosmeticById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Cosmético '" + idProcurado + "' não encontrado!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         boolean success = DatabaseManager.unequipCosmetic(target.getUuid(), idProcurado);
         DatabaseManager.broadcastPlayerCosmetics(target);
+        GreatCosmetics.debugLog("/gc cosmetics unequip: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getName() + ") success=" + success);
 
         if (success) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Cosmético '" + idProcurado + "' desequipado de " + target.getName().getString() + "!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.forceunequip.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Cosmetics] O jogador " + target.getName().getString() + " não tinha esse cosmético equipado.", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.forceunequip.not_equipped", regs, "player", target.getName().getString()), false);
         }
         return 1;
     }
@@ -482,48 +531,52 @@ public class CosmeticsCommand {
     // MÉTODOS NOVOS: TAGS GIVE/REMOVE
     // ==========================================
     private static int executeTagGive(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "tags")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         com.f4xizzz.greatcosmetics.config.TagData data = com.f4xizzz.greatcosmetics.config.TagsConfig.getById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Tags] Erro: Tag '" + idProcurado + "' não encontrada!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.tag_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         if (data.isGroupTag) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Tags] Tags de grupo não podem ser dadas por comando — a posse vem de pertencer ao grupo no LuckPerms.", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.tag.group_cannot_give", regs), false);
             return 0;
         }
 
         boolean success = com.f4xizzz.greatcosmetics.database.DatabaseManager.unlockTag(target.getUuid(), idProcurado);
+        GreatCosmetics.debugLog("/gc tags give: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getName() + ") success=" + success);
 
         if (success) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Tags] Tag '" + idProcurado + "' concedida para " + target.getName().getString() + "!", regs), false);
-            target.sendMessage(BackpackManager.parseMiniMessage("<green>Você recebeu a tag: <white>" + data.displayName, regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.tag.given", regs, "id", idProcurado, "player", target.getName().getString()), false);
+            target.sendMessage(LangConfig.chat("commands.tag.received", regs, "name", data.displayName), false);
             com.f4xizzz.greatcosmetics.GreatCosmetics.syncPlayerTags(target);
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Tags] O jogador " + target.getName().getString() + " já possui a tag '" + idProcurado + "'!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.tag.already_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
         return 1;
     }
 
     private static int executeTagRemove(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "tags")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         com.f4xizzz.greatcosmetics.config.TagData data = com.f4xizzz.greatcosmetics.config.TagsConfig.getById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Tags] Erro: Tag '" + idProcurado + "' não encontrada!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.tag_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         if (data.isGroupTag) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Tags] Tags de grupo não podem ser removidas por comando.", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.tag.group_cannot_remove", regs), false);
             return 0;
         }
 
         boolean success = com.f4xizzz.greatcosmetics.database.DatabaseManager.removeTagOwnership(target.getUuid(), idProcurado);
+        GreatCosmetics.debugLog("/gc tags remove: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getName() + ") success=" + success);
 
         if (success) {
             String equipped = com.f4xizzz.greatcosmetics.database.DatabaseManager.getEquippedTagId(target.getUuid());
@@ -532,52 +585,56 @@ public class CosmeticsCommand {
                 com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.removeTag(target, data);
             }
 
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Tags] Tag '" + idProcurado + "' removida de " + target.getName().getString() + "!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.tag.removed", regs, "id", idProcurado, "player", target.getName().getString()), false);
             com.f4xizzz.greatcosmetics.GreatCosmetics.syncPlayerTags(target);
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Tags] O jogador " + target.getName().getString() + " não possui a tag '" + idProcurado + "'!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.tag.not_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
         return 1;
     }
 
     private static int executeGiveItem(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "giveitem")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         CosmeticData data = getCosmeticById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Cosmético '" + idProcurado + "' não encontrado!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         ItemStack item = buildCosmeticIcon(data, regs);
+        GreatCosmetics.debugLog("/gc giveitem: physical item of '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getName() + ").");
 
         if (!target.getInventory().insertStack(item)) {
             target.dropItem(item, false);
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Cosmetics] Inventário cheio! O item '" + idProcurado + "' caiu no chão de " + target.getName().getString() + ".", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.giveitem.inv_full", regs, "id", idProcurado, "player", target.getName().getString()), false);
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Você deu o item físico do cosmético '" + idProcurado + "' para " + target.getName().getString() + "!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.giveitem.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
 
         return 1;
     }
 
     private static int executeRemove(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "remove")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         CosmeticData data = getCosmeticById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Cosmético '" + idProcurado + "' não encontrado!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         boolean success = DatabaseManager.removeCosmetic(target.getUuid(), idProcurado);
+        GreatCosmetics.debugLog("/gc remove: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getName() + ") success=" + success);
 
         if (success) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Cosmético '" + idProcurado + "' removido de " + target.getName().getString() + "!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.remove.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Cosmetics] O jogador " + target.getName().getString() + " não possui o cosmético '" + idProcurado + "'!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.remove.not_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
 
         return 1;
@@ -587,26 +644,28 @@ public class CosmeticsCommand {
     // MÉTODO NOVO: GIVE SKIN
     // ==========================================
     private static int executeGiveSkin(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "giveskin")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         PokemonSkin skin = SkinConfigManager.getSkin(idProcurado);
 
         if (skin == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Skin de Pokémon '" + idProcurado + "' não encontrada no arquivo greatcosmetics_skins.json!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.skin_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         boolean success = DatabaseManager.unlockPokemonSkin(target.getUuid(), idProcurado);
+        GreatCosmetics.debugLog("/gc giveskin: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getName() + ") success=" + success);
 
         if (success) {
             syncPlayerSkins(target);
-            target.sendMessage(BackpackManager.parseMiniMessage("<green>Você desbloqueou a skin de Pokémon: <white>" + skin.getDisplayName() + "<green>!", regs), false);
+            target.sendMessage(LangConfig.chat("commands.giveskin.received", regs, "name", skin.getDisplayName()), false);
 
             if (source.getPlayer() != target) {
-                source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Skin '" + idProcurado + "' desbloqueada para " + target.getName().getString() + "!", regs), false);
+                source.sendFeedback(() -> LangConfig.chat("commands.giveskin.success_other", regs, "id", idProcurado, "player", target.getName().getString()), false);
             }
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Cosmetics] O jogador " + target.getName().getString() + " já possui a skin '" + idProcurado + "'!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.giveskin.already_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
 
         return 1;
@@ -616,17 +675,18 @@ public class CosmeticsCommand {
     // MÉTODOS NOVOS: EQUIPAR/REMOVER EM NPCs
     // ==========================================
     private static int executeNpcEquip(ServerCommandSource source, String idProcurado, ServerPlayerEntity executor) {
+        if (isBlockedByLicense(source, "npc")) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         CosmeticData data = getCosmeticById(idProcurado);
 
         if (data == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Cosmético não encontrado!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.npc.not_found", regs), false);
             return 0;
         }
 
         net.minecraft.entity.LivingEntity target = getTargetEntity(executor);
         if (target == null || target instanceof ServerPlayerEntity) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Olhe para um NPC ou Armor Stand (max 5 blocos) para equipar!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.npc.equip_no_target", regs), false);
             return 0;
         }
 
@@ -640,16 +700,18 @@ public class CosmeticsCommand {
         // ArmorFeatureRendererMixin passa a desenhar certinho em ambos.
         NpcCosmeticsConfig.equip(target.getUuid(), idProcurado);
         NpcCosmeticsConfig.broadcast(source.getServer(), target.getUuid());
+        GreatCosmetics.debugLog("/gc npc equip: '" + idProcurado + "' -> NPC/entity " + target.getUuid() + " (executor=" + source.getName() + ").");
 
-        source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Cosmético equipado com sucesso no alvo!", regs), false);
+        source.sendFeedback(() -> LangConfig.chat("commands.npc.equipped", regs), false);
         return 1;
     }
 
     private static int executeNpcRemove(ServerCommandSource source, String slotName, ServerPlayerEntity executor) {
+        if (isBlockedByLicense(source, "npc")) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         net.minecraft.entity.LivingEntity target = getTargetEntity(executor);
         if (target == null || target instanceof ServerPlayerEntity) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Olhe para um NPC ou Armor Stand (max 5 blocos) para remover!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.npc.remove_no_target", regs), false);
             return 0;
         }
 
@@ -657,7 +719,7 @@ public class CosmeticsCommand {
         try {
             virtualSlot = CosmeticData.VirtualSlot.valueOf(slotName.toUpperCase());
         } catch (IllegalArgumentException e) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Slot inválido! Use: head, face, neck, chest, back, waist, legs, feet ou hand.", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.npc.invalid_slot", regs), false);
             return 0;
         }
 
@@ -665,7 +727,8 @@ public class CosmeticsCommand {
         if (removedCount > 0) {
             NpcCosmeticsConfig.broadcast(source.getServer(), target.getUuid());
         }
-        source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] O slot " + virtualSlot.name() + " do alvo foi limpo!", regs), false);
+        GreatCosmetics.debugLog("/gc npc remove: slot " + virtualSlot.name() + " on " + target.getUuid() + " — " + removedCount + " removed (executor=" + source.getName() + ").");
+        source.sendFeedback(() -> LangConfig.chat("commands.npc.slot_cleared", regs, "slot", virtualSlot.name()), false);
         return 1;
     }
 
@@ -700,22 +763,24 @@ public class CosmeticsCommand {
     // MÉTODO NOVO: REMOVE SKIN
     // ==========================================
     private static int executeRemoveSkin(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
+        if (isBlockedByLicense(source, "removeskin")) return 0;
         if (target == null) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
         PokemonSkin skin = SkinConfigManager.getSkin(idProcurado);
 
         if (skin == null) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[Cosmetics] Erro: Skin de Pokémon '" + idProcurado + "' não encontrada no arquivo greatcosmetics_skins.json!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("general.error.skin_not_found", regs, "id", idProcurado), false);
             return 0;
         }
 
         boolean success = DatabaseManager.removePokemonSkin(target.getUuid(), idProcurado);
+        GreatCosmetics.debugLog("/gc removeskin: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getName() + ") success=" + success);
 
         if (success) {
             syncPlayerSkins(target);
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[Cosmetics] Skin de Pokémon '" + idProcurado + "' removida de " + target.getName().getString() + "!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.removeskin.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
         } else {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[Cosmetics] O jogador " + target.getName().getString() + " não possui a skin de Pokémon '" + idProcurado + "'!", regs), false);
+            source.sendFeedback(() -> LangConfig.chat("commands.removeskin.not_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
 
         return 1;
@@ -768,31 +833,31 @@ public class CosmeticsCommand {
 
         List<Text> loreLines = new ArrayList<>();
         if (data.slot != null) {
-            loreLines.add(BackpackManager.parseMiniMessage(LangConfig.getRaw("lore_slot").replace("{slot}", data.slot.name()), regs));
+            loreLines.add(LangConfig.chat("items.lore.slot", regs, "slot", data.slot.name()));
         }
 
         if (data.lure != null && data.lure.enabled) {
-            loreLines.add(BackpackManager.parseMiniMessage("<dark_gray><st>                                        </st>", regs));
-            loreLines.add(BackpackManager.parseMiniMessage("<gray>Atributos deste Cosmético:", regs));
+            loreLines.add(LangConfig.chat("items.lure.divider", regs));
+            loreLines.add(LangConfig.chat("items.lure.header", regs));
 
-            if (data.lure.lureTYPE != null && !data.lure.lureTYPE.isEmpty()) loreLines.add(BackpackManager.parseMiniMessage("<gray> ▪ Tipo Afetado: <white>" + data.lure.lureTYPE.toUpperCase(), regs));
-            if (data.lure.lureShinyMultiplier > 0) loreLines.add(BackpackManager.parseMiniMessage("<yellow>✨ Shiny Rate: <green>+" + data.lure.lureShinyMultiplier + "x", regs));
-            if (data.lure.lureExpAllMultiplier > 0) loreLines.add(BackpackManager.parseMiniMessage("<aqua>📉 Exp.All: <green>+" + data.lure.lureExpAllMultiplier + "x", regs));
-            if (data.lure.lureAmizadeMultiplier > 0) loreLines.add(BackpackManager.parseMiniMessage("<light_purple>❤ Amizade: <green>+" + data.lure.lureAmizadeMultiplier + "x", regs));
-            if (data.lure.lureEV > 0) loreLines.add(BackpackManager.parseMiniMessage("<green>🐍 EV em Batalha: <green>+" + data.lure.lureEV + "x", regs));
-            if (data.lure.lureChanceDeCaptura > 0) loreLines.add(BackpackManager.parseMiniMessage("<red>🎯 Chance de Captura: <green>+" + data.lure.lureChanceDeCaptura + "x", regs));
-            if (data.lure.lureIV > 0) loreLines.add(BackpackManager.parseMiniMessage("<gold>⭐ IVs Perfeitos Garantidos: <green>+" + data.lure.lureIV, regs));
-            if (data.lure.lureChanceIV > 0) loreLines.add(BackpackManager.parseMiniMessage("<blue>🎲 Chance de IV: <green>+" + (data.lure.lureChanceIV * 100) + "%", regs));
-            if (data.lure.lureUltraRAREMultiplier > 0) loreLines.add(BackpackManager.parseMiniMessage("<light_purple>🔮 Chance Ultra Raro: <green>+" + data.lure.lureUltraRAREMultiplier + "x", regs));
-            if (data.lure.lureHiddenAbilityMultiplier > 0) loreLines.add(BackpackManager.parseMiniMessage("<dark_aqua>👁 Hidden Ability: <green>+" + data.lure.lureHiddenAbilityMultiplier + "x", regs));
+            if (data.lure.lureTYPE != null && !data.lure.lureTYPE.isEmpty()) loreLines.add(LangConfig.chat("items.lure.type", regs, "type", data.lure.lureTYPE.toUpperCase()));
+            if (data.lure.lureShinyMultiplier > 0) loreLines.add(LangConfig.chat("items.lure.shiny", regs, "value", data.lure.lureShinyMultiplier));
+            if (data.lure.lureExpAllMultiplier > 0) loreLines.add(LangConfig.chat("items.lure.expall", regs, "value", data.lure.lureExpAllMultiplier));
+            if (data.lure.lureAmizadeMultiplier > 0) loreLines.add(LangConfig.chat("items.lure.friendship", regs, "value", data.lure.lureAmizadeMultiplier));
+            if (data.lure.lureEV > 0) loreLines.add(LangConfig.chat("items.lure.ev", regs, "value", data.lure.lureEV));
+            if (data.lure.lureChanceDeCaptura > 0) loreLines.add(LangConfig.chat("items.lure.capture", regs, "value", data.lure.lureChanceDeCaptura));
+            if (data.lure.lureIV > 0) loreLines.add(LangConfig.chat("items.lure.iv", regs, "value", data.lure.lureIV));
+            if (data.lure.lureChanceIV > 0) loreLines.add(LangConfig.chat("items.lure.iv_chance", regs, "value", (data.lure.lureChanceIV * 100)));
+            if (data.lure.lureUltraRAREMultiplier > 0) loreLines.add(LangConfig.chat("items.lure.ultrarare", regs, "value", data.lure.lureUltraRAREMultiplier));
+            if (data.lure.lureHiddenAbilityMultiplier > 0) loreLines.add(LangConfig.chat("items.lure.hidden_ability", regs, "value", data.lure.lureHiddenAbilityMultiplier));
 
             if (data.lure.lurePescaShiny > 0 || data.lure.lurePescaIvChance > 0 || data.lure.lurePescaVelocidade > 0) {
-                loreLines.add(BackpackManager.parseMiniMessage("<aqua>🎣 <b>Bônus de Pesca</b>", regs));
-                if (data.lure.lurePescaShiny > 0) loreLines.add(BackpackManager.parseMiniMessage("<gray>  ▪ <yellow>Shiny: <green>+" + data.lure.lurePescaShiny + "x", regs));
-                if (data.lure.lurePescaIvChance > 0) loreLines.add(BackpackManager.parseMiniMessage("<gray>  ▪ <green>Chance de IV: <green>+" + (data.lure.lurePescaIvChance * 100) + "%", regs));
-                if (data.lure.lurePescaVelocidade > 0) loreLines.add(BackpackManager.parseMiniMessage("<gray>  ▪ <aqua>Velocidade: <green>+" + (data.lure.lurePescaVelocidade * 100) + "%", regs));
+                loreLines.add(LangConfig.chat("items.lure.fishing_header", regs));
+                if (data.lure.lurePescaShiny > 0) loreLines.add(LangConfig.chat("items.lure.fishing_shiny", regs, "value", data.lure.lurePescaShiny));
+                if (data.lure.lurePescaIvChance > 0) loreLines.add(LangConfig.chat("items.lure.fishing_iv_chance", regs, "value", (data.lure.lurePescaIvChance * 100)));
+                if (data.lure.lurePescaVelocidade > 0) loreLines.add(LangConfig.chat("items.lure.fishing_speed", regs, "value", (data.lure.lurePescaVelocidade * 100)));
             }
-            loreLines.add(BackpackManager.parseMiniMessage("<dark_gray><st>                                        </st>", regs));
+            loreLines.add(LangConfig.chat("items.lure.divider", regs));
         }
 
         if (!loreLines.isEmpty()) item.set(DataComponentTypes.LORE, new LoreComponent(loreLines));
@@ -800,13 +865,15 @@ public class CosmeticsCommand {
     }
 
     private static int executeReload(ServerCommandSource source) {
+        if (isBlockedByLicense(source, "reload")) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
 
         try {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<yellow>[GreatCosmetics] Iniciando reload...", regs), true);
+            source.sendFeedback(() -> LangConfig.chat("general.reload.start", regs), true);
+            GreatCosmetics.debugLog("/gc reload: triggered by " + source.getName() + ".");
 
             com.f4xizzz.greatcosmetics.config.MainConfig.loadConfig();
-            LangConfig.loadLang();
+            LangConfig.load();
             CosmeticsConfig.loadConfig();
             com.f4xizzz.greatcosmetics.config.EffectConfig.loadEffects();
             com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastEffectsCatalog(source.getServer());
@@ -825,8 +892,25 @@ public class CosmeticsCommand {
             NpcCosmeticsConfig.load();
             com.f4xizzz.greatcosmetics.config.SoundConfig.loadSounds();
 
+            // Recalcula o SHA1 real do resource pack forçado (ver GreatCosmetics#refreshTextureHashForReload)
+            // ANTES do resend abaixo — assim o resend já usa o hash atualizado se a textura mudou,
+            // em vez de mandar o pacote velho agora e um segundo logo depois quando o hash mudasse
+            // em background. Bloqueia aqui (comando manual do admin, não o join de ninguém).
+            String textureHashError = com.f4xizzz.greatcosmetics.GreatCosmetics.refreshTextureHashForReload();
+            if (textureHashError != null) {
+                source.sendFeedback(() -> LangConfig.chat("general.reload.texture_hash_fail", regs, "error", textureHashError), true);
+            }
+
             // Ressincroniza animação/cosméticos de NPC pros jogadores já online (mesma lógica do JOIN).
             for (ServerPlayerEntity player : source.getServer().getPlayerManager().getPlayerList()) {
+                // Mesmo princípio do JOIN (ver GreatCosmetics#sendCatalogStateSnapshot): informativo
+                // antes do pacote de resource pack — nunca vai suprimir nada aqui de qualquer jeito
+                // (todo mundo nesse loop já está com player != null, ver ClientJoinReloadState/
+                // MinecraftClientMixin), mas atualiza o hash do catálogo que o client vai gravar no
+                // cache assim que aplicar os payloads abaixo, pra próxima ENTRADA nesse servidor
+                // já sair silenciosa.
+                com.f4xizzz.greatcosmetics.GreatCosmetics.sendCatalogStateSnapshot(player, false);
+
                 // Reenvia o resource pack forçado (MainConfig#forceTexture) — assim trocar a URL/hash
                 // e dar /gc reload já atualiza a textura de quem já está online, sem precisar relogar.
                 com.f4xizzz.greatcosmetics.GreatCosmetics.sendForcedResourcePack(player);
@@ -858,10 +942,13 @@ public class CosmeticsCommand {
             // client entrou até relogar.
             com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastMainConfig(source.getServer());
 
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<green>[GreatCosmetics] Reload concluído! Cosméticos e Skins sincronizados com " + source.getServer().getPlayerManager().getCurrentPlayerCount() + " jogadores.", regs), true);
+            GreatCosmetics.debugLog("/gc reload: completed successfully — " + CosmeticsConfig.cosmeticsMap.size() + " cosmetics, "
+                    + SkinConfigManager.getAllSkins().size() + " skins, " + com.f4xizzz.greatcosmetics.config.TagsConfig.tagsMap.size() + " tags.");
+            source.sendFeedback(() -> LangConfig.chat("general.reload.done", regs, "count", source.getServer().getPlayerManager().getCurrentPlayerCount()), true);
 
         } catch (Exception e) {
-            source.sendFeedback(() -> BackpackManager.parseMiniMessage("<red>[GreatCosmetics] Falha ao dar reload! Verifique o console.", regs), true);
+            GreatCosmetics.debugLog("/gc reload: FAILED — " + e);
+            source.sendFeedback(() -> LangConfig.chat("general.reload.fail", regs), true);
             e.printStackTrace();
         }
 
@@ -885,10 +972,12 @@ public class CosmeticsCommand {
     }
 
     private static int executeInspect(ServerCommandSource source) {
+        if (isBlockedByLicense(source, "inspect")) return 0;
         return 1;
     }
 
     private static int executeDebug(ServerCommandSource source) {
+        if (isBlockedByLicense(source, "debug")) return 0;
         RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
 
         GreatCosmetics.isDebugMode = !GreatCosmetics.isDebugMode;
@@ -899,10 +988,7 @@ public class CosmeticsCommand {
             ServerPlayNetworking.send(player, payload);
         }
 
-        source.sendFeedback(() -> BackpackManager.parseMiniMessage(
-                enabled ? "<green>[GreatCosmetics] Modo debug §aATIVADO§r<green>. Mensagens vão aparecer no console do servidor."
-                        : "<yellow>[GreatCosmetics] Modo debug §cDESATIVADO§r<yellow>.",
-                regs), true);
+        source.sendFeedback(() -> LangConfig.chat(enabled ? "general.debug.enabled" : "general.debug.disabled", regs), true);
 
         return 1;
     }

@@ -28,7 +28,7 @@ public class ClientFavoriteCosmetics {
     public static int version = 0;
 
     public static void load() {
-        File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+        File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
         if (!configDir.exists()) configDir.mkdirs();
         FILE = new File(configDir, "favorite_cosmetics.json");
 
@@ -39,7 +39,7 @@ public class ClientFavoriteCosmetics {
             Set<String> loaded = GSON.fromJson(reader, new TypeToken<Set<String>>() {}.getType());
             if (loaded != null) favoriteIds.addAll(loaded);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao carregar favorite_cosmetics.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error loading favorite_cosmetics.json: " + e.getMessage());
         }
     }
 
@@ -48,7 +48,7 @@ public class ClientFavoriteCosmetics {
         try (FileWriter writer = new FileWriter(FILE)) {
             GSON.toJson(favoriteIds, writer);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao salvar favorite_cosmetics.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error saving favorite_cosmetics.json: " + e.getMessage());
         }
     }
 

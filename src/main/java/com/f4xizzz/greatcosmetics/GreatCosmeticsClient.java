@@ -16,6 +16,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.model.loading.v1.ModelLoadingPlugin;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.model.json.JsonUnbakedModel;
@@ -33,7 +34,30 @@ import java.util.TreeMap;
 
 public class GreatCosmeticsClient implements ClientModInitializer {
 
+	private static final Logger LOGGER = LoggerFactory.getLogger("GreatCosmetics-Client");
+
+	// Espelha GreatCosmetics.isDebugMode/debugLog() do lado servidor — sincronizado via
+	// DebugModePayload (ligado/desligado por /gc debug). Cada lado imprime no PRÓPRIO console
+	// (server nunca vê os logs client automaticamente, exceto os que o próprio client decide
+	// encaminhar via DebugLogPayload — ver debugLog() abaixo).
+	public static boolean isDebugMode = false;
+
 	private static int idleTickCounter = 0;
+
+	/** Loga no console do CLIENT (sempre, se isDebugMode client estiver ligado) e também
+	 *  encaminha a mesma linha pro servidor via DebugLogPayload (C2S) — o servidor só imprime
+	 *  se o SEU PRÓPRIO isDebugMode também estiver ligado (ver receiver em GreatCosmetics#onInitialize),
+	 *  então um admin acompanhando só o console do server continua vendo o que acontece no
+	 *  client de qualquer jogador com debug ativo. */
+	public static void debugLog(String message) {
+		if (!isDebugMode) return;
+		LOGGER.info("[GreatCosmetics DEBUG] " + message);
+
+		if (MinecraftClient.getInstance().getNetworkHandler() != null
+				&& ClientPlayNetworking.canSend(com.f4xizzz.greatcosmetics.network.DebugLogPayload.ID)) {
+			ClientPlayNetworking.send(new com.f4xizzz.greatcosmetics.network.DebugLogPayload(message));
+		}
+	}
 
 	@Override
 	public void onInitializeClient() {
@@ -42,16 +66,27 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		ThemeManager.load();
 		com.f4xizzz.greatcosmetics.client.ClientFavoriteCosmetics.load();
 
+		// Limpa qualquer arquivo de textura decifrado que tenha sobrado de uma sessão anterior
+		// encerrada sem sair limpo (crash, "kill" do processo) — ver ClientForcedTextureCache.
+		com.f4xizzz.greatcosmetics.client.ClientForcedTextureCache.cleanupTempDir();
+
+		// ClientJoinReloadState nunca deve sobreviver de uma conexão pra outra — ver a classe pro
+		// porquê. "É entrada no servidor?" NÃO é mais heurística de tempo no client: o
+		// SyncCatalogStatePayload carrega um joinSync que o servidor seta (true no handler de
+		// JOIN, false no /gc reload), e o receiver desse payload arma/limpa o estado. Aqui só
+		// garantimos que nada vaza de uma conexão pra outra.
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.resetAll());
+
 		// Registra os Comandos Client-Side
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
 			dispatcher.register(ClientCommandManager.literal("lightmode").executes(context -> {
 				if (!ThemeManager.isLightMode) {
 					ThemeManager.isLightMode = true;
 					ThemeManager.save();
-					context.getSource().sendFeedback(Text.literal("§e[Tema] Modo Light ativado! Recarregando texturas..."));
+					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.lightmode.enabled"));
 					MinecraftClient.getInstance().reloadResources();
 				} else {
-					context.getSource().sendFeedback(Text.literal("§cO Modo Light já está ativado."));
+					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.lightmode.already"));
 				}
 				return 1;
 			}));
@@ -60,17 +95,27 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 				if (ThemeManager.isLightMode) {
 					ThemeManager.isLightMode = false;
 					ThemeManager.save();
-					context.getSource().sendFeedback(Text.literal("§8[Tema] Modo Dark ativado! Recarregando texturas..."));
+					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.darkmode.enabled"));
 					MinecraftClient.getInstance().reloadResources();
 				} else {
-					context.getSource().sendFeedback(Text.literal("§cO Modo Dark já está ativado."));
+					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.darkmode.already"));
 				}
 				return 1;
 			}));
 		});
 
 		MainConfig.loadConfig();
+		com.f4xizzz.greatcosmetics.config.LangConfig.load();
 		CosmeticsConfig.loadConfig();
+
+		// Pré-carrega o AutoCMDManager com os CMDs do ÚLTIMO servidor usado (persistido em disco) —
+		// TEM que ser depois de CosmeticsConfig.loadConfig() (que populou com o config local) e
+		// ANTES do primeiro bake de models (ModelLoadingPlugin roda no 1º reload de recursos, que
+		// acontece depois do onInitializeClient). Sem isso, o boot bakeia com CMDs locais/vazios e
+		// a 1ª entrada em QUALQUER servidor sempre precisa de um reloadResources() de 30s. Ver
+		// ClientBakeState.
+		lastBakedCatalogHash = com.f4xizzz.greatcosmetics.client.ClientBakeState.loadAtBoot();
+
 		SkinConfigManager.load();
 		com.f4xizzz.greatcosmetics.config.SkinGroupConfigManager.load();
 		com.f4xizzz.greatcosmetics.client.GizmoDevConfig.load();
@@ -83,6 +128,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.ShowBackpackSelectorPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("ShowBackpackSelectorPayload received: " + payload.backpackIds());
 				context.client().setScreen(new com.f4xizzz.greatcosmetics.client.gui.BackpackSelectorScreen(payload.backpackIds()));
 			});
 		});
@@ -92,7 +138,8 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DebugModePayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
-				// no-op no core — DEBUG_MODE de animação de NPC vive só no EasyNPCobblemonIntegration
+				isDebugMode = payload.enabled();
+				LOGGER.info("[GreatCosmetics] Debug mode (client) " + (isDebugMode ? "ENABLED" : "DESENABLED") + ".");
 			});
 		});
 
@@ -101,6 +148,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncSkinCatalogPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncSkinCatalogPayload received: " + payload.skins().size() + " skins, " + payload.groupColors().size() + " group colors.");
 				com.f4xizzz.greatcosmetics.config.SkinConfigManager.setSkinsFromServer(payload.skins());
 				com.f4xizzz.greatcosmetics.config.SkinGroupConfigManager.setColorsFromServer(payload.groupColors());
 				com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage.refreshSkinsIfOpen();
@@ -112,6 +160,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncDevPermissionsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncDevPermissionsPayload received: isOperator=" + payload.isOperator() + " hasGcDev=" + payload.hasGcDev() + " hasGcPermDevmode=" + payload.hasGcPermDevmode());
 				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.isOperator = payload.isOperator();
 				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.hasGcDev = payload.hasGcDev();
 				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.hasGcPermDevmode = payload.hasGcPermDevmode();
@@ -120,18 +169,21 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.GrantCosmeticPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("GrantCosmeticPayload received: " + payload.cosmeticId());
 				com.f4xizzz.greatcosmetics.client.ClientUnlockedCosmetics.unlockedIds.add(payload.cosmeticId());
 			});
 		});
 
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncMainConfigPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncMainConfigPayload received (" + payload.configJson().length() + " chars).");
 				com.f4xizzz.greatcosmetics.client.ClientMainConfigCache.setConfig(payload.configJson());
 			});
 		});
 
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncNameTagPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncNameTagPayload received: prefix='" + payload.prefix() + "' suffix='" + payload.suffix() + "'");
 				com.f4xizzz.greatcosmetics.client.ClientNameTagCache.prefix = payload.prefix();
 				com.f4xizzz.greatcosmetics.client.ClientNameTagCache.suffix = payload.suffix();
 			});
@@ -139,6 +191,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 		ClientPlayNetworking.registerGlobalReceiver(OpenWardrobePayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("OpenWardrobePayload received: hasAllUnlocked=" + payload.hasAllUnlocked() + " unlockedIds=" + payload.unlockedIds().size() + " hasBackground=" + payload.hasBackground());
 				com.f4xizzz.greatcosmetics.client.ClientUnlockedCosmetics.clear();
 				com.f4xizzz.greatcosmetics.client.ClientUnlockedCosmetics.hasAllUnlocked = payload.hasAllUnlocked();
 				com.f4xizzz.greatcosmetics.client.ClientUnlockedCosmetics.unlockedIds.addAll(payload.unlockedIds());
@@ -146,71 +199,9 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 			});
 		});
 
-		// Mochila paginada (ver CosmeticData#backpackPages/BackpackManager#openSpecificBackpackPage)
-		// — servidor manda ISSO antes de abrir/trocar a tela do baú, nunca depois (ver comentário em
-		// ClientBackpackState#pendingCosmeticId pro motivo da ordem importar).
-		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.BackpackPageInfoPayload.ID, (payload, context) -> {
-			context.client().execute(() -> {
-				com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingCosmeticId = payload.cosmeticId();
-				com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingPage = payload.page();
-				com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingTotalPages = payload.totalPages();
-				com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingSetAtMillis = System.currentTimeMillis();
-
-				// Atualiza current* JÁ AQUI também (não só via AFTER_INIT) — trocar de página não
-				// fecha/reabre mais a tela (ver BackpackManager#openSpecificBackpackPage), então pra
-				// esse caso NENHUMA tela nova vai abrir e o AFTER_INIT abaixo nunca vai rodar de novo
-				// pra consumir o pending; o overlay (que já está registrado na tela que continua
-				// aberta) precisa enxergar a página nova direto daqui. Pra abertura de verdade (tela
-				// nova), AFTER_INIT ainda roda depois e só re-seta os MESMOS valores — redundante,
-				// mas inofensivo.
-				if (payload.cosmeticId().equals(com.f4xizzz.greatcosmetics.client.ClientBackpackState.currentCosmeticId)) {
-					com.f4xizzz.greatcosmetics.client.ClientBackpackState.currentPage = payload.page();
-					com.f4xizzz.greatcosmetics.client.ClientBackpackState.totalPages = payload.totalPages();
-				}
-			});
-		});
-
-		net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
-			if (!(screen instanceof net.minecraft.client.gui.screen.ingame.GenericContainerScreen containerScreen)) return;
-			if (com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingCosmeticId == null) return;
-
-			// QUALQUER GenericContainerScreen conta pra esse "instanceof" — inclusive baús de
-			// verdade e telas de OUTROS mods/plugins que usam o mesmo handler genérico (ex: um menu
-			// tipo /flan, relatado acontecendo de verdade). Sem essa checagem, essa tela sem nenhuma
-			// relação com a mochila herdava as setas/texto de página por engano. O servidor sempre
-			// manda BackpackPageInfoPayload IMEDIATAMENTE antes de abrir a tela (mesmo tick) — se já
-			// se passou mais que uma folga generosa de rede, esse pending é de uma tentativa antiga
-			// que nunca foi consumida pela mochila de verdade.
-			//
-			// (Uma checagem extra por contagem de slots — rows*9+36 — chegou a existir aqui também,
-			// mas ela dependia de resolver o CosmeticData pelo id no client bem nesse instante do
-			// AFTER_INIT, e acabava rejeitando mochilas paginadas DE VERDADE (o botão/texto de página
-			// simplesmente não aparecia), então foi removida — a checagem de idade sozinha já cobre
-			// o caso real relatado do /flan.)
-			long pendingAgeMs = System.currentTimeMillis() - com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingSetAtMillis;
-			if (pendingAgeMs > 3000) {
-				com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingCosmeticId = null;
-				return;
-			}
-
-			com.f4xizzz.greatcosmetics.client.ClientBackpackState.currentCosmeticId = com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingCosmeticId;
-			com.f4xizzz.greatcosmetics.client.ClientBackpackState.currentPage = com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingPage;
-			com.f4xizzz.greatcosmetics.client.ClientBackpackState.totalPages = com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingTotalPages;
-			// Consome — sem isso, o PRÓXIMO baú de verdade (sem relação nenhuma com mochila) que o
-			// jogador abrisse depois herdaria esse cosmeticId por engano (ver
-			// ClientBackpackState#pendingCosmeticId).
-			com.f4xizzz.greatcosmetics.client.ClientBackpackState.pendingCosmeticId = null;
-
-			if (com.f4xizzz.greatcosmetics.client.ClientBackpackState.totalPages > 1) {
-				net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.afterRender(screen).register((s, drawContext, mouseX, mouseY, tickDelta) ->
-						com.f4xizzz.greatcosmetics.client.gui.BackpackPageOverlay.render(drawContext, containerScreen));
-				net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents.allowMouseClick(screen).register((s, mouseX, mouseY, button) ->
-						com.f4xizzz.greatcosmetics.client.gui.BackpackPageOverlay.handleClick(mouseX, mouseY, button));
-			}
-		});
-
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncPlayerCosmeticsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncPlayerCosmeticsPayload received: player=" + payload.playerUuid() + " equipados=" + payload.equippedCosmetics());
 				com.f4xizzz.greatcosmetics.client.ClientCosmeticCache.setEquipped(payload.playerUuid(), payload.equippedCosmetics());
 				com.f4xizzz.greatcosmetics.client.ClientCosmeticCache.setSettings(
 						payload.playerUuid(),
@@ -225,12 +216,14 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncTagsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncTagsPayload received: " + payload.tagsMap().size() + " tags in the catalog.");
 				com.f4xizzz.greatcosmetics.client.ClientTagsCache.setAllTags(payload.tagsMap());
 			});
 		});
 
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncPlayerTagsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncPlayerTagsPayload received: owned=" + payload.ownedTagIds() + " equipada=" + payload.equippedTagId());
 				com.f4xizzz.greatcosmetics.client.ClientTagsCache.setPlayerTags(payload.ownedTagIds(), payload.equippedTagId());
 			});
 		});
@@ -244,6 +237,72 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 				java.lang.reflect.Type type = new com.google.gson.reflect.TypeToken<java.util.Map<String, com.f4xizzz.greatcosmetics.config.EffectData>>(){}.getType();
 				java.util.Map<String, com.f4xizzz.greatcosmetics.config.EffectData> map = new com.google.gson.Gson().fromJson(payload.jsonData(), type);
 				com.f4xizzz.greatcosmetics.config.EffectConfig.effectsMap = map != null ? map : new java.util.HashMap<>();
+				debugLog("SyncEffectsPayload received: " + com.f4xizzz.greatcosmetics.config.EffectConfig.effectsMap.size() + " effects in the catalog.");
+			});
+		});
+
+		// ==========================================
+		// ESTADO DO CATÁLOGO/TEXTURA FORÇADA (ver Fase 3 do plano — cache criptografado por
+		// servidor + supressão da SplashOverlay quando nada mudou). Mandado ANTES do resource pack
+		// forçado e antes dos dois payloads de catálogo abaixo (ver GreatCosmetics#
+		// sendCatalogStateSnapshot) — só decide/arma coisas, nunca aplica dado nenhum sozinho.
+		// ==========================================
+		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncCatalogStatePayload.ID, (payload, context) -> {
+			context.client().execute(() -> {
+				long now = System.currentTimeMillis();
+				com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.stash(
+						payload.catalogHash(), payload.forceTextureEnabled(), payload.textureSha1(), payload.texturePackId());
+
+				String serverKey = com.f4xizzz.greatcosmetics.client.ClientServerIdentity.currentServerKey();
+				boolean catalogUnchanged = payload.catalogHash() != null && payload.catalogHash().equals(lastBakedCatalogHash);
+				debugLog("SyncCatalogStatePayload received: catalogHash=" + payload.catalogHash() + " forceTextureEnabled=" + payload.forceTextureEnabled()
+						+ " textureSha1=" + payload.textureSha1() + " serverKey=" + serverKey + " joinSync=" + payload.joinSync()
+						+ " catalogUnchanged=" + catalogUnchanged + " (lastBaked=" + lastBakedCatalogHash + ")");
+
+				// joinSync = o servidor diz DEFINITIVAMENTE se este sync é uma ENTRADA no servidor
+				// (pode suprimir/pular) ou um /gc reload ao vivo (nunca suprime — o admin pediu o
+				// recarregamento pra todo mundo online de propósito). Sem heurística de tempo no
+				// client (a tentativa anterior fechava a "janela de entrada" antes dos payloads
+				// sequer serem processados num modpack pesado).
+				if (!payload.joinSync()) {
+					com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.clearJoinSync();
+					debugLog("SyncCatalogStatePayload: joinSync=false (/gc reload ao vivo) — nada suprimido/pulado, recarregamento normal.");
+					return;
+				}
+				com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.markJoinSync(now);
+				if (serverKey == null) {
+					debugLog("SyncCatalogStatePayload: serverKey nulo (singleplayer/LAN) — sem otimização.");
+					return;
+				}
+
+				boolean textureMatches;
+				if (!payload.forceTextureEnabled()) {
+					textureMatches = true;
+				} else {
+					com.f4xizzz.greatcosmetics.client.ClientForcedTextureCache.Entry entry =
+							com.f4xizzz.greatcosmetics.client.ClientForcedTextureCache.getEntry(serverKey);
+					textureMatches = entry != null
+							&& payload.textureSha1().equalsIgnoreCase(entry.declaredTextureSha1)
+							&& com.f4xizzz.greatcosmetics.client.ClientForcedTextureCache.hasEncryptedFile(entry);
+				}
+
+				if (catalogUnchanged && !payload.forceTextureEnabled()) {
+					// Caminho mais comum: catálogo idêntico ao já bakeado e sem textura forçada —
+					// NENHUM reloadResources() precisa acontecer. Os receivers de cosmético/armadura
+					// só reconstroem o GeoModelRegistry direto. Sem reload => sem SplashOverlay,
+					// nem precisa suprimir nada.
+					com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.armSkipReload();
+					debugLog("SyncCatalogStatePayload: catálogo igual + sem textura forçada — entrada silenciosa (pulando reloadResources() nesta entrada).");
+				} else if (catalogUnchanged && payload.forceTextureEnabled() && textureMatches) {
+					// O vanilla vai recarregar pro pacote forçado de qualquer jeito (mesmo vindo do
+					// cache local) — não dá pra pular esse reload, mas dá pra esconder a tela dele.
+					// O rebuild do GeoModelRegistry encadeia depois desse reload (não é pulado).
+					com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.armSuppress(now);
+					debugLog("SyncCatalogStatePayload: catálogo igual + textura forçada em cache — armando supressão da SplashOverlay.");
+				} else {
+					debugLog("SyncCatalogStatePayload: catalogUnchanged=" + catalogUnchanged + " forceTextureEnabled=" + payload.forceTextureEnabled()
+							+ " textureMatches=" + textureMatches + " — entrada normal (reload + tela).");
+				}
 			});
 		});
 
@@ -252,6 +311,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncArmorCosmeticsPayload received: " + payload.armorCosmetics().size() + " converted armor pieces, allowResourceReload=" + payload.allowResourceReload());
 				com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.setArmorCosmetics(payload.armorCosmetics());
 
 				// Mesmo tratamento do receiver de SyncCosmeticsPayload abaixo (mesmos dois bugs já
@@ -269,9 +329,15 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 				// (e nunca devolvia) os .geo dos cosméticos NORMAIS — bastava salvar uma armadura
 				// pra derrubar todo cosmético .geo normal, e vice-versa salvando um normal derrubava
 				// as armaduras .geo (ver o outro receiver abaixo, mesmo bug espelhado).
-				if (payload.allowResourceReload() && MinecraftClient.getInstance().world != null) {
-					runAfterResourceReload(GreatCosmeticsClient::rebuildAllGeoModels);
+				String armorCatalogHash = com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.peekCatalogHash();
+				if (canSkipJoinReload(armorCatalogHash)) {
+					debugLog("SyncArmorCosmeticsPayload: catálogo IGUAL ao já bakeado + entrada silenciosa — pulando reloadResources(), só rebuild direto.");
+					rebuildAllGeoModels();
+				} else if (payload.allowResourceReload() && MinecraftClient.getInstance().world != null) {
+					debugLog("SyncArmorCosmeticsPayload: scheduling GeoModel rebuild AFTER reloadResources().");
+					runAfterResourceReload(GreatCosmeticsClient::rebuildAllGeoModels, armorCatalogHash);
 				} else {
+					debugLog("SyncArmorCosmeticsPayload: GeoModel rebuild directly (no reloadResources).");
 					rebuildAllGeoModels();
 				}
 			});
@@ -282,6 +348,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(SyncCosmeticsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
+				debugLog("SyncCosmeticsPayload received: " + payload.configMap().size() + " cosmetics, allowResourceReload=" + payload.allowResourceReload());
 				CosmeticsConfig.cosmeticsMap = payload.configMap();
 
 				AutoCMDManager.clear();
@@ -340,10 +407,11 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 						} else if (modelMap.containsKey(id)) {
 							AutoCMDManager.registeredModels.put(fullModelPath, data.cmd);
 						} else {
-							System.err.println("[GreatCosmetics] AVISO: cosmético '" + id + "' — iconKey '" + iconKey
-									+ "' não achou textures/icons/" + iconKey + ".png (namespace 'greatcosmetics') nem um "
-									+ "models/" + id + ".json. Ícones encontrados no resourcepack: " + iconMap.keySet()
-									+ ". Esse cosmético vai ficar com um visual quebrado/genérico até um dos dois existir.");
+							System.err.println("[GreatCosmetics] WARNING: cosmetic '" + id + "' — iconKey '" + iconKey
+									+ "' did not find textures/icons/" + iconKey + ".png (namespace 'greatcosmetics') nor a "
+									+ "models/" + id + ".json. Icons found in the resourcepack: " + iconMap.keySet()
+									+ ". This cosmetic will look broken/generic until one of the two exists.");
+							debugLog("Cosmetic '" + id + "' with NO resolved icon/model (cmd=" + data.cmd + ") — fell through to fallback.");
 							AutoCMDManager.registeredModels.put(fullModelPath + "_fallback", data.cmd);
 						}
 					}
@@ -418,8 +486,16 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 					// (dois reloads concorrentes de verdade) fazia um atropelar o outro e corromper o
 					// registro de models GeckoLib pros DOIS lados, deixando .geo em ícone 2D até
 					// alguém salvar uma edição manual (que não passa por reloadResources() de novo).
-					runAfterResourceReload(rebuildGeoModels);
+					String cosmeticsCatalogHash = com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.peekCatalogHash();
+					if (canSkipJoinReload(cosmeticsCatalogHash)) {
+						debugLog("SyncCosmeticsPayload: catálogo IGUAL ao já bakeado + entrada silenciosa — pulando reloadResources(), só rebuild direto.");
+						rebuildGeoModels.run();
+					} else {
+						debugLog("SyncCosmeticsPayload: scheduling GeoModel rebuild AFTER reloadResources().");
+						runAfterResourceReload(rebuildGeoModels, cosmeticsCatalogHash);
+					}
 				} else {
+					debugLog("SyncCosmeticsPayload: GeoModel rebuild directly (no reloadResources).");
 					rebuildGeoModels.run();
 				}
 			});
@@ -464,9 +540,9 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 				var cmdComp = stack.get(DataComponentTypes.CUSTOM_MODEL_DATA);
 				if (cmdComp != null) {
 					int currentCmd = (int) cmdComp.value();
-					lines.add(Text.literal("§8§m                                     "));
-					lines.add(Text.literal("§e[Scanner] §fID Atual: §c" + currentCmd));
-					lines.add(Text.literal("§8§m                                     "));
+					lines.add(com.f4xizzz.greatcosmetics.config.LangConfig.text("items.scanner.divider"));
+					lines.add(com.f4xizzz.greatcosmetics.config.LangConfig.text("items.scanner.line", "cmd", currentCmd));
+					lines.add(com.f4xizzz.greatcosmetics.config.LangConfig.text("items.scanner.divider"));
 				}
 			}
 		});
@@ -520,6 +596,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 							}
 						}
 					} catch (Exception e) {
+						debugLog("resolveModel: failed reading models/" + id.getPath() + ".json — " + e);
 					}
 				}
 				return null;
@@ -581,10 +658,14 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 						overridesJson.append(" ] }");
 
+						debugLog("modifyModelOnLoad(carved_pumpkin): generating " + sortedOverrides.size() + " overrides ("
+								+ AutoCMDManager.registeredModels.size() + " models + " + AutoCMDManager.registeredIcons.size() + " icons).");
+
 						try {
 							JsonUnbakedModel dummyModel = JsonUnbakedModel.deserialize(overridesJson.toString());
 							jsonModel.getOverrides().addAll(dummyModel.getOverrides());
 						} catch (Exception e) {
+							debugLog("modifyModelOnLoad(carved_pumpkin): FAILED to apply overrides — " + e);
 							e.printStackTrace();
 						}
 					}
@@ -629,10 +710,48 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 	// chegar dispara o único reload de verdade, o outro só encadeia no MESMO future.
 	private static java.util.concurrent.CompletableFuture<Void> pendingResourceReload = null;
 
-	private static void runAfterResourceReload(Runnable afterReload) {
+	/** Hash do catálogo (cosméticos+armaduras) contra o qual os models estão bakeados AGORA —
+	 *  em memória, começa null a cada boot do jogo (no boot os models são bakeados com o
+	 *  AutoCMDManager VAZIO, sem os CMDs do servidor; a 1ª entrada em qualquer servidor sempre
+	 *  precisa de um reload pra re-bakear com os CMDs certos, ver ModelLoadingPlugin/
+	 *  modifyModelOnLoad). Atualizado só quando um reloadResources() de verdade termina. Se numa
+	 *  entrada o catálogo recebido == esse valor, os models já estão bakeados certo e o reload
+	 *  (e a tela vermelha) é puro desperdício — pulamos. */
+	private static volatile String lastBakedCatalogHash = null;
+
+	/** true = essa entrada no servidor NÃO precisa de reloadResources() (nem da tela vermelha):
+	 *  o receiver de SyncCatalogStatePayload já confirmou (joinSync do servidor + catálogo idêntico
+	 *  ao já bakeado + sem textura forçada) e armou o skip em ClientJoinReloadState — aqui só
+	 *  reconfirmamos que o hash que vamos deixar de re-bakear realmente já é o {@code lastBakedCatalogHash}.
+	 *  Num /gc reload ao vivo (joinSync=false) o skip nunca é armado, então sempre devolve false. */
+	private static boolean canSkipJoinReload(String catalogHash) {
+		if (!com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.shouldSkipJoinReload(System.currentTimeMillis())) return false;
+		return catalogHash != null && catalogHash.equals(lastBakedCatalogHash);
+	}
+
+	private static void runAfterResourceReload(Runnable afterReload, String catalogHashToRecord) {
 		if (pendingResourceReload == null) {
+			debugLog("runAfterResourceReload: triggering a real reloadResources().");
 			pendingResourceReload = MinecraftClient.getInstance().reloadResources()
-					.whenComplete((v, ex) -> pendingResourceReload = null);
+					.whenComplete((v, ex) -> {
+						pendingResourceReload = null;
+						if (ex != null) {
+							debugLog("runAfterResourceReload: reloadResources() finished with error — " + ex);
+						} else {
+							debugLog("runAfterResourceReload: reloadResources() completed.");
+							if (catalogHashToRecord != null) {
+								lastBakedCatalogHash = catalogHashToRecord;
+								// Persiste em disco (por servidor) — sem isso, o lastBakedCatalogHash
+								// zera a cada reabertura do launcher e a 1ª entrada SEMPRE recarrega.
+								// Roda no whenComplete (ainda conectado), então currentServerKey() é válido.
+								com.f4xizzz.greatcosmetics.client.ClientBakeState.record(
+										com.f4xizzz.greatcosmetics.client.ClientServerIdentity.currentServerKey(),
+										catalogHashToRecord);
+							}
+						}
+					});
+		} else {
+			debugLog("runAfterResourceReload: chaining onto the reload already in progress.");
 		}
 		pendingResourceReload.thenRun(() -> MinecraftClient.getInstance().execute(afterReload));
 	}
@@ -645,7 +764,12 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 	 *  CosmeticsConfig.cosmeticsMap/ClientArmorCosmeticsCache.armorCosmetics — que já foram
 	 *  atualizados pelo receiver ANTES de chamar isso, então sempre reflete os dados certos
 	 *  independente de qual dos dois payloads (normal ou armadura) disparou o rebuild. */
-	private static void rebuildAllGeoModels() {
+	// Público (não mais private) — DevCosmeticsSubPage#discardChanges() também precisa chamar
+	// isso, ver o comentário lá pro motivo (Descartar nunca passava pelo round-trip de rede que
+	// normalmente aciona isso pra Salvar).
+	public static void rebuildAllGeoModels() {
+		debugLog("rebuildAllGeoModels: clearing GeoModelRegistry and rebuilding (" + CosmeticsConfig.cosmeticsMap.size()
+				+ " normal cosmetics + " + com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.armorCosmetics.size() + " armor pieces).");
 		com.f4xizzz.greatcosmetics.geckolib.GeoModelRegistry.clear();
 		registerGeoModels(CosmeticsConfig.cosmeticsMap);
 		registerGeoModels(com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.armorCosmetics);
@@ -724,13 +848,15 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 				}
 
 				if (geoId == null || texId == null) {
-					System.err.println("[GreatCosmetics] AVISO: geoModelId '" + part.geoModelId + "' não achou geo/textura no resourcepack "
+					System.err.println("[GreatCosmetics] WARNING: geoModelId '" + part.geoModelId + "' did not find geo/texture in the resourcepack "
 							+ (part.useExactPath
 									? "(caminho exato esperado: geo/" + key + ".geo.json + textures/" + key + ".png em algum namespace). "
 									: "(esperado: geo/item/" + baseName + ".geo.json + textures/item/" + baseName + ".png em algum namespace). ")
-							+ "Essa parte vai ficar invisível até os arquivos existirem.");
+							+ "This part will be invisible until the files exist.");
+					debugLog("registerGeoModels: MISSING geo/texture for geoModelId='" + part.geoModelId + "' (resolvedCmd=" + part.resolvedCmd + ").");
 					continue;
 				}
+				debugLog("registerGeoModels: registered geoModelId='" + part.geoModelId + "' -> geo=" + geoId + " tex=" + texId + " anim=" + animId + " cmd=" + part.resolvedCmd);
 				com.f4xizzz.greatcosmetics.geckolib.GeoModelRegistry.register(part.resolvedCmd, geoId, texId, animId);
 			}
 		}

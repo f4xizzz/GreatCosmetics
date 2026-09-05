@@ -5,7 +5,6 @@ import net.minecraft.resource.NamespaceResourceManager;
 import net.minecraft.resource.Resource;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -18,9 +17,6 @@ import java.util.function.Predicate;
 
 @Mixin(NamespaceResourceManager.class)
 public abstract class ResourceManagerMixin {
-
-    @Unique
-    private static final boolean GREATCOSMETICS_DEBUG_MODE = true; // Flag de Diagnóstico
 
     // =========================================================================
     // 1. CARREGAMENTO DIRETO (Imagens isoladas, fundos específicos)
@@ -37,9 +33,7 @@ public abstract class ResourceManagerMixin {
 
                     if (lightResource.isPresent()) {
                         cir.setReturnValue(lightResource);
-                        if (GREATCOSMETICS_DEBUG_MODE) {
-                            System.out.println("[GreatCosmetics-Debug] Substituiu (Get): " + id);
-                        }
+                        com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("ResourceManagerMixin: replaced (Get) " + id + " -> " + lightId);
                     }
                 } catch (Exception e) {} // Ignora falhas para usar a textura Dark de segurança
             }
@@ -84,18 +78,15 @@ public abstract class ResourceManagerMixin {
 
                             newMap.put(normalId, entry.getValue());
 
-                            if (GREATCOSMETICS_DEBUG_MODE) {
-                                System.out.println("[GreatCosmetics-Debug] Substituiu (Find): " + normalId);
-                            }
+                            com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("ResourceManagerMixin: replaced (Find) " + normalId);
                         }
 
                         cir.setReturnValue(newMap);
                     }
                 } catch (Exception e) {
-                    if (GREATCOSMETICS_DEBUG_MODE) {
-                        System.err.println("[GreatCosmetics-Debug] Erro ao injetar lote de imagens!");
-                        e.printStackTrace();
-                    }
+                    com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("ResourceManagerMixin: error injecting image batch (findResources) — " + e);
+                    System.err.println("[GreatCosmetics-Debug] Error injecting image batch!");
+                    e.printStackTrace();
                 }
             }
         }
@@ -116,9 +107,7 @@ public abstract class ResourceManagerMixin {
 
                     if (!lightResources.isEmpty()) {
                         cir.setReturnValue(lightResources);
-                        if (GREATCOSMETICS_DEBUG_MODE) {
-                            System.out.println("[GreatCosmetics-Debug] Substituiu (GetAll): " + id);
-                        }
+                        com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("ResourceManagerMixin: replaced (GetAll) " + id + " -> " + lightId);
                     }
                 } catch (Exception e) {}
             }

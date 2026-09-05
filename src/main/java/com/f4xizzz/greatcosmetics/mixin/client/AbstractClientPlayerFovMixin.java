@@ -1,5 +1,6 @@
 package com.f4xizzz.greatcosmetics.mixin.client;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -27,15 +28,31 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *  qualquer cosmético com bônus de velocidade no chão/água distorcia o FOV por esse mecanismo, até
  *  ANDANDO NORMAL sem sprintar (a razão já sai de 1.0 só pelo atributo estar alterado), mesmo sem
  *  nenhuma linha nossa escrevendo em getFov() diretamente — daí a sensação de "o FOV não volta pro
- *  original do player", já que esse desvio nem dependia do voo (só o flying=true já era coberto). */
+ *  original do player", já que esse desvio nem dependia do voo (só o flying=true já era coberto).
+ *  Pra chão/água a solução continua sendo zerar o multiplicador (1.0F) por completo — não faz
+ *  sentido esses cosméticos mexerem no FOV.
+ *
+ *  Voando é diferente: o efeito de "FOV sobe com a velocidade" É desejado (dá a sensação de
+ *  velocidade do voo), só que sem teto ele passava do razoável com cosméticos de flySpeedMultiplier
+ *  alto (o mesmo componente acima, só que agora puxado pelo GENERIC_MOVEMENT_SPEED quando um
+ *  cosmético de velocidade no chão/água está equipado JUNTO com o de voo — flySpeed em si é
+ *  PlayerAbilities#flySpeed, um campo separado que não entra nessa conta, mas a razão sobe do
+ *  mesmo jeito). Por isso, voando a gente DEIXA o multiplicador natural do vanilla passar, só bota
+ *  um teto: o FOV final na tela (base do slider de Opções × multiplicador) nunca passa de
+ *  MAX_FLYING_FOV_DEGREES, nunca importa o quão rápido o cosmético deixe o jogador. */
 @Mixin(AbstractClientPlayerEntity.class)
 public abstract class AbstractClientPlayerFovMixin {
 
     private static final Identifier GROUND_SPEED_MODIFIER_ID = Identifier.of("greatcosmetics", "ground_speed_boost");
     private static final Identifier SWIM_SPEED_MODIFIER_ID = Identifier.of("greatcosmetics", "swim_speed_boost");
 
+    /** Teto do FOV EFETIVO (graus, na tela — base do slider de Opções × multiplicador), só
+     *  enquanto voando. Pedido do usuário: acima disso o efeito de velocidade no FOV incomoda
+     *  mais do que ajuda. */
+    private static final float MAX_FLYING_FOV_DEGREES = 90.0F;
+
     @Inject(method = "getFovMultiplier", at = @At("RETURN"), cancellable = true)
-    private void greatcosmetics$disableCosmeticFovBoost(CallbackInfoReturnable<Float> cir) {
+    private void greatcosmetics$capCosmeticFovBoost(CallbackInfoReturnable<Float> cir) {
         AbstractClientPlayerEntity self = (AbstractClientPlayerEntity) (Object) this;
 
         boolean flying = self.getAbilities().flying;
@@ -44,7 +61,18 @@ public abstract class AbstractClientPlayerFovMixin {
         boolean hasCosmeticSpeedBoost = speedAttr != null
                 && (speedAttr.hasModifier(GROUND_SPEED_MODIFIER_ID) || speedAttr.hasModifier(SWIM_SPEED_MODIFIER_ID));
 
-        if (flying || hasCosmeticSpeedBoost) {
+        if (flying) {
+            // Deixa o multiplicador natural do vanilla passar (o FOV sobe com a velocidade, efeito
+            // desejado enquanto voa) — só limita o resultado FINAL em graus a
+            // MAX_FLYING_FOV_DEGREES, convertendo de volta pra multiplicador em cima do FOV base
+            // que o jogador escolheu nas Opções (pode ser diferente de jogador pra jogador).
+            int baseFovDegrees = MinecraftClient.getInstance().options.getFov().getValue();
+            if (baseFovDegrees > 0) {
+                float maxMultiplier = MAX_FLYING_FOV_DEGREES / baseFovDegrees;
+                float vanillaMultiplier = cir.getReturnValue();
+                cir.setReturnValue(Math.min(vanillaMultiplier, maxMultiplier));
+            }
+        } else if (hasCosmeticSpeedBoost) {
             cir.setReturnValue(1.0F);
         }
     }

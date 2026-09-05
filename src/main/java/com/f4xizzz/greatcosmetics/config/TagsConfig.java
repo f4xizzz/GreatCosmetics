@@ -27,7 +27,7 @@ import java.util.Set;
  */
 public class TagsConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File FILE = new File(DIR, "tags.json");
 
     public static Map<String, TagData> tagsMap = new HashMap<>();
@@ -44,7 +44,8 @@ public class TagsConfig {
                     tagsMap = loaded;
                 }
             } catch (Exception e) {
-                System.err.println("[GreatCosmetics] Erro ao carregar tags.json!");
+                System.err.println("[GreatCosmetics] Error loading tags.json!");
+                com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("TagsConfig: FAILED to load tags.json — " + e);
                 e.printStackTrace();
             }
         }
@@ -55,6 +56,7 @@ public class TagsConfig {
 
         syncGroupsFromLuckPerms();
         save();
+        com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("TagsConfig: load completed — " + tagsMap.size() + " tag(s) in the catalog.");
     }
 
     /**
@@ -85,7 +87,7 @@ public class TagsConfig {
                 data.weight = group.weight();
                 tagsMap.put(group.name(), data);
 
-                System.out.println("[GreatCosmetics] Tag de grupo importada do LuckPerms: " + group.name());
+                System.out.println("[GreatCosmetics] Tag group importada do LuckPerms: " + group.name());
             } else if (existing.isGroupTag && (existing.tag == null || existing.tag.isBlank())) {
                 // Migração: entradas importadas ANTES do TAG vir preenchido automaticamente
                 // (versão anterior) recebem o prefix agora — só quando ainda está vazio, então
@@ -104,7 +106,7 @@ public class TagsConfig {
         for (String id : toRemove) {
             tagsMap.remove(id);
             DatabaseManager.removeAllOwnershipOfTag(id);
-            System.out.println("[GreatCosmetics] Tag de grupo '" + id + "' removida do catálogo (grupo está na blacklist).");
+            System.out.println("[GreatCosmetics] Tag group '" + id + "' removed from catalog (group is in the blacklist).");
         }
     }
 
@@ -112,7 +114,7 @@ public class TagsConfig {
         try (FileWriter writer = new FileWriter(FILE)) {
             GSON.toJson(tagsMap, writer);
         } catch (IOException e) {
-            System.err.println("[GreatCosmetics] Erro ao salvar tags.json!");
+            System.err.println("[GreatCosmetics] Error saving tags.json!");
             e.printStackTrace();
         }
     }

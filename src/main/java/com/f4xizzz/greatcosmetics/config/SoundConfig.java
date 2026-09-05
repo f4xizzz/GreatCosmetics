@@ -11,7 +11,7 @@ import java.io.IOException;
 
 public class SoundConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics/sounds.json");
+    private static final File FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics/sounds.json");
 
     public static SoundData data = new SoundData();
 
@@ -72,12 +72,14 @@ public class SoundConfig {
             try (FileReader reader = new FileReader(FILE)) {
                 data = GSON.fromJson(reader, SoundData.class);
             } catch (Exception e) {
-                System.err.println("[SASCosmetics] Erro ao ler sounds.json! Recriando backup...");
+                System.err.println("[GreatCosmetics] Error reading sounds.json! Recreating backup...");
+                com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("SoundConfig: FAILED to read sounds.json — " + e + ". Recreating with defaults.");
                 saveSounds();
             }
         } else {
             saveSounds();
         }
+        com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("SoundConfig: sounds.json loaded.");
     }
 
     public static void saveSounds() {

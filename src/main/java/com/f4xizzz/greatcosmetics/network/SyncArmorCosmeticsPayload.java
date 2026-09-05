@@ -51,9 +51,6 @@ public record SyncArmorCosmeticsPayload(Map<String, CosmeticData> armorCosmetics
             data.toughness = buf.readDouble();
             data.isBackpack = buf.readBoolean();
             data.backpackRows = buf.readInt();
-            // Mesmo bug/fix do SyncCosmeticsPayload — backpackPages nunca era transmitido aqui,
-            // então voltava pro default (1) a cada resync, mesmo já salvo certo no servidor.
-            data.backpackPages = buf.readInt();
             data.backpackDisplayName = buf.readString();
             data.EnableFly = buf.readBoolean();
             data.AutoFeed = buf.readBoolean();
@@ -162,7 +159,6 @@ public record SyncArmorCosmeticsPayload(Map<String, CosmeticData> armorCosmetics
             buf.writeDouble(data.toughness);
             buf.writeBoolean(data.isBackpack);
             buf.writeInt(data.backpackRows);
-            buf.writeInt(data.backpackPages);
             buf.writeString(data.backpackDisplayName != null ? data.backpackDisplayName : "");
             buf.writeBoolean(data.EnableFly);
             buf.writeBoolean(data.AutoFeed);

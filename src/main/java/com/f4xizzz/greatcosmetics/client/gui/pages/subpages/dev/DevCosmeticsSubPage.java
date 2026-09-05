@@ -88,22 +88,58 @@ public class DevCosmeticsSubPage extends DevSubPage {
         boolean toggleValue; java.util.function.Consumer<Boolean> onToggle; Runnable onButtonClick;
         String effectRegistryId; int effectLevel; java.util.function.BiConsumer<String, Integer> onEffectLevelChange;
 
+        // Identidade ESTÁVEL da row (independente do idioma) — toda checagem de lógica
+        // (syncGizmoToFields, cor de botão, etc) compara isto, nunca o `label` (que agora é
+        // texto traduzível vindo do Lang). Por padrão vale o próprio label; rows cujo label
+        // foi traduzido e que ainda são chave de lógica setam um id fixo em inglês via withId().
+        String id;
+
+        // Explicação que aparece como tooltip ao passar o mouse em cima do LABEL da row (ver
+        // renderRowTooltip) — null = sem tooltip. Existe pra tirar as informações técnicas que
+        // antes ficavam direto no nome do campo (ex: "Main ID (File Name)") e explicar de verdade
+        // o que o campo faz, sem obrigar quem tá vendo a lista toda a ler um texto longo o tempo
+        // inteiro — só aparece quando o jogador passa o mouse em cima, pedido explícito do usuário
+        // pra deixar o Dev Studio mais fácil de entender pra quem tá começando.
+        String tooltip;
+
+        // Bloqueia o clique de um BUTTON (visual acinzentado + onButtonClick não roda) — usado
+        // pelo "Config Part" quando a Part é de uma armadura-cosmético real (sem GeckoLib): nesse
+        // caso o render usa o modelo 3D de verdade da armadura (ver ArmorFeatureRendererMixin#
+        // greatcosmetics$renderRealArmor), que já encaixa sozinho e IGNORA offset/rotação/escala —
+        // deixar o botão clicável sugeria que esses campos fariam alguma diferença, quando não
+        // fazem nada nesse caso. O "tooltip" explica o motivo pro jogador que passar o mouse.
+        boolean disabled;
+
         // Fonte de sugestões de autocomplete pra esse campo (null = sem autocomplete). Supplier (não
         // uma List pronta) porque algumas fontes (scan do resourcepack, ids já configurados no mod)
         // podem mudar depois que a row foi criada — reavaliar só quando o campo tem foco de verdade
         // evita escanear resourcepack toda hora sem necessidade.
         java.util.function.Supplier<java.util.List<String>> suggestions;
 
-        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.type = type; this.textField = field; }
-        EditorRow(String label, boolean startVal, java.util.function.Consumer<Boolean> onToggle) { this.label = label; this.type = RowType.TOGGLE; this.toggleValue = startVal; this.onToggle = onToggle; }
-        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
+        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.id = label; this.type = type; this.textField = field; }
+        EditorRow(String label, boolean startVal, java.util.function.Consumer<Boolean> onToggle) { this.label = label; this.id = label; this.type = RowType.TOGGLE; this.toggleValue = startVal; this.onToggle = onToggle; }
+        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.id = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
         EditorRow(String label, String effectRegistryId, int startLevel, java.util.function.BiConsumer<String, Integer> onEffectLevelChange) {
-            this.label = label; this.type = RowType.EFFECT;
+            this.label = label; this.id = label; this.type = RowType.EFFECT;
             this.effectRegistryId = effectRegistryId; this.effectLevel = startLevel; this.onEffectLevelChange = onEffectLevelChange;
         }
+
+        EditorRow withId(String id) { this.id = id; return this; }
+        EditorRow withTooltip(String tooltip) { this.tooltip = tooltip; return this; }
+        EditorRow withDisabled(boolean disabled) { this.disabled = disabled; return this; }
     }
 
+    // Preenchido no render() de cada frame (ver renderRowTooltip) com a row cujo LABEL o mouse
+    // está em cima agora — desenhado por ÚLTIMO (depois de toda a lista, e depois até do popup),
+    // senão outra row/o próprio popup desenharia por cima da caixinha do tooltip.
+    private EditorRow hoveredTooltipRow = null;
+
     private final List<EditorRow> rows = new ArrayList<>();
+
+    /** Atalho pro Lang (config/GreatCosmetics/lang/devstudio.json). */
+    private static String L(String key, Object... ph) {
+        return com.f4xizzz.greatcosmetics.config.LangConfig.legacy(key, ph);
+    }
 
     // Itens selecionáveis do outliner pra cada Part (ver "MODELOS 3D" em loadEditor) — clicar
     // ativa o gizmo NA HORA (GizmoManager.activePart), sem precisar abrir o popup ">> Config Part".
@@ -127,7 +163,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
 
         this.searchField = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 100, 16, Text.literal(""));
         this.searchField.setMaxLength(64);
-        this.searchField.setPlaceholder(Text.literal("§7🔍 Pesquisar cosmético..."));
+        this.searchField.setPlaceholder(com.f4xizzz.greatcosmetics.config.LangConfig.text("devstudio.cosmetic.search_placeholder"));
         this.searchField.setChangedListener(text -> this.scrollY = 0);
     }
 
@@ -184,8 +220,10 @@ public class DevCosmeticsSubPage extends DevSubPage {
         tryExit(onConfirm);
     }
 
-    private void addDivider(String title) {
-        this.rows.add(new EditorRow(title, RowType.DIVIDER, null));
+    private EditorRow addDivider(String title) {
+        EditorRow row = new EditorRow(title, RowType.DIVIDER, null);
+        this.rows.add(row);
+        return row;
     }
 
     private class FloatingPopup {
@@ -207,30 +245,42 @@ public class DevCosmeticsSubPage extends DevSubPage {
 
         void syncGizmoToFields() {
             if (GizmoManager.activePart == null) return;
+            // BUG (2026-09): TextFieldWidget#setText() dispara o changedListener SEMPRE, mesmo
+            // reescrevendo o MESMO valor que já tava lá (confirmado no bytecode vanilla — setText
+            // chama onChanged incondicionalmente, sem checar se o texto realmente mudou). Esse
+            // método só ESPELHA o valor atual nos campos (chamado a cada frame de arraste E toda
+            // vez que o botão "S" alterna qual conjunto de campos mostrar) — nunca deveria, sozinho,
+            // marcar "alteração não salva". Snapshot/restore do flag (mesmo truque que
+            // openPartPopup/openLurePopup já usam) cancela esses disparos espúrios sem precisar
+            // desligar o listener; quem chamou isso por causa de uma mudança DE VERDADE (arraste
+            // com delta != 0) já setou hasUnsavedChanges=true ANTES de chamar, então o valor
+            // restaurado continua correto nesse caso.
+            boolean wasUnsavedBeforeSync = hasUnsavedChanges;
             boolean isS = Wardrobe3DScreen.isPreviewSneaking;
             for (EditorRow r : rows) {
                 if (r.textField == null) continue;
                 try {
                     if (!isS) {
-                        if (r.label.equals("Offset X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.offsetX * 1000.0) / 1000.0));
-                        if (r.label.equals("Offset Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.offsetY * 1000.0) / 1000.0));
-                        if (r.label.equals("Offset Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.offsetZ * 1000.0) / 1000.0));
-                        if (r.label.equals("Rotation X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.rotationX * 10.0) / 10.0));
-                        if (r.label.equals("Rotation Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.rotationY * 10.0) / 10.0));
-                        if (r.label.equals("Rotation Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.rotationZ * 10.0) / 10.0));
+                        if (r.id.equals("Offset X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.offsetX * 1000.0) / 1000.0));
+                        if (r.id.equals("Offset Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.offsetY * 1000.0) / 1000.0));
+                        if (r.id.equals("Offset Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.offsetZ * 1000.0) / 1000.0));
+                        if (r.id.equals("Rotation X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.rotationX * 10.0) / 10.0));
+                        if (r.id.equals("Rotation Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.rotationY * 10.0) / 10.0));
+                        if (r.id.equals("Rotation Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.rotationZ * 10.0) / 10.0));
                     } else {
-                        if (r.label.equals("Shift Offset X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftOffsetX * 1000.0) / 1000.0));
-                        if (r.label.equals("Shift Offset Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftOffsetY * 1000.0) / 1000.0));
-                        if (r.label.equals("Shift Offset Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftOffsetZ * 1000.0) / 1000.0));
-                        if (r.label.equals("Shift Rotation X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftRotationX * 10.0) / 10.0));
-                        if (r.label.equals("Shift Rotation Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftRotationY * 10.0) / 10.0));
-                        if (r.label.equals("Shift Rotation Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftRotationZ * 10.0) / 10.0));
+                        if (r.id.equals("Shift Offset X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftOffsetX * 1000.0) / 1000.0));
+                        if (r.id.equals("Shift Offset Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftOffsetY * 1000.0) / 1000.0));
+                        if (r.id.equals("Shift Offset Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftOffsetZ * 1000.0) / 1000.0));
+                        if (r.id.equals("Shift Rotation X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftRotationX * 10.0) / 10.0));
+                        if (r.id.equals("Shift Rotation Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftRotationY * 10.0) / 10.0));
+                        if (r.id.equals("Shift Rotation Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.shiftRotationZ * 10.0) / 10.0));
                     }
-                    if (r.label.equals("Scale X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.scaleX * 100.0) / 100.0));
-                    if (r.label.equals("Scale Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.scaleY * 100.0) / 100.0));
-                    if (r.label.equals("Scale Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.scaleZ * 100.0) / 100.0));
+                    if (r.id.equals("Scale X")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.scaleX * 100.0) / 100.0));
+                    if (r.id.equals("Scale Y")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.scaleY * 100.0) / 100.0));
+                    if (r.id.equals("Scale Z")) r.textField.setText(String.valueOf(Math.round(GizmoManager.activePart.scaleZ * 100.0) / 100.0));
                 } catch (Exception ignored) {}
             }
+            hasUnsavedChanges = wasUnsavedBeforeSync;
         }
 
         void addFloat(String label, float startVal, java.util.function.Consumer<Float> action) {
@@ -334,6 +384,13 @@ public class DevCosmeticsSubPage extends DevSubPage {
                     continue;
                 }
 
+                // Mesmo hover-check do editor principal (ver render() da classe de fora) — o campo
+                // hoveredTooltipRow é compartilhado, sem conflito: quando o popup está aberto o loop
+                // de rows de fora nem roda (ver "activePopup == null" no render() de fora).
+                if (row.tooltip != null && mx >= x + 5 && mx <= x + width - 5 && my >= rowY - 2 && my <= rowY + 30) {
+                    hoveredTooltipRow = row;
+                }
+
                 if (row.type == RowType.DIVIDER) {
                     c.fill(x + 5, rowY + 4, x + width - 5, rowY + 20, 0x88FFAA00);
                     c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, x + (width/2), rowY + 8, 0xFFFFFF);
@@ -341,11 +398,11 @@ public class DevCosmeticsSubPage extends DevSubPage {
                 }
 
                 if (row.type == RowType.GIZMO_MODE) {
-                    c.drawTextWithShadow(parent.getTextRenderer(), "§eFerramenta 3D (Segure X, Y ou Z e arraste fora):", x + 10, rowY - 2, 0xFFFFFF);
+                    c.drawTextWithShadow(parent.getTextRenderer(), L("devstudio.part.gizmo_hint"), x + 10, rowY - 2, 0xFFFFFF);
                     int bw = (width - 30) / 3;
-                    drawBtn(c, "Mover", x + 10, rowY + 12, bw, 14, mx, my, GizmoManager.currentMode == GizmoManager.Mode.TRANSLATE ? 0xFF22AA22 : 0xFF444444);
-                    drawBtn(c, "Girar", x + 10 + bw + 2, rowY + 12, bw, 14, mx, my, GizmoManager.currentMode == GizmoManager.Mode.ROTATE ? 0xFF22AA22 : 0xFF444444);
-                    drawBtn(c, "Escala", x + 10 + bw*2 + 4, rowY + 12, bw, 14, mx, my, GizmoManager.currentMode == GizmoManager.Mode.SCALE ? 0xFF22AA22 : 0xFF444444);
+                    drawBtn(c, L("devstudio.part.gizmo_move"), x + 10, rowY + 12, bw, 14, mx, my, GizmoManager.currentMode == GizmoManager.Mode.TRANSLATE ? 0xFF22AA22 : 0xFF444444);
+                    drawBtn(c, L("devstudio.part.gizmo_rotate"), x + 10 + bw + 2, rowY + 12, bw, 14, mx, my, GizmoManager.currentMode == GizmoManager.Mode.ROTATE ? 0xFF22AA22 : 0xFF444444);
+                    drawBtn(c, L("devstudio.part.gizmo_scale"), x + 10 + bw*2 + 4, rowY + 12, bw, 14, mx, my, GizmoManager.currentMode == GizmoManager.Mode.SCALE ? 0xFF22AA22 : 0xFF444444);
                 } else {
                     c.drawTextWithShadow(parent.getTextRenderer(), "§f" + row.label, x + 10, rowY, 0xFFFFFF);
 
@@ -363,19 +420,19 @@ public class DevCosmeticsSubPage extends DevSubPage {
                         }
                     } else if (row.type == RowType.TOGGLE) {
                         boolean hovTog = mx >= x + 10 && mx <= x + width - 20 && my >= rowY + 12 && my <= rowY + 28;
-                        boolean isSneak = row.label.contains("SNEAK");
+                        boolean isSneak = row.id.contains("SNEAK");
                         int colorOn = isSneak ? 0xFFBB00FF : 0xFF00FF00;
                         int colorBgOn = isSneak ? 0x66BB00FF : 0x66FFFFFF;
 
                         c.fill(x + 10, rowY + 12, x + width - 20, rowY + 28, hovTog ? colorBgOn : 0x44000000);
                         c.drawBorder(x + 10, rowY + 12, width - 30, 16, row.toggleValue ? colorOn : 0xFFFF0000);
-                        c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.toggleValue ? "§aLIGADO" : "§cDESLIGADO", x + (width/2) - 5, rowY + 16, 0xFFFFFF);
+                        c.drawCenteredTextWithShadow(parent.getTextRenderer(), L(row.toggleValue ? "devstudio.common.on" : "devstudio.common.off"), x + (width/2) - 5, rowY + 16, 0xFFFFFF);
                     } else if (row.type == RowType.EFFECT) {
                         boolean active = row.effectLevel > 0;
                         boolean hovEff = mx >= x + 10 && mx <= x + width - 20 && my >= rowY + 12 && my <= rowY + 28;
                         c.fill(x + 10, rowY + 12, x + width - 20, rowY + 28, hovEff ? 0x66FFFFFF : 0x44000000);
                         c.drawBorder(x + 10, rowY + 12, width - 30, 16, active ? 0xFF00FF00 : 0xFF444444);
-                        String levelLabel = active ? ("Nível " + row.effectLevel) : "OFF (clique pra ligar)";
+                        String levelLabel = active ? L("devstudio.effects.level", "n", row.effectLevel) : L("devstudio.effects.off");
                         c.drawCenteredTextWithShadow(parent.getTextRenderer(), levelLabel, x + (width/2) - 5, rowY + 16, active ? 0xFFFFFF : 0xAAAAAA);
                     }
                 }
@@ -431,7 +488,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
                         } else if (row.type == RowType.TOGGLE) {
                             if (mx >= x + 10 && mx <= x + width - 20 && my >= rowY + 12 && my <= rowY + 28) {
                                 playClick();
-                                if (!row.label.contains("SNEAK")) { hasUnsavedChanges = true; }
+                                if (!row.id.contains("SNEAK")) { hasUnsavedChanges = true; }
                                 row.toggleValue = !row.toggleValue; row.onToggle.accept(row.toggleValue);
                                 return true;
                             }
@@ -498,39 +555,45 @@ public class DevCosmeticsSubPage extends DevSubPage {
         // /gc giveitem, /gc cosmetics equip, tags...) direto no cabeçalho, já que ele some do resto
         // do formulário, e o campo do item real que ela representa logo abaixo.
         if (this.editingIsArmorCosmetic) {
-            addDivider("=== IDENTIFICAÇÃO (ID: " + this.editingId + ") ===");
-            addStringField("Item Real (ex: minecraft:diamond_helmet)", this.editingData.realItemId, text -> this.editingData.realItemId = text.toLowerCase().trim());
+            addDivider(L("devstudio.cosmetic.divider.identification_armor", "id", this.editingId));
+            addStringField(L("devstudio.cosmetic.field.real_item"), this.editingData.realItemId, text -> this.editingData.realItemId = text.toLowerCase().trim())
+                    .withTooltip(L("devstudio.cosmetic.tooltip.real_item"));
         } else {
-            addDivider("=== IDENTIFICAÇÃO ===");
-            addStringField("ID Principal (Nome no Arquivo)", this.tempId, text -> this.tempId = text);
+            addDivider(L("devstudio.cosmetic.divider.identification"));
+            addStringField(L("devstudio.cosmetic.field.main_id"), this.tempId, text -> this.tempId = text)
+                    .withTooltip(L("devstudio.cosmetic.tooltip.main_id"));
             // Nome do arquivo de ícone (textures/icons/<nome>.png) — vazio usa o ID acima, igual
             // sempre foi. Só existe pra reaproveitar o MESMO arquivo de ícone entre cosméticos
             // diferentes (ex: variações de cor) sem duplicar a textura com nomes repetidos.
-            addStringField("Nome do Ícone (textures/icons/, opcional)", this.editingData.iconId,
-                    "vazio = usa \"" + id + "\"",
+            addStringField(L("devstudio.cosmetic.field.icon_name"), this.editingData.iconId,
+                    L("devstudio.cosmetic.hint.icon_name", "id", id),
                     () -> scanResourceShortNames("textures/icons", rid -> rid.getNamespace().equals("greatcosmetics") && rid.getPath().endsWith(".png"), ".png"),
-                    text -> this.editingData.iconId = text.trim());
+                    text -> this.editingData.iconId = text.trim())
+                    .withTooltip(L("devstudio.cosmetic.tooltip.icon_name"));
         }
 
         String safeNameToLoad = (this.editingData.DisplayName != null && !this.editingData.DisplayName.trim().isEmpty())
                 ? this.editingData.DisplayName
                 : "&d" + id.substring(0, 1).toUpperCase() + id.substring(1);
-        addStringField("Display Name", safeNameToLoad, text -> { this.editingData.DisplayName = text; });
+        addStringField(L("devstudio.cosmetic.field.display_name"), safeNameToLoad, text -> { this.editingData.DisplayName = text; })
+                .withTooltip(L("devstudio.cosmetic.tooltip.display_name"));
 
-        addStringField("Slot (HEAD, FACE, NECK, CHEST, BACK, WAIST, LEGS, FEET ou HAND)", this.editingData.slot != null ? this.editingData.slot.name() : "HEAD", null,
+        addStringField(L("devstudio.cosmetic.field.slot"), this.editingData.slot != null ? this.editingData.slot.name() : "HEAD", null,
                 () -> java.util.Arrays.stream(CosmeticData.VirtualSlot.values()).map(Enum::name).collect(java.util.stream.Collectors.toList()),
                 text -> {
             try { this.editingData.slot = CosmeticData.VirtualSlot.valueOf(text.toUpperCase()); } catch (Exception ignored) {}
-        });
-        addStringField("Type", this.editingData.type, null, DevCosmeticsSubPage::scanConfiguredTypes, text -> this.editingData.type = text);
-        addStringField("Permission", this.editingData.permission, text -> this.editingData.permission = text);
+        }).withTooltip(L("devstudio.cosmetic.tooltip.slot"));
+        addStringField(L("devstudio.cosmetic.field.type"), this.editingData.type, null, DevCosmeticsSubPage::scanConfiguredTypes, text -> this.editingData.type = text)
+                .withTooltip(L("devstudio.cosmetic.tooltip.type"));
+        addStringField(L("devstudio.cosmetic.field.permission"), this.editingData.permission, text -> this.editingData.permission = text)
+                .withTooltip(L("devstudio.cosmetic.tooltip.permission"));
 
         // --- PARTES 3D: offset/rotação/escala por parte, igual cosmético normal.
         // "GeckoLib Model ID" tem PRIORIDADE sobre tudo (inclusive sobre o item real de armadura-
         // cosmético) — espera geo/item/<id>.geo.json + textures/item/<id>.png no resourcepack
         // (qualquer namespace), ver GreatCosmeticsClient#registerGeoModels. Vazio = comportamento
         // de sempre (ícone chapado pra cosmético normal, item real dobrado pra armadura-cosmético).
-        addDivider("=== MODELOS 3D ===");
+        addDivider(L("devstudio.cosmetic.divider.models3d"));
         for (int i = 0; i < this.editingData.parts.size(); i++) {
             CosmeticData.CosmeticPart part = this.editingData.parts.get(i);
             int partIndex = i;
@@ -539,68 +602,88 @@ public class DevCosmeticsSubPage extends DevSubPage {
             // campo estivesse focado (ver render()/EditorRow#suggestions), o que derrubava o FPS
             // brutalmente ao clicar numa Part. O campo continua editável igual, só perde a sugestão.
             if (!this.editingIsArmorCosmetic) {
-                addStringField("Part " + i + " (Model/ID)", part.customModelData_or_ID,
-                        "ex: examplehat (nome) ou sas/cigarro (Caminho Exato)",
-                        t -> part.customModelData_or_ID = t);
+                addStringField(L("devstudio.cosmetic.field.part_model", "i", i), part.customModelData_or_ID,
+                        L("devstudio.cosmetic.hint.part_model"),
+                        t -> part.customModelData_or_ID = t)
+                        .withTooltip(L("devstudio.cosmetic.tooltip.part_model"));
             }
-            addStringField("Part " + i + " (GeckoLib Model ID, opcional)", part.geoModelId,
-                    "ex: faxihat (nome) ou item/faxihat (Caminho Exato)",
-                    t -> part.geoModelId = t);
+            addStringField(L("devstudio.cosmetic.field.part_geo", "i", i), part.geoModelId,
+                    L("devstudio.cosmetic.hint.part_geo"),
+                    t -> part.geoModelId = t)
+                    .withTooltip(L("devstudio.cosmetic.tooltip.part_geo"));
             // Alterna entre "nome solto" (busca por qualquer pasta, só pelo nome do arquivo, e no
             // caso do Model/ID restrita ao namespace greatcosmetics) e "caminho exato" (o texto
             // acima vira o caminho relativo completo, ex: "sas/cigarro", buscado em qualquer
             // namespace) — ver CosmeticPart#useExactPath.
-            this.rows.add(new EditorRow("Part " + i + ": Caminho Exato (pasta/nome)", part.useExactPath, v -> part.useExactPath = v));
+            this.rows.add(new EditorRow(L("devstudio.cosmetic.field.part_exact_path", "i", i), part.useExactPath, v -> part.useExactPath = v)
+                    .withTooltip(L("devstudio.cosmetic.tooltip.part_exact_path")));
             outlinerParts.add(part);
             outlinerPartRowIndex.add(this.rows.size());
-            this.rows.add(new EditorRow(">> Config Part " + i, () -> openPartPopup(part, partIndex)));
-            this.rows.add(new EditorRow("X Remover Part " + i, () -> {
-                openConfirmPopup("REMOVER PARTE?", "Apaga a Part " + partIndex + " permanentemente.", () -> {
+            boolean usesRealArmorModel = partUsesRealArmorRender(part);
+            this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.config_part", "i", i), () -> openPartPopup(part, partIndex))
+                    .withId("btn_config_part_" + i)
+                    .withDisabled(usesRealArmorModel)
+                    .withTooltip(usesRealArmorModel ? L("devstudio.cosmetic.tooltip.config_part_disabled_armor") : L("devstudio.cosmetic.tooltip.config_part")));
+            this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.remove_part", "i", i), () -> {
+                openConfirmPopup(L("devstudio.cosmetic.confirm.remove_part_title"), L("devstudio.cosmetic.confirm.remove_part_body", "i", partIndex), () -> {
                     hasUnsavedChanges = true;
                     this.editingData.parts.remove(part);
                     if (GizmoManager.activePart == part) GizmoManager.activePart = null;
                     loadEditor(this.editingId);
                 });
-            }));
+            }).withId("btn_remove_part_" + i));
         }
-        this.rows.add(new EditorRow("+ Adicionar Parte", () -> {
+        this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.add_part"), () -> {
             hasUnsavedChanges = true;
             this.editingData.parts.add(new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD));
             loadEditor(this.editingId);
-        }));
+        }).withId("btn_add_part").withTooltip(L("devstudio.cosmetic.tooltip.add_part")));
 
         // --- STATUS DE COMBATE ---
-        addDivider("=== STATUS & COMBATE ===");
-        addIntField("Pontos de Armadura", this.editingData.armor, val -> this.editingData.armor = val);
-        addDoubleField("Resistência (Toughness)", this.editingData.toughness, val -> this.editingData.toughness = val);
-        addIntField("Max Durability", this.editingData.maxDurability, val -> this.editingData.maxDurability = val);
-        this.rows.add(new EditorRow("Auto-Feed (Comer Automático)", this.editingData.AutoFeed, val -> this.editingData.AutoFeed = val));
+        addDivider(L("devstudio.cosmetic.divider.status_combat"));
+        addIntField(L("devstudio.cosmetic.field.armor"), this.editingData.armor, val -> this.editingData.armor = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.armor"));
+        addDoubleField(L("devstudio.cosmetic.field.toughness"), this.editingData.toughness, val -> this.editingData.toughness = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.toughness"));
+        addIntField(L("devstudio.cosmetic.field.max_durability"), this.editingData.maxDurability, val -> this.editingData.maxDurability = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.max_durability"));
+        this.rows.add(new EditorRow(L("devstudio.cosmetic.field.auto_feed"), this.editingData.AutoFeed, val -> this.editingData.AutoFeed = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.auto_feed")));
 
         // --- MOCHILA ---
-        addDivider("=== MOCHILA ===");
-        this.rows.add(new EditorRow("É Mochila? (isBackpack)", this.editingData.isBackpack, val -> this.editingData.isBackpack = val));
-        addIntField("Linhas da Mochila (1-6, por página)", this.editingData.backpackRows, val -> this.editingData.backpackRows = val);
-        addIntField("Páginas da Mochila (1 = sem paginação)", this.editingData.backpackPages, val -> this.editingData.backpackPages = Math.max(1, val));
-        addStringField("Nome da Mochila", this.editingData.backpackDisplayName, text -> this.editingData.backpackDisplayName = text);
+        addDivider(L("devstudio.cosmetic.divider.backpack"));
+        this.rows.add(new EditorRow(L("devstudio.cosmetic.field.is_backpack"), this.editingData.isBackpack, val -> this.editingData.isBackpack = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.is_backpack")));
+        addIntField(L("devstudio.cosmetic.field.backpack_rows"), this.editingData.backpackRows, val -> this.editingData.backpackRows = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.backpack_rows"));
+        addStringField(L("devstudio.cosmetic.field.backpack_name"), this.editingData.backpackDisplayName, text -> this.editingData.backpackDisplayName = text)
+                .withTooltip(L("devstudio.cosmetic.tooltip.backpack_name"));
 
         // --- EFEITOS ESPECIAIS ---
-        addDivider("=== EFEITOS ESPECIAIS ===");
-        this.rows.add(new EditorRow("Permite Voar? (EnableFly)", this.editingData.EnableFly, val -> this.editingData.EnableFly = val));
-        addDoubleField("Velocidade de Voo (1.0 = normal)", this.editingData.flySpeedMultiplier, val -> this.editingData.flySpeedMultiplier = val);
-        addDoubleField("Velocidade no Chão (1.0 = normal)", this.editingData.groundSpeedMultiplier, val -> this.editingData.groundSpeedMultiplier = val);
-        addDoubleField("Velocidade na Água (1.0 = normal)", this.editingData.swimSpeedMultiplier, val -> this.editingData.swimSpeedMultiplier = val);
-        this.rows.add(new EditorRow(">> Selecionar Efeitos (" + (this.editingData.effects != null ? this.editingData.effects.size() : 0) + " ativos)", this::openEffectsPopup));
-        addStringField("Effect Visual (Separe por ,)", String.join(", ", this.editingData.effectVisual), text -> this.editingData.effectVisual = parseList(text));
-        addStringField("Fly Particle (Separe por ,)", String.join(", ", this.editingData.flyParticle), text -> this.editingData.flyParticle = parseList(text));
+        addDivider(L("devstudio.cosmetic.divider.special_effects"));
+        this.rows.add(new EditorRow(L("devstudio.cosmetic.field.enable_fly"), this.editingData.EnableFly, val -> this.editingData.EnableFly = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.enable_fly")));
+        addDoubleField(L("devstudio.cosmetic.field.fly_speed"), this.editingData.flySpeedMultiplier, val -> this.editingData.flySpeedMultiplier = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.fly_speed"));
+        addDoubleField(L("devstudio.cosmetic.field.ground_speed"), this.editingData.groundSpeedMultiplier, val -> this.editingData.groundSpeedMultiplier = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.ground_speed"));
+        addDoubleField(L("devstudio.cosmetic.field.swim_speed"), this.editingData.swimSpeedMultiplier, val -> this.editingData.swimSpeedMultiplier = val)
+                .withTooltip(L("devstudio.cosmetic.tooltip.swim_speed"));
+        this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.select_effects", "count", (this.editingData.effects != null ? this.editingData.effects.size() : 0)), this::openEffectsPopup)
+                .withId("btn_select_effects").withTooltip(L("devstudio.cosmetic.tooltip.select_effects")));
+        addStringField(L("devstudio.cosmetic.field.effect_visual"), String.join(", ", this.editingData.effectVisual), text -> this.editingData.effectVisual = parseList(text))
+                .withTooltip(L("devstudio.cosmetic.tooltip.effect_visual"));
+        addStringField(L("devstudio.cosmetic.field.fly_particle"), String.join(", ", this.editingData.flyParticle), text -> this.editingData.flyParticle = parseList(text))
+                .withTooltip(L("devstudio.cosmetic.tooltip.fly_particle"));
 
         // --- LURE ---
-        addDivider("=== SISTEMA DE LURE ===");
-        this.rows.add(new EditorRow(">> Configurar LURE", this::openLurePopup));
+        addDivider(L("devstudio.cosmetic.divider.lure"));
+        this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.config_lure"), this::openLurePopup).withId("btn_config_lure"));
 
         this.hasUnsavedChanges = false;
 
         // --- SONS PERSONALIZADOS ---
-        addDivider("=== SONS ===");
+        addDivider(L("devstudio.cosmetic.divider.sounds"));
         if (this.editingData.sounds == null) this.editingData.sounds = new CosmeticData.CosmeticSounds();
 
         addStringField("Idle Sound", this.editingData.sounds.idleSound, text -> this.editingData.sounds.idleSound = text);
@@ -683,11 +766,31 @@ public class DevCosmeticsSubPage extends DevSubPage {
         return list;
     }
 
+    /** true quando essa Part vai renderizar pelo modelo 3D de armadura de VERDADE (ver
+     *  ArmorFeatureRendererMixin#greatcosmetics$renderRealArmor) em vez do ícone chapado
+     *  configurável — mesma condição usada lá, replicada aqui só pra decidir a UI (desabilitar o
+     *  botão "Config Part", já que offset/rotação/escala não têm efeito nenhum nesse caso). Só
+     *  vale pra armadura-cosmético (item real) sem GeckoLib e com anchor HEAD apontando pra um
+     *  ArmorItem de slot HEAD de verdade — qualquer outra combinação (GeckoLib setado, anchor
+     *  diferente, item não-armadura) continua usando os campos normalmente. */
+    private boolean partUsesRealArmorRender(CosmeticData.CosmeticPart part) {
+        if (!this.editingIsArmorCosmetic || this.editingData == null) return false;
+        if (part.geoModelId != null && !part.geoModelId.isBlank()) return false;
+        if (part.anchor != CosmeticData.Anchor.HEAD) return false;
+
+        String realItemId = this.editingData.realItemId;
+        if (realItemId == null || realItemId.isBlank()) return false;
+        net.minecraft.util.Identifier id = net.minecraft.util.Identifier.tryParse(realItemId);
+        net.minecraft.item.Item item = id != null ? net.minecraft.registry.Registries.ITEM.get(id) : null;
+        return item instanceof net.minecraft.item.ArmorItem armorItem
+                && armorItem.getSlotType() == net.minecraft.entity.EquipmentSlot.HEAD;
+    }
+
     private void openPartPopup(CosmeticData.CosmeticPart part, int index) {
         boolean wasUnsaved = this.hasUnsavedChanges;
 
-        String pName = part.customModelData_or_ID != null && !part.customModelData_or_ID.isEmpty() ? part.customModelData_or_ID : "Nova";
-        activePopup = new FloatingPopup("Part " + index + ": " + pName, 80, 40, 260, 320);
+        String pName = part.customModelData_or_ID != null && !part.customModelData_or_ID.isEmpty() ? part.customModelData_or_ID : L("devstudio.part.new");
+        activePopup = new FloatingPopup(L("devstudio.part.popup_title", "i", index, "name", pName), 80, 40, 260, 320);
 
         // Atrela o Gizmo
         GizmoManager.activePart = part;
@@ -696,22 +799,22 @@ public class DevCosmeticsSubPage extends DevSubPage {
             if (activePopup != null) activePopup.syncGizmoToFields();
         };
 
-        activePopup.addDivider("FERRAMENTA GIZMO 3D");
+        activePopup.addDivider(L("devstudio.part.divider.gizmo_tool"));
         activePopup.addGizmoControls();
 
-        activePopup.addDivider("CONFIGURAÇÃO GERAL");
+        activePopup.addDivider(L("devstudio.part.divider.general"));
         activePopup.addString("Anchor", part.anchor != null ? part.anchor.name() : "HEAD",
                 () -> java.util.Arrays.stream(CosmeticData.Anchor.values()).map(Enum::name).collect(java.util.stream.Collectors.toList()),
                 text -> {
             try { part.anchor = CosmeticData.Anchor.valueOf(text.toUpperCase().trim()); } catch (Exception ignored) {}
         });
 
-        activePopup.addDivider("ESCALA");
+        activePopup.addDivider(L("devstudio.part.divider.scale"));
         activePopup.addFloat("Scale X", part.scaleX, v -> part.scaleX = v);
         activePopup.addFloat("Scale Y", part.scaleY, v -> part.scaleY = v);
         activePopup.addFloat("Scale Z", part.scaleZ, v -> part.scaleZ = v);
 
-        activePopup.addDivider("VALORES NORMAIS");
+        activePopup.addDivider(L("devstudio.part.divider.normal_values"));
         activePopup.addFloat("Offset X", part.offsetX, v -> part.offsetX = v);
         activePopup.addFloat("Offset Y", part.offsetY, v -> part.offsetY = v);
         activePopup.addFloat("Offset Z", part.offsetZ, v -> part.offsetZ = v);
@@ -719,7 +822,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
         activePopup.addFloat("Rotation Y", part.rotationY, v -> part.rotationY = v);
         activePopup.addFloat("Rotation Z", part.rotationZ, v -> part.rotationZ = v);
 
-        activePopup.addDivider("VALORES SNEAK");
+        activePopup.addDivider(L("devstudio.part.divider.sneak_values"));
         activePopup.addFloat("Shift Offset X", part.shiftOffsetX, v -> part.shiftOffsetX = v);
         activePopup.addFloat("Shift Offset Y", part.shiftOffsetY, v -> part.shiftOffsetY = v);
         activePopup.addFloat("Shift Offset Z", part.shiftOffsetZ, v -> part.shiftOffsetZ = v);
@@ -733,25 +836,25 @@ public class DevCosmeticsSubPage extends DevSubPage {
     private void openLurePopup() {
         boolean wasUnsaved = this.hasUnsavedChanges;
 
-        activePopup = new FloatingPopup("Lure Conf", 50, 50, 220, 220);
-        activePopup.addToggle("Lure Ativado", editingData.lure.enabled, v -> editingData.lure.enabled = v);
-        activePopup.addString("Lure TYPE", editingData.lure.lureTYPE, t -> editingData.lure.lureTYPE = t);
-        activePopup.addDouble("Mult. Lure Shiny", editingData.lure.lureShinyMultiplier, v -> editingData.lure.lureShinyMultiplier = v);
-        activePopup.addDouble("Mult. Ultra Rare", editingData.lure.lureUltraRAREMultiplier, v -> editingData.lure.lureUltraRAREMultiplier = v);
-        activePopup.addDouble("Mult. Hidden Ability", editingData.lure.lureHiddenAbilityMultiplier, v -> editingData.lure.lureHiddenAbilityMultiplier = v);
-        activePopup.addDouble("Mult. Exp All", editingData.lure.lureExpAllMultiplier, v -> editingData.lure.lureExpAllMultiplier = v);
-        activePopup.addDouble("Mult. Amizade", editingData.lure.lureAmizadeMultiplier, v -> editingData.lure.lureAmizadeMultiplier = v);
-        activePopup.addInt("Lure IV", editingData.lure.lureIV, v -> editingData.lure.lureIV = v);
-        activePopup.addDouble("Chance IV", editingData.lure.lureChanceIV, v -> editingData.lure.lureChanceIV = v);
-        activePopup.addDouble("Pesca Shiny", editingData.lure.lurePescaShiny, v -> editingData.lure.lurePescaShiny = v);
-        activePopup.addDouble("Pesca Ultra Rare", editingData.lure.lurePescaUltraRare, v -> editingData.lure.lurePescaUltraRare = v);
-        activePopup.addDouble("Pesca IV Chance", editingData.lure.lurePescaIvChance, v -> editingData.lure.lurePescaIvChance = v);
-        activePopup.addInt("Pesca IV", editingData.lure.lurePescaIv, v -> editingData.lure.lurePescaIv = v);
-        activePopup.addDouble("Pesca Velocidade", editingData.lure.lurePescaVelocidade, v -> editingData.lure.lurePescaVelocidade = v);
-        activePopup.addDouble("Mult. EXP", editingData.lure.lureEXP, v -> editingData.lure.lureEXP = v);
-        activePopup.addDouble("Mult. EV", editingData.lure.lureEV, v -> editingData.lure.lureEV = v);
-        activePopup.addDouble("Chance de Captura", editingData.lure.lureChanceDeCaptura, v -> editingData.lure.lureChanceDeCaptura = v);
-        activePopup.addDouble("Lure de Pesca", editingData.lure.lureDePesca, v -> editingData.lure.lureDePesca = v);
+        activePopup = new FloatingPopup(L("devstudio.lure.title"), 50, 50, 220, 220);
+        activePopup.addToggle(L("devstudio.lure.field.enabled"), editingData.lure.enabled, v -> editingData.lure.enabled = v);
+        activePopup.addString(L("devstudio.lure.field.type"), editingData.lure.lureTYPE, t -> editingData.lure.lureTYPE = t);
+        activePopup.addDouble(L("devstudio.lure.field.shiny_mult"), editingData.lure.lureShinyMultiplier, v -> editingData.lure.lureShinyMultiplier = v);
+        activePopup.addDouble(L("devstudio.lure.field.ultrarare_mult"), editingData.lure.lureUltraRAREMultiplier, v -> editingData.lure.lureUltraRAREMultiplier = v);
+        activePopup.addDouble(L("devstudio.lure.field.hidden_ability_mult"), editingData.lure.lureHiddenAbilityMultiplier, v -> editingData.lure.lureHiddenAbilityMultiplier = v);
+        activePopup.addDouble(L("devstudio.lure.field.expall_mult"), editingData.lure.lureExpAllMultiplier, v -> editingData.lure.lureExpAllMultiplier = v);
+        activePopup.addDouble(L("devstudio.lure.field.friendship_mult"), editingData.lure.lureAmizadeMultiplier, v -> editingData.lure.lureAmizadeMultiplier = v);
+        activePopup.addInt(L("devstudio.lure.field.iv"), editingData.lure.lureIV, v -> editingData.lure.lureIV = v);
+        activePopup.addDouble(L("devstudio.lure.field.iv_chance"), editingData.lure.lureChanceIV, v -> editingData.lure.lureChanceIV = v);
+        activePopup.addDouble(L("devstudio.lure.field.fishing_shiny"), editingData.lure.lurePescaShiny, v -> editingData.lure.lurePescaShiny = v);
+        activePopup.addDouble(L("devstudio.lure.field.fishing_ultrarare"), editingData.lure.lurePescaUltraRare, v -> editingData.lure.lurePescaUltraRare = v);
+        activePopup.addDouble(L("devstudio.lure.field.fishing_iv_chance"), editingData.lure.lurePescaIvChance, v -> editingData.lure.lurePescaIvChance = v);
+        activePopup.addInt(L("devstudio.lure.field.fishing_iv"), editingData.lure.lurePescaIv, v -> editingData.lure.lurePescaIv = v);
+        activePopup.addDouble(L("devstudio.lure.field.fishing_speed"), editingData.lure.lurePescaVelocidade, v -> editingData.lure.lurePescaVelocidade = v);
+        activePopup.addDouble(L("devstudio.lure.field.exp_mult"), editingData.lure.lureEXP, v -> editingData.lure.lureEXP = v);
+        activePopup.addDouble(L("devstudio.lure.field.ev_mult"), editingData.lure.lureEV, v -> editingData.lure.lureEV = v);
+        activePopup.addDouble(L("devstudio.lure.field.capture_chance"), editingData.lure.lureChanceDeCaptura, v -> editingData.lure.lureChanceDeCaptura = v);
+        activePopup.addDouble(L("devstudio.lure.field.fishing_lure"), editingData.lure.lureDePesca, v -> editingData.lure.lureDePesca = v);
 
         this.hasUnsavedChanges = wasUnsaved;
     }
@@ -763,8 +866,8 @@ public class DevCosmeticsSubPage extends DevSubPage {
     private void openEffectsPopup() {
         boolean wasUnsaved = this.hasUnsavedChanges;
 
-        activePopup = new FloatingPopup("Efeitos de Poção", 50, 20, 240, 360);
-        activePopup.addDivider("CLIQUE PRA CICLAR O NÍVEL (OFF -> V)");
+        activePopup = new FloatingPopup(L("devstudio.effects.title"), 50, 20, 240, 360);
+        activePopup.addDivider(L("devstudio.effects.divider"));
 
         List<net.minecraft.util.Identifier> ids = new ArrayList<>(net.minecraft.registry.Registries.STATUS_EFFECT.getIds());
         ids.sort(java.util.Comparator.comparing(net.minecraft.util.Identifier::getPath));
@@ -803,20 +906,22 @@ public class DevCosmeticsSubPage extends DevSubPage {
         if (level > 0) this.editingData.effects.add(fullId + ":" + level);
     }
 
-    private void addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
-        addStringField(label, startVal, null, null, action);
+    private EditorRow addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
+        return addStringField(label, startVal, null, null, action);
     }
 
     /** Igual addStringField, só que com uma dica cinza (placeholder — só aparece quando o campo
      *  está vazio, nunca é salvo) explicando o formato esperado. */
-    private void addStringField(String label, String startVal, String placeholder, java.util.function.Consumer<String> action) {
-        addStringField(label, startVal, placeholder, null, action);
+    private EditorRow addStringField(String label, String startVal, String placeholder, java.util.function.Consumer<String> action) {
+        return addStringField(label, startVal, placeholder, null, action);
     }
 
     /** Igual addStringField, mas com autocomplete: {@code suggestions} é avaliado (só quando o
      *  campo está focado — ver render()) pra montar a lista de sugestões filtradas pelo texto
-     *  digitado, desenhada como um dropdown por baixo do campo (ver renderAutocompleteDropdown). */
-    private void addStringField(String label, String startVal, String placeholder,
+     *  digitado, desenhada como um dropdown por baixo do campo (ver renderAutocompleteDropdown).
+     *  Devolve a EditorRow criada pra quem chamou poder encadear .withTooltip(...) (ver
+     *  hoveredTooltipRow) — a explicação completa do campo mora no tooltip, não mais no label. */
+    private EditorRow addStringField(String label, String startVal, String placeholder,
                                  java.util.function.Supplier<java.util.List<String>> suggestions,
                                  java.util.function.Consumer<String> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
@@ -826,26 +931,31 @@ public class DevCosmeticsSubPage extends DevSubPage {
         EditorRow row = new EditorRow(label, RowType.STRING, field);
         row.suggestions = suggestions;
         this.rows.add(row);
+        return row;
     }
 
-    private void addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
+    private EditorRow addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(10); field.setText(String.valueOf(startVal));
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             try { if (!text.isEmpty() && !text.equals("-")) action.accept(Integer.parseInt(text)); } catch (Exception ignored) {}
         });
-        this.rows.add(new EditorRow(label, RowType.INT, field));
+        EditorRow row = new EditorRow(label, RowType.INT, field);
+        this.rows.add(row);
+        return row;
     }
 
-    private void addDoubleField(String label, double startVal, java.util.function.Consumer<Double> action) {
+    private EditorRow addDoubleField(String label, double startVal, java.util.function.Consumer<Double> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(20); field.setText(String.valueOf(startVal));
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             try { if (!text.isEmpty() && !text.equals("-") && !text.equals(".")) action.accept(Double.parseDouble(text)); } catch (Exception ignored) {}
         });
-        this.rows.add(new EditorRow(label, RowType.DOUBLE, field));
+        EditorRow row = new EditorRow(label, RowType.DOUBLE, field);
+        this.rows.add(row);
+        return row;
     }
 
     /** Escaneia o resourcepack (qualquer namespace carregado, ou só "greatcosmetics" se filter
@@ -948,6 +1058,9 @@ public class DevCosmeticsSubPage extends DevSubPage {
     public void render(DrawContext c, int mouseX, int mouseY, float delta, int x, int y, int width, int height) {
         INSTANCE = this;
         this.lastX = x; this.lastY = y; this.lastWidth = width; this.lastHeight = height;
+        // Recalculado do zero a cada frame pelos dois loops de row (editor principal e FloatingPopup)
+        // — ver renderHoveredTooltip, chamado por ÚLTIMO neste método.
+        this.hoveredTooltipRow = null;
 
         boolean isMouseDown = GLFW.glfwGetMouseButton(MinecraftClient.getInstance().getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
         if (!isMouseDown) {
@@ -961,16 +1074,16 @@ public class DevCosmeticsSubPage extends DevSubPage {
 
         if (currentState == State.LIST) {
             boolean hovBack = mouseX >= x + 12 && mouseX <= x + 62 && mouseY >= topY && mouseY <= topY + 12;
-            c.drawTextWithShadow(parent.getTextRenderer(), "< Voltar", x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§6Cosméticos", x + (width / 2), topY + 2, 0xFFFFFF);
+            c.drawTextWithShadow(parent.getTextRenderer(), L("devstudio.common.back"), x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.cosmetic.list_title"), x + (width / 2), topY + 2, 0xFFFFFF);
 
             int newBtnMid = x + 10 + (width - 20) / 2;
             boolean hovNew = mouseX >= x + 10 && mouseX <= newBtnMid - 2 && mouseY >= topY + 15 && mouseY <= topY + 30;
             boolean hovNewArmor = mouseX >= newBtnMid + 2 && mouseX <= x + width - 10 && mouseY >= topY + 15 && mouseY <= topY + 30;
             c.fill(x + 10, topY + 15, newBtnMid - 2, topY + 30, hovNew ? 0xFF55FF55 : 0xFF22AA22);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "+ Cosmético", x + 10 + (newBtnMid - 2 - (x + 10)) / 2, topY + 19, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.cosmetic.btn.new_cosmetic"), x + 10 + (newBtnMid - 2 - (x + 10)) / 2, topY + 19, 0xFFFFFF);
             c.fill(newBtnMid + 2, topY + 15, x + width - 10, topY + 30, hovNewArmor ? 0xFF66AAFF : 0xFF3377CC);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "+ Armadura", newBtnMid + 2 + (x + width - 10 - (newBtnMid + 2)) / 2, topY + 19, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.cosmetic.btn.new_armor"), newBtnMid + 2 + (x + width - 10 - (newBtnMid + 2)) / 2, topY + 19, 0xFFFFFF);
 
             // ==========================================
             // BARRA DE PESQUISA + FILTRO DE TYPE
@@ -992,7 +1105,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
             c.fill(typeBoxX, searchY, typeBoxX + typeFilterW, searchY + 16, hovType ? 0xFF333333 : 0xFF222222);
             c.fill(typeBoxX, searchY, typeBoxX + typeFilterW, searchY + 1, 0xFF555555);
             c.fill(typeBoxX, searchY + 15, typeBoxX + typeFilterW, searchY + 16, 0xFF111111);
-            String typeLabel = "ALL".equals(typeFilter) ? "Todos" : typeFilter;
+            String typeLabel = "ALL".equals(typeFilter) ? L("devstudio.common.all") : typeFilter;
             parent.enableScissorStacked(c, typeBoxX + 3, searchY, typeFilterW - 12, 16);
             c.drawTextWithShadow(parent.getTextRenderer(), typeLabel, typeBoxX + 4, searchY + 4, 0xFFFFAA);
             c.disableScissor();
@@ -1017,7 +1130,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
                     int optY = searchY + 16 + (i * optH);
                     boolean hovOpt = mouseX >= typeBoxX && mouseX <= typeBoxX + typeFilterW && mouseY >= optY && mouseY <= optY + optH;
                     if (hovOpt) c.fill(typeBoxX + 1, optY, typeBoxX + typeFilterW - 1, optY + optH, 0xFF444444);
-                    String label = "ALL".equals(options.get(i)) ? "Todos" : options.get(i);
+                    String label = "ALL".equals(options.get(i)) ? L("devstudio.common.all") : options.get(i);
                     parent.enableScissorStacked(c, typeBoxX + 3, optY, typeFilterW - 6, optH);
                     c.drawTextWithShadow(parent.getTextRenderer(), label, typeBoxX + 4, optY + 3, hovOpt ? 0xFFFFFFFF : 0xFFAAAAAA);
                     c.disableScissor();
@@ -1189,6 +1302,14 @@ public class DevCosmeticsSubPage extends DevSubPage {
                     continue;
                 }
 
+                // Hover-check pro tooltip ANTES de qualquer "continue" — cobre DIVIDER e BUTTON
+                // também, embora só rows com .withTooltip(...) != null acabem desenhando algo (ver
+                // renderHoveredTooltip). Área = a row inteira (label + control), não só o texto do
+                // label, pra não obrigar o jogador a mirar num pixel exato.
+                if (row.tooltip != null && mouseX >= propsX + 10 && mouseX <= propsX + propsW - 10 && mouseY >= rowY - 2 && mouseY <= rowY + 30) {
+                    hoveredTooltipRow = row;
+                }
+
                 if (row.type == RowType.DIVIDER) {
                     c.fill(propsX + 10, rowY + 4, propsX + propsW - 10, rowY + 20, 0x88FFAA00);
                     c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, propsX + (propsW/2), rowY + 8, 0xFFFFFF);
@@ -1215,22 +1336,23 @@ public class DevCosmeticsSubPage extends DevSubPage {
                 }
                 else if (row.type == RowType.TOGGLE) {
                     boolean hovTog = mouseX >= propsX + 15 && mouseX <= propsX + propsW - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
-                    boolean isSneak = row.label.contains("SNEAK");
+                    boolean isSneak = row.id.contains("SNEAK");
                     int colorOn = isSneak ? 0xFFBB00FF : 0xFF00FF00;
                     int colorBgOn = isSneak ? 0x66BB00FF : 0x66FFFFFF;
 
                     c.fill(propsX + 15, rowY + 12, propsX + propsW - 20, rowY + 28, hovTog ? colorBgOn : 0x44000000);
                     c.drawBorder(propsX + 15, rowY + 12, propsW - 35, 16, row.toggleValue ? colorOn : 0xFFFF0000);
-                    c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.toggleValue ? "§aLIGADO" : "§cDESLIGADO", propsX + (propsW/2), rowY + 16, 0xFFFFFF);
+                    c.drawCenteredTextWithShadow(parent.getTextRenderer(), L(row.toggleValue ? "devstudio.common.on" : "devstudio.common.off"), propsX + (propsW/2), rowY + 16, 0xFFFFFF);
                 }
                 else if (row.type == RowType.BUTTON) {
                     boolean hovBtn = mouseX >= propsX + 15 && mouseX <= propsX + propsW - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
-                    int bgColor = row.label.equals("+ Adicionar Parte") ? (hovBtn ? 0x6655FF55 : 0x4422AA22)
-                            : row.label.startsWith("X Remover Part") ? (hovBtn ? 0x66FF5555 : 0x44CC3333)
+                    int bgColor = row.disabled ? 0x33888888
+                            : row.id.equals("btn_add_part") ? (hovBtn ? 0x6655FF55 : 0x4422AA22)
+                            : row.id.startsWith("btn_remove_part") ? (hovBtn ? 0x66FF5555 : 0x44CC3333)
                             : (hovBtn ? 0x66FFAA00 : 0x44FFAA00);
 
                     c.fill(propsX + 15, rowY + 12, propsX + propsW - 20, rowY + 28, bgColor);
-                    c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, propsX + (propsW/2), rowY + 16, 0xFFFFFF);
+                    c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, propsX + (propsW/2), rowY + 16, row.disabled ? 0xFF999999 : 0xFFFFFFFF);
                 }
             }
             c.disableScissor();
@@ -1247,6 +1369,23 @@ public class DevCosmeticsSubPage extends DevSubPage {
         if (activePopup != null) activePopup.render(c, mouseX, mouseY, delta);
         renderExitPopup(c, mouseX, mouseY);
         renderConfirmPopup(c, mouseX, mouseY);
+
+        // Desenhado por ÚLTIMO nesse método — depois do popup e de tudo mais — senão a caixinha
+        // do tooltip ficaria escondida atrás da próxima coisa desenhada por cima dela.
+        renderHoveredTooltip(c, mouseX, mouseY);
+    }
+
+    /** Ver campo hoveredTooltipRow: desenha a caixinha de explicação da row que o mouse está em
+     *  cima agora (setado pelos dois loops de row, editor principal e FloatingPopup), se ela tiver
+     *  um tooltip configurado. "\n" na string do Lang vira quebra de linha de verdade — drawTooltip
+     *  trata cada elemento da lista como 1 linha e não quebra "\n" sozinho. */
+    private void renderHoveredTooltip(DrawContext c, int mouseX, int mouseY) {
+        if (hoveredTooltipRow == null || hoveredTooltipRow.tooltip == null) return;
+        List<Text> lines = new ArrayList<>();
+        for (String line : hoveredTooltipRow.tooltip.split("\n")) {
+            lines.add(Text.literal(line));
+        }
+        c.drawTooltip(parent.getTextRenderer(), lines, mouseX, mouseY);
     }
 
     @Override
@@ -1363,15 +1502,15 @@ public class DevCosmeticsSubPage extends DevSubPage {
             }
             int newBtnMid = x + 10 + (width - 20) / 2;
             if (mx >= x + 10 && mx <= newBtnMid - 2 && my >= topY + 15 && my <= topY + 30) {
-                playClick(); String newId = "novo_cosmetico_" + UUID.randomUUID().toString().substring(0, 4); CosmeticData newData = new CosmeticData(); newData.id = newId; newData.DisplayName = "&dNovo Cosmético"; newData.parts.add(new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD)); CosmeticsConfig.cosmeticsMap.put(newId, newData); com.f4xizzz.greatcosmetics.GreatCosmetics.invalidateCosmeticIndex(); sendSaveCosmetic(newId, newId, newData, false); loadEditor(newId); return true;
+                playClick(); String newId = "new_cosmetic_" + UUID.randomUUID().toString().substring(0, 4); CosmeticData newData = new CosmeticData(); newData.id = newId; newData.DisplayName = "&dNew Cosmetic"; newData.parts.add(new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD)); CosmeticsConfig.cosmeticsMap.put(newId, newData); com.f4xizzz.greatcosmetics.GreatCosmetics.invalidateCosmeticIndex(); sendSaveCosmetic(newId, newId, newData, false); loadEditor(newId); return true;
             }
             if (mx >= newBtnMid + 2 && mx <= x + width - 10 && my >= topY + 15 && my <= topY + 30) {
                 playClick();
-                String newId = "armadura_" + UUID.randomUUID().toString().substring(0, 4);
+                String newId = "armor_" + UUID.randomUUID().toString().substring(0, 4);
                 CosmeticData newData = new CosmeticData();
                 newData.id = newId;
                 newData.realItemId = "minecraft:diamond_helmet";
-                newData.DisplayName = "&dNova Armadura-Cosmético";
+                newData.DisplayName = "&dNew Armor Cosmetic";
                 newData.slot = CosmeticData.VirtualSlot.HEAD;
                 newData.type = "armor_cosmetic";
                 newData.parts.add(new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD));
@@ -1400,7 +1539,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
             }
             if (mx >= x + width - 45 && mx <= x + width - 30 && my >= topY && my <= topY + 12) {
                 playClick();
-                openConfirmPopup("APAGAR COSMÉTICO?", "Essa ação não pode ser desfeita.", () -> {
+                openConfirmPopup(L("devstudio.cosmetic.confirm.delete_title"), L("devstudio.cosmetic.confirm.delete_body"), () -> {
                     sendDeleteCosmetic(this.editingId, this.editingIsArmorCosmetic);
                     if (this.editingIsArmorCosmetic) {
                         com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.armorCosmetics.remove(this.editingId);
@@ -1432,8 +1571,9 @@ public class DevCosmeticsSubPage extends DevSubPage {
                         }
                     } else if (row.type == RowType.TOGGLE || row.type == RowType.BUTTON) {
                         if (mx >= propsX + 15 && mx <= propsX + propsW - 20 && my >= rowY + 12 && my <= rowY + 28) {
+                            if (row.disabled) return true; // consome o clique sem tocar sound/ação
                             playClick();
-                            if (row.type == RowType.TOGGLE) { if (!row.label.contains("SNEAK")) { hasUnsavedChanges = true; } row.toggleValue = !row.toggleValue; row.onToggle.accept(row.toggleValue); }
+                            if (row.type == RowType.TOGGLE) { if (!row.id.contains("SNEAK")) { hasUnsavedChanges = true; } row.toggleValue = !row.toggleValue; row.onToggle.accept(row.toggleValue); }
                             else { row.onButtonClick.run(); }
                             return true;
                         }
@@ -1535,9 +1675,9 @@ public class DevCosmeticsSubPage extends DevSubPage {
         boolean hovYes = mx >= px + 15 && mx <= px + 120 && my >= py + 55 && my <= py + 75;
         boolean hovNo = mx >= px + 140 && mx <= px + 245 && my >= py + 55 && my <= py + 75;
         c.fill(px + 15, py + 55, px + 120, py + 75, hovYes ? 0xFFFF5555 : 0xFFCC3333);
-        c.drawCenteredTextWithShadow(parent.getTextRenderer(), "Confirmar", px + 67, py + 61, 0xFFFFFF);
+        c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.common.confirm"), px + 67, py + 61, 0xFFFFFF);
         c.fill(px + 140, py + 55, px + 245, py + 75, hovNo ? 0xFFAAAAAA : 0xFF666666);
-        c.drawCenteredTextWithShadow(parent.getTextRenderer(), "Cancelar", px + 192, py + 61, 0xFFFFFF);
+        c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.common.cancel"), px + 192, py + 61, 0xFFFFFF);
 
         c.getMatrices().pop();
     }
@@ -1609,5 +1749,16 @@ public class DevCosmeticsSubPage extends DevSubPage {
             com.f4xizzz.greatcosmetics.GreatCosmetics.invalidateCosmeticIndex();
         }
         this.editingData = reverted;
+
+        // BUG (2026-09): resolveModelIds() sozinho recalcula o NÚMERO certo de resolvedCmd, mas
+        // não é o suficiente — quem de fato faz o GeckoLib renderizar é o GeoModelRegistry (tabela
+        // separada cmd -> geo/textura/animação, ver GreatCosmeticsClient), e SÓ o fluxo de Salvar
+        // populava ele de novo (via round-trip de rede: sendSaveCosmetic -> servidor manda
+        // SyncCosmeticsPayload de volta -> o receiver chama rebuildAllGeoModels()). Descartar é
+        // 100% local, nunca manda nada pro servidor, então nunca passava por esse rebuild — o
+        // modelo continuava GeckoLib "no papel" (resolvedCmd certo) mas sem entrada na tabela de
+        // verdade, caindo pro ícone chapado até o próximo Salvar (que aí sim reconstruía a tabela)
+        // acidentalmente "consertar". Chama direto aqui, sem precisar de nenhum round-trip.
+        com.f4xizzz.greatcosmetics.GreatCosmeticsClient.rebuildAllGeoModels();
     }
 }

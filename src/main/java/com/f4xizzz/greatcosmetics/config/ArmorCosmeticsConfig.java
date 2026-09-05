@@ -36,7 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ArmorCosmeticsConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File FILE = new File(DIR, "armor_cosmetics.json");
 
     /** cosmeticId (escolhido pelo admin, igual CosmeticsConfig) -> CosmeticData completo, com
@@ -73,9 +73,20 @@ public class ArmorCosmeticsConfig {
             entry.itemId = "minecraft:diamond_helmet";
             entry.slot = CosmeticData.VirtualSlot.HEAD;
             entry.type = "armor_cosmetic";
+            // BUG (2026-09): esse entry nunca ganhava uma Part — "parts" começa como ArrayList
+            // vazia (ver CosmeticData#parts) e nada aqui preenchia ela, diferente do load() normal
+            // (linha ~131 abaixo, "if (entry.parts.isEmpty()) entry.parts.add(...)"). Resultado: no
+            // PRIMEIRO boot (arquivo ainda não existe) o exemplo ficava sem NENHUMA parte — o loop
+            // de render em ArmorFeatureRendererMixin não desenhava nada. Corrigido preenchendo já
+            // aqui. Escala/offset ficam nos valores padrão (1.0/0) de propósito: um ArmorItem de
+            // slot HEAD de verdade (como diamond_helmet) agora renderiza pelo capacete 3D real do
+            // Minecraft, não um ícone chapado (ver ArmorFeatureRendererMixin#greatcosmetics$
+            // renderRealArmor) — encaixa sozinho, sem precisar de nenhum ajuste manual.
+            CosmeticData.CosmeticPart defaultPart = new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD);
+            entry.parts.add(defaultPart);
             defaults.convertedItems.put("diamond_helmet", entry);
             save(defaults);
-            System.out.println("[GreatCosmetics] armor_cosmetics.json gerado com exemplo padrão.");
+            System.out.println("[GreatCosmetics] armor_cosmetics.json generated with a default example.");
 
             // Sem isso, o mapa em memória ficava vazio até o PRÓXIMO load() — o item de exemplo
             // era salvo no disco mas nunca ficava disponível nesse boot.
@@ -104,7 +115,7 @@ public class ArmorCosmeticsConfig {
                     i++;
                 }
                 migrated = true;
-                System.out.println("[GreatCosmetics] armor_cosmetics.json em formato bem antigo detectado — migrando " + i + " item(ns).");
+                System.out.println("[GreatCosmetics] armor_cosmetics.json in a very old format detected — migrating " + i + " item(ns).");
             } else if (itemsElement != null && itemsElement.isJsonObject()) {
                 for (Map.Entry<String, com.google.gson.JsonElement> jsonEntry : itemsElement.getAsJsonObject().entrySet()) {
                     String key = jsonEntry.getKey();
@@ -114,7 +125,8 @@ public class ArmorCosmeticsConfig {
                     try {
                         entry = GSON.fromJson(obj, ArmorCosmeticEntry.class);
                     } catch (Exception ex) {
-                        System.err.println("[GreatCosmetics] armor_cosmetics.json: entrada inválida '" + key + "', ignorando.");
+                        System.err.println("[GreatCosmetics] armor_cosmetics.json: invalid entry '" + key + "', ignorando.");
+                        com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("ArmorCosmeticsConfig: entrada '" + key + "' invalid — " + ex);
                         continue;
                     }
                     if (entry == null) continue;
@@ -144,10 +156,10 @@ public class ArmorCosmeticsConfig {
                 }
             }
 
-            System.out.println("[GreatCosmetics] armor_cosmetics.json carregado: " + armorCosmetics.size() + " item(ns) convertido(s) em cosmético.");
+            System.out.println("[GreatCosmetics] armor_cosmetics.json loaded: " + armorCosmetics.size() + " item(ns) convertido(s) em cosmetic.");
 
             if (migrated) {
-                System.out.println("[GreatCosmetics] armor_cosmetics.json migrado pro formato novo (com id de cosmético próprio) — salvando de volta.");
+                System.out.println("[GreatCosmetics] armor_cosmetics.json migrated to the new format (with its own cosmetic id) — saving it back.");
             }
             // Só marca pra regravar se "convertedItems" existiu de verdade no arquivo (formato
             // reconhecido) — evita sobrescrever um arquivo estranho/corrompido com um mapa vazio.
@@ -157,8 +169,10 @@ public class ArmorCosmeticsConfig {
             // que corrompia/esvaziava o armor_cosmetics.json e fazia TODAS as armaduras
             // convertidas (até o diamond_helmet de exemplo) sumirem depois do primeiro load.
             shouldResave = itemsElement != null;
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("ArmorCosmeticsConfig: load completed — " + armorCosmetics.size() + " item(ns), migrated=" + migrated + ".");
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao carregar armor_cosmetics.json!");
+            System.err.println("[GreatCosmetics] Error loading armor_cosmetics.json!");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("ArmorCosmeticsConfig: FAILED to load armor_cosmetics.json — " + e);
             e.printStackTrace();
         }
 
@@ -237,7 +251,7 @@ public class ArmorCosmeticsConfig {
         Identifier id = Identifier.tryParse(realItemId);
         Item resolved = id != null ? Registries.ITEM.get(id) : null;
         if (id == null || resolved == null || resolved == net.minecraft.item.Items.AIR) {
-            System.err.println("[GreatCosmetics] AVISO: a armadura-cosmético '" + cosmeticId + "' aponta pro item '"
+            System.err.println("[GreatCosmetics] WARNING: a armadura-cosmetic '" + cosmeticId + "' aponta pro item '"
                     + realItemId + "', que não existe (mod não instalado ou itemId com erro de digitação). "
                     + "Ela vai ficar invisível e não vai ocupar slot até o itemId ser corrigido no armor_cosmetics.json.");
         }

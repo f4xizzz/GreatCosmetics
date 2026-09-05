@@ -28,7 +28,9 @@ public class DevPage extends WardrobePage {
         // Sem subpágina aberta (menu inicial, só os 5 botões): painel compacto, do tamanho do
         // menu — sem sobrar espaço vazio enorme cobrindo o personagem atrás. Com uma subpágina
         // aberta, usa o tamanho padrão de sempre (null == deixa o Wardrobe3DScreen decidir).
-        return this.activeSubPage == null ? new int[]{260, 220} : null;
+        // +26 de altura (260x220 -> 260x246) pra caber a linha de ajuda do Discord abaixo do
+        // último botão sem espremer/cortar nada.
+        return this.activeSubPage == null ? new int[]{260, 246} : null;
     }
 
     @Override
@@ -41,14 +43,30 @@ public class DevPage extends WardrobePage {
         }
 
         // --- MENU INICIAL ---
-        c.drawTextWithShadow(getTextRenderer(), "§6§l// DEV STUDIO", x + 16, y + 16, 0xFFFFFF);
-        c.drawTextWithShadow(getTextRenderer(), "Escolha o que editar:", x + 16, y + 32, 0xFFAAAAAA);
+        c.drawTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.header"), x + 16, y + 16, 0xFFFFFF);
+        c.drawTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.subtitle"), x + 16, y + 32, 0xFFAAAAAA);
 
         int btnW = Math.min(220, width - 32);
         int btnH = 26, gap = 8, startY = y + 52;
-        String[] labels = {"Cosméticos", "Effects", "Cosmetics Types", "Server Config", "Slots"};
+        String[] labels = {
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.cosmetics"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.effects"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.types"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.server_config"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.slots")
+        };
         for (int i = 0; i < labels.length; i++) {
             drawMenuButton(c, labels[i], x + 16, startY + i * (btnH + gap), btnW, btnH, mouseX, mouseY);
+        }
+
+        // Nota pedida pelo usuário: jogador iniciante travado no Dev Studio precisa saber que tem
+        // onde pedir ajuda. Abaixo do último botão, uma linha por vez (a string do Lang já vem com
+        // "\n" pra caber na largura apertada do painel — ver preferredPanelSize, +26 de altura só
+        // pra isso).
+        int helpY = startY + labels.length * (btnH + gap) + 6;
+        for (String line : com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.help").split("\n")) {
+            c.drawCenteredTextWithShadow(getTextRenderer(), line, x + (width / 2), helpY, 0xAAAAAA);
+            helpY += 10;
         }
     }
 

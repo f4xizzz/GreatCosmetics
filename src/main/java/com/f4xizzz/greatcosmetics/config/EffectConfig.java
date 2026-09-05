@@ -11,7 +11,7 @@ import java.util.Map;
 
 public class EffectConfig {
     public static Map<String, EffectData> effectsMap = new HashMap<>();
-    private static final Path CONFIG_FILE = FabricLoader.getInstance().getConfigDir().resolve("greatcosmetics/effects.json");
+    private static final Path CONFIG_FILE = FabricLoader.getInstance().getConfigDir().resolve("GreatCosmetics/effects.json");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     public static void loadEffects() {
@@ -26,7 +26,7 @@ public class EffectConfig {
         if (!file.exists()) {
             generateDefaults();
             saveEffects();
-            System.out.println("[Cosmetics] Arquivo effects.json gerado com presets padrão.");
+            System.out.println("[GreatCosmetics] effects.json file generated with default presets.");
         } else {
             // Se existir, lê o arquivo
             boolean shouldResave = false;
@@ -37,8 +37,10 @@ public class EffectConfig {
                     effectsMap = new HashMap<>();
                 }
                 shouldResave = true;
+                com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("EffectConfig: effects.json loaded — " + effectsMap.size() + " effect(s).");
             } catch (Exception e) {
-                System.out.println("[Cosmetics] Erro ao carregar o effects.json!");
+                System.out.println("[GreatCosmetics] Error loading o effects.json!");
+                com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("EffectConfig: FAILED to load effects.json — " + e);
                 e.printStackTrace();
             }
             // Regrava só DEPOIS do try-with-resources fechar o reader — abrir o FileWriter
@@ -51,7 +53,9 @@ public class EffectConfig {
     public static void saveEffects() {
         try (Writer writer = new FileWriter(CONFIG_FILE.toFile())) {
             GSON.toJson(effectsMap, writer);
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("EffectConfig: effects.json saved with " + effectsMap.size() + " effect(s).");
         } catch (Exception e) {
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("EffectConfig: FAILED to save effects.json — " + e);
             e.printStackTrace();
         }
     }
@@ -67,11 +71,11 @@ public class EffectConfig {
         EffectData e2 = new EffectData();
         e2.particleId = "minecraft:end_rod";
         e2.count = 15; e2.speed = 0.1; e2.spreadX = 1.2; e2.spreadY = 0.2; e2.spreadZ = 1.2; e2.offsetY = 0.1; e2.tickInterval = 5;
-        effectsMap.put("auraLendaria", e2);
+        effectsMap.put("legendaryAura", e2);
 
         EffectData e3 = new EffectData();
         e3.particleId = "minecraft:campfire_cosy_smoke";
         e3.count = 1; e3.speed = 0.01; e3.spreadX = 0.2; e3.spreadY = 0.1; e3.spreadZ = 0.2; e3.offsetY = 2.1; e3.tickInterval = 20;
-        effectsMap.put("fumacaCabeca", e3);
+        effectsMap.put("headSmoke", e3);
     }
 }

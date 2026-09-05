@@ -55,7 +55,7 @@ public class LuckPermsTagManager {
             );
             rankChangeListenerRegistered = true;
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao registrar listener de troca de cargo do LuckPerms: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to register LuckPerms group-change listener: " + e.getMessage());
         }
     }
 
@@ -68,7 +68,7 @@ public class LuckPermsTagManager {
             // (um Error, não uma Exception) — sem isso o servidor inteiro crashava no boot.
             if (!warnedMissing) {
                 warnedMissing = true;
-                System.err.println("[GreatCosmetics] LuckPerms não encontrado — o sistema de Tags vai funcionar só visualmente (sem aplicar prefix/permissions reais). Instale o LuckPerms pra ativar isso.");
+                System.err.println("[GreatCosmetics] LuckPerms not found — the Tags system will work visually only (without applying real prefix/permissions). Install LuckPerms to enable this.");
             }
             return null;
         }
@@ -89,7 +89,7 @@ public class LuckPermsTagManager {
             String suffix = user.getCachedData().getMetaData().getSuffix();
             return new String[]{prefix != null ? prefix : "", suffix != null ? suffix : ""};
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao buscar prefix/suffix do LuckPerms: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to fetch prefix/suffix from LuckPerms: " + e.getMessage());
             return new String[]{"", ""};
         }
     }
@@ -110,7 +110,7 @@ public class LuckPermsTagManager {
                 ));
             }
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao listar grupos do LuckPerms: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to list LuckPerms groups: " + e.getMessage());
         }
         return result;
     }
@@ -127,7 +127,7 @@ public class LuckPermsTagManager {
                 if (group.getName().equalsIgnoreCase(groupName)) return true;
             }
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao checar grupo do LuckPerms: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to check LuckPerms group: " + e.getMessage());
         }
         return false;
     }
@@ -147,7 +147,7 @@ public class LuckPermsTagManager {
 
             luckPerms.getUserManager().saveUser(user);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao aplicar tag via LuckPerms: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to apply tag via LuckPerms: " + e.getMessage());
         }
 
         if (data.minecraftTag != null && !data.minecraftTag.isBlank()) {
@@ -168,7 +168,7 @@ public class LuckPermsTagManager {
                     luckPerms.getUserManager().saveUser(user);
                 }
             } catch (Exception e) {
-                System.err.println("[GreatCosmetics] Falha ao remover tag via LuckPerms: " + e.getMessage());
+                System.err.println("[GreatCosmetics] Failed to remove tag via LuckPerms: " + e.getMessage());
             }
         }
 

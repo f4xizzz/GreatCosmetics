@@ -58,12 +58,12 @@ public abstract class DevSubPage {
         c.fill(px, py, px + 300, py + 100, 0xFF222222);
         c.drawBorder(px, py, 300, 100, 0xFFFFAA00);
 
-        c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§e§lALTERAÇÕES NÃO SALVAS!", vWidth / 2, py + 15, 0xFFFFFF);
-        c.drawCenteredTextWithShadow(parent.getTextRenderer(), "Deseja salvar as edições feitas atualmente?", vWidth / 2, py + 35, 0xAAAAAA);
+        c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.unsaved.title"), vWidth / 2, py + 15, 0xFFFFFF);
+        c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.unsaved.question"), vWidth / 2, py + 35, 0xAAAAAA);
 
-        drawButton(c, "Salvar", px + 10, py + 65, 85, 20, mx, my, 0xFF22AA22, 0xFF55FF55);
-        drawButton(c, "Não Salvar", px + 105, py + 65, 85, 20, mx, my, 0xFFCC3333, 0xFFFF5555);
-        drawButton(c, "Continuar", px + 200, py + 65, 90, 20, mx, my, 0xFF666666, 0xFFAAAAAA);
+        drawButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.unsaved.save"), px + 10, py + 65, 85, 20, mx, my, 0xFF22AA22, 0xFF55FF55);
+        drawButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.unsaved.dont_save"), px + 105, py + 65, 85, 20, mx, my, 0xFFCC3333, 0xFFFF5555);
+        drawButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.unsaved.continue"), px + 200, py + 65, 90, 20, mx, my, 0xFF666666, 0xFFAAAAAA);
 
         c.getMatrices().pop();
     }

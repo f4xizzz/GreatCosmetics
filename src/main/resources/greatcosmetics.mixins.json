@@ -1,9 +1,11 @@
 {
 	"required": true,
 	"package": "com.f4xizzz.greatcosmetics.mixin",
+	"plugin": "com.f4xizzz.greatcosmetics.security.GreatCosmeticsMixinPlugin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
 		"LivingEntityMixin",
+		"LivingEntityRendererMixin",
 		"PlayerEntityRendererMixin",
 		"PokemonRendererMixin",
 		"ItemStackAttributeMixin",
@@ -22,7 +24,9 @@
 		"client.EntityRenderDispatcherMixin",
 		"client.PlayerEntityGetEquippedStackMixin",
 		"client.AbstractClientPlayerFovMixin",
-		"client.HandledScreenAccessor"
+		"client.PlayerListHudMixin",
+		"client.ServerResourcePackLoaderMixin",
+		"client.InGameHudMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

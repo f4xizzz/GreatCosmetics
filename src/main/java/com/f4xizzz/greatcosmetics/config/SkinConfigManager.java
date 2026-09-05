@@ -18,8 +18,8 @@ public class SkinConfigManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
-    // Aponta exatamente para config/greatcosmetics/pokeskins.json
-    private static final File CONFIG_DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    // Aponta exatamente para config/GreatCosmetics/pokeskins.json
+    private static final File CONFIG_DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File CONFIG_FILE = new File(CONFIG_DIR, "pokeskins.json");
 
     private static final Map<String, PokemonSkin> LOADED_SKINS = new HashMap<>();
@@ -43,9 +43,10 @@ public class SkinConfigManager {
                 }
                 shouldResave = true;
             }
-            System.out.println("[GreatCosmetics] Foram carregadas " + LOADED_SKINS.size() + " skins de pokemon.");
+            System.out.println("[GreatCosmetics] Loaded " + LOADED_SKINS.size() + " Pokémon skins.");
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao carregar o arquivo de skins: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error loading the skins file: " + e.getMessage());
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("SkinConfigManager: FAILED to load pokeskins.json — " + e);
         }
 
         // Regrava só DEPOIS do try-with-resources fechar o FileReader — abrir um FileWriter pro
@@ -58,7 +59,7 @@ public class SkinConfigManager {
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(new ArrayList<>(LOADED_SKINS.values()), writer);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao salvar o arquivo de skins: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error saving the skins file: " + e.getMessage());
         }
     }
 
@@ -69,13 +70,13 @@ public class SkinConfigManager {
         }
 
         List<PokemonSkin> defaults = new ArrayList<>();
-        defaults.add(new PokemonSkin("pikachu_summer", "Pikachu Praiano", "pikachu", "summer", 60));
+        defaults.add(new PokemonSkin("pikachu_summer", "Beach Pikachu", "pikachu", "summer", 60));
         defaults.add(new PokemonSkin("charizard_clone", "Charizard Clone", "charizard", "clone", 120));
 
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(defaults, writer);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao criar o config padrão de skins: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error creating the default skins config: " + e.getMessage());
         }
     }
 

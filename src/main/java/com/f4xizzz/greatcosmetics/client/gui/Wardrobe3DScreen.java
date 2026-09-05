@@ -28,20 +28,21 @@ import java.util.UUID;
 public class Wardrobe3DScreen extends Screen {
 
     public enum Tab {
-        ACESSORIES("Acessórios"),
-        CUSTOMIZE("Visualização"),
-        PARTY("Party"),
-        TAGS("Tags"),
-        DEV("Dev Studio");
+        ACESSORIES("wardrobe.tab.accessories"),
+        CUSTOMIZE("wardrobe.tab.customize"),
+        PARTY("wardrobe.tab.party"),
+        TAGS("wardrobe.tab.tags"),
+        DEV("wardrobe.tab.dev");
 
-        private final String displayName;
+        private final String langKey;
 
-        Tab(String displayName) {
-            this.displayName = displayName;
+        Tab(String langKey) {
+            this.langKey = langKey;
         }
 
+        /** Resolvido do Lang a cada chamada (não fixo no construtor) — pega /gc reload. */
         public String getDisplayName() {
-            return this.displayName;
+            return com.f4xizzz.greatcosmetics.config.LangConfig.legacy(this.langKey);
         }
     }
 
@@ -71,11 +72,12 @@ public class Wardrobe3DScreen extends Screen {
     public static String previewCosmeticId = null;
     public static boolean isPreviewSneaking = false;
 
-    // Transparência do CORPO do jogador (não afeta armadura/cosméticos, ver PlayerBodyAlphaMixin +
-    // o reset em ArmorFeatureRendererMixin) — 1.0 = opaco normal. Só usada/visível enquanto uma
+    // Visibilidade do CORPO do jogador (não afeta armadura/cosméticos, ver PlayerEntityRendererMixin
+    // + o reset em ArmorFeatureRendererMixin) — 3 estados só, ciclados por clique (não mais um
+    // slider arrastável): 1.0 = normal, 0.5 = meio transparente, 0.0 = 100% invisível (cancela o
+    // render do corpo inteiro, ver greatcosmetics$startBodyAlpha). Só usada/visível enquanto uma
     // Part está sendo configurada (barrinha lateral esquerda, ver renderGizmoSidebar).
     public static float characterAlpha = 1.0f;
-    private boolean isDraggingAlphaSlider = false;
 
     // Segurar o botão +/- do offset do pivô do gizmo (barrinha lateral, só .geo) repete o passo
     // sozinho enquanto o botão do mouse continuar pressionado — ver updateGeoOffsetHold().
@@ -124,7 +126,7 @@ public class Wardrobe3DScreen extends Screen {
     private final String[] equipSlots = {"HEAD", "NECK", "CHEST", "BACK", "WAIST", "LEGS", "FEET"};
 
     public Wardrobe3DScreen(boolean hasBackground) {
-        super(Text.literal("Avatar Studio"));
+        super(com.f4xizzz.greatcosmetics.config.LangConfig.text("wardrobe.title"));
         this.hasBackground = hasBackground;
 
         // Reseta os flags de dev-mode TODA VEZ que o wardrobe abre — sem isso, um flag que
@@ -138,6 +140,9 @@ public class Wardrobe3DScreen extends Screen {
         this.pages.put(Tab.CUSTOMIZE, new CustomizePage(this));
         this.pages.put(Tab.PARTY, new PartyPage(this));
         this.pages.put(Tab.TAGS, new TagsPage(this));
+
+        // A instância existe pra todo mundo (só existe um jar — ver build.gradle); quem não tem
+        // permissão nunca vê o botão da aba nem consegue trocar pra ela (ver hasDevPermission()).
         this.pages.put(Tab.DEV, new DevPage(this));
     }
 
@@ -189,6 +194,7 @@ public class Wardrobe3DScreen extends Screen {
     protected void init() {
         if (this.client != null && this.client.player != null) {
             if (!this.isInitialized) {
+                com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("Wardrobe3DScreen: opening for " + this.client.player.getName().getString() + ".");
                 this.lockedPlayerYaw = this.client.player.getYaw();
                 this.oldPerspective = this.client.options.getPerspective();
                 this.oldHudHidden = this.client.options.hudHidden;
@@ -227,6 +233,8 @@ public class Wardrobe3DScreen extends Screen {
     }
 
     private void toggleTab(Tab clickedTab, float focusY, double zoom, float pan) {
+        boolean wasDevTab = isDevTabActive;
+
         if (this.currentTab == clickedTab) {
             this.currentTab = null;
             isDevTabActive = false;
@@ -245,6 +253,21 @@ public class Wardrobe3DScreen extends Screen {
 
             WardrobePage page = pages.get(clickedTab);
             if (page != null) page.onOpen();
+        }
+
+        // BUG (2026-09): sair da aba DEV (pra outra aba, ou fechando ela) sem passar pelo botão
+        // "Voltar" de dentro do editor de Cosméticos/Effects deixava GizmoManager.activePart/
+        // activeEffect setado pra sempre — a barrinha lateral (botão "S", slider de transparência,
+        // o texto de diagnóstico) e o gizmo 3D no mundo continuavam desenhando em CIMA de outras
+        // abas, porque nada além do próprio editor (DevCosmeticsSubPage/DevEffectsSubPage) limpava
+        // esse estado. Trocar de aba é exatamente um dos jeitos de "sair" que não passava por lá —
+        // limpa aqui, no único lugar por onde QUALQUER troca de aba passa.
+        if (wasDevTab && !isDevTabActive) {
+            com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activePart = null;
+            com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activeEffect = null;
+            com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.currentAxis = com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.Axis.NONE;
+            com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.isDragging = false;
+            com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.onUpdate = null;
         }
     }
 
@@ -393,7 +416,7 @@ public class Wardrobe3DScreen extends Screen {
                 c.fillGradient(panelX, panelY + cs, panelX + 1, panelY + effPanelH - cs, ACCENT_GRAY, 0x00FFFFFF);
 
                 if (!isDev) {
-                    String title = "// " + this.currentTab.getDisplayName().toUpperCase();
+                    String title = com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.panel.title", "tab", this.currentTab.getDisplayName().toUpperCase());
                     c.drawTextWithShadow(this.textRenderer, title, panelX + 12, panelY + 14, ACCENT_WHITE);
                     c.fill(panelX + 12, panelY + 28, panelX + effPanelW - 12, panelY + 29, 0xFF333333);
                 }
@@ -405,7 +428,7 @@ public class Wardrobe3DScreen extends Screen {
             }
         }
 
-        if (com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activePart != null) {
+        if (com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.hasTarget()) {
             com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.updateHover(vMouseX, vMouseY);
             updateGeoOffsetHold();
             renderGizmoSidebar(c, vMouseX, vMouseY);
@@ -418,7 +441,7 @@ public class Wardrobe3DScreen extends Screen {
 
     // Layout da barrinha, compartilhado entre render/click/drag — muda aqui, muda nos três juntos.
     private static final int SIDEBAR_X = 4, SIDEBAR_W = 26, SIDEBAR_Y = 70;
-    private static final int SIDEBAR_SNEAK_H = 22, SIDEBAR_SLIDER_GAP = 10, SIDEBAR_SLIDER_H = 110;
+    private static final int SIDEBAR_SNEAK_H = 22, SIDEBAR_ALPHA_GAP = 10, SIDEBAR_ALPHA_BTN_H = 22;
     private static final int SIDEBAR_GEO_GAP = 10, SIDEBAR_GEO_BTN_H = 14;
     private static final float GEO_Y_OFFSET_STEP = 0.02f;
 
@@ -429,20 +452,30 @@ public class Wardrobe3DScreen extends Screen {
         return part != null && part.geoModelId != null && !part.geoModelId.isBlank();
     }
 
-    private int sidebarSliderTop() { return SIDEBAR_Y + SIDEBAR_SNEAK_H + SIDEBAR_SLIDER_GAP; }
-    private int sidebarSliderBottom() { return sidebarSliderTop() + SIDEBAR_SLIDER_H; }
-    private int sidebarGeoRowY() { return sidebarSliderBottom() + 14 + SIDEBAR_GEO_GAP; }
+    private int sidebarAlphaBtnTop() { return SIDEBAR_Y + SIDEBAR_SNEAK_H + SIDEBAR_ALPHA_GAP; }
+    private int sidebarAlphaBtnBottom() { return sidebarAlphaBtnTop() + SIDEBAR_ALPHA_BTN_H; }
+    private int sidebarGeoRowY() { return sidebarAlphaBtnBottom() + 14 + SIDEBAR_GEO_GAP; }
     private int sidebarHeight() {
-        int bottom = sidebarSliderBottom() + 14;
+        int bottom = sidebarAlphaBtnBottom() + 14;
         if (showGeoOffsetSection()) bottom = sidebarGeoRowY() + SIDEBAR_GEO_BTN_H + 12;
         return bottom - SIDEBAR_Y + 6;
     }
 
+    /** Avança characterAlpha pro próximo dos 3 estados (Visível -> Meio -> Invisível -> Visível),
+     *  ver botão único na barrinha (era um slider arrastável antes — trocado a pedido do usuário
+     *  por um clique que cicla, igual visibilidade de camada em editor de imagem). */
+    private void cycleCharacterAlpha() {
+        if (characterAlpha >= 0.99f) characterAlpha = 0.5f;
+        else if (characterAlpha > 0.01f) characterAlpha = 0.0f;
+        else characterAlpha = 1.0f;
+    }
+
     /** Barrinha vertical fixa na borda esquerda da tela — só aparece enquanto uma Part está sendo
      *  configurada no Dev Studio (GizmoManager.activePart != null). Botão "S" (Visualizar Posição:
-     *  SNEAK, antes um toggle perdido no meio da lista de propriedades) em cima, slider de
-     *  transparência do CORPO do jogador no meio (ver PlayerBodyAlphaMixin), e — só pra Parts
-     *  GeckoLib — o ajuste do pivô do gizmo (ver GizmoDevConfig) embaixo. */
+     *  SNEAK, antes um toggle perdido no meio da lista de propriedades) em cima, botão de
+     *  visibilidade do CORPO do jogador no meio (3 estados por clique — ver
+     *  PlayerEntityRendererMixin#greatcosmetics$startBodyAlpha/cycleCharacterAlpha), e — só pra
+     *  Parts GeckoLib — o ajuste do pivô do gizmo (ver GizmoDevConfig) embaixo. */
     private void renderGizmoSidebar(DrawContext c, int mouseX, int mouseY) {
         int sbH = sidebarHeight();
 
@@ -456,17 +489,30 @@ public class Wardrobe3DScreen extends Screen {
         c.drawBorder(SIDEBAR_X + 2, SIDEBAR_Y + 2, SIDEBAR_W - 4, SIDEBAR_SNEAK_H, isPreviewSneaking ? 0xFFDD66FF : 0xFF666666);
         c.drawCenteredTextWithShadow(this.textRenderer, "S", SIDEBAR_X + SIDEBAR_W / 2, SIDEBAR_Y + 2 + SIDEBAR_SNEAK_H / 2 - 4, 0xFFFFFF);
 
-        int trackX = SIDEBAR_X + SIDEBAR_W / 2;
-        int trackY0 = sidebarSliderTop();
-        int trackY1 = sidebarSliderBottom();
-        c.fill(trackX - 1, trackY0, trackX + 1, trackY1, 0xFF666666);
-
-        float t = MathHelper.clamp(characterAlpha, 0f, 1f);
-        int handleY = trackY1 - Math.round(t * SIDEBAR_SLIDER_H); // topo = opaco, embaixo = mais transparente
-        boolean hovHandle = isDraggingAlphaSlider || over(mouseX, mouseY, trackX - 6, handleY - 3, 12, 6);
-        c.fill(trackX - 6, handleY - 3, trackX + 6, handleY + 3, hovHandle ? 0xFFFFFFFF : 0xFFAAAAAA);
-
-        c.drawCenteredTextWithShadow(this.textRenderer, Math.round(t * 100) + "%", trackX, trackY1 + 4, 0xFFAAAAAA);
+        // Botão único de visibilidade do corpo — clicar cicla Visível -> Meio -> Invisível ->
+        // Visível (ver cycleCharacterAlpha). Letra + cor mudam por estado pra ficar óbvio de
+        // relance sem precisar ler o "%" embaixo.
+        int alphaBtnY = sidebarAlphaBtnTop();
+        boolean hovAlphaBtn = over(mouseX, mouseY, SIDEBAR_X + 2, alphaBtnY, SIDEBAR_W - 4, SIDEBAR_ALPHA_BTN_H);
+        String alphaLabel;
+        int alphaBg, alphaBorder;
+        if (characterAlpha >= 0.99f) {
+            alphaLabel = "V";
+            alphaBg = hovAlphaBtn ? 0x66FFFFFF : 0x44000000;
+            alphaBorder = 0xFF666666;
+        } else if (characterAlpha > 0.01f) {
+            alphaLabel = "H";
+            alphaBg = 0xFFAA8800;
+            alphaBorder = 0xFFFFCC44;
+        } else {
+            alphaLabel = "I";
+            alphaBg = 0xFFAA2222;
+            alphaBorder = 0xFFFF6666;
+        }
+        c.fill(SIDEBAR_X + 2, alphaBtnY, SIDEBAR_X + SIDEBAR_W - 2, alphaBtnY + SIDEBAR_ALPHA_BTN_H, alphaBg);
+        c.drawBorder(SIDEBAR_X + 2, alphaBtnY, SIDEBAR_W - 4, SIDEBAR_ALPHA_BTN_H, alphaBorder);
+        c.drawCenteredTextWithShadow(this.textRenderer, alphaLabel, SIDEBAR_X + SIDEBAR_W / 2, alphaBtnY + SIDEBAR_ALPHA_BTN_H / 2 - 4, 0xFFFFFF);
+        c.drawCenteredTextWithShadow(this.textRenderer, Math.round(characterAlpha * 100) + "%", SIDEBAR_X + SIDEBAR_W / 2, alphaBtnY + SIDEBAR_ALPHA_BTN_H + 4, 0xFFAAAAAA);
 
         if (showGeoOffsetSection()) {
             int rowY = sidebarGeoRowY();
@@ -479,16 +525,25 @@ public class Wardrobe3DScreen extends Screen {
             c.drawCenteredTextWithShadow(this.textRenderer, "+", SIDEBAR_X + 4 + btnW + btnW / 2, rowY + 3, 0xFFFFFFFF);
             c.drawCenteredTextWithShadow(this.textRenderer,
                     String.format(java.util.Locale.US, "%.2f", com.f4xizzz.greatcosmetics.client.GizmoDevConfig.geoGizmoYOffset),
-                    trackX, rowY + SIDEBAR_GEO_BTN_H + 2, 0xFFFFAA55);
+                    SIDEBAR_X + SIDEBAR_W / 2, rowY + SIDEBAR_GEO_BTN_H + 2, 0xFFFFAA55);
         }
 
         // DIAGNÓSTICO TEMPORÁRIO (ver GizmoManager#debugStatus/lastClickDebug) — some assim que
         // confirmarmos que o gizmo tá funcionando de verdade. Duas linhas: estado geral (atualiza
         // todo frame) e o resultado do ÚLTIMO clique tentado no gizmo (só atualiza ao clicar).
+        // BUG (2026-09) — duas rodadas: primeiro vazava pra fora do painel (sem largura travando o
+        // desenho); tentei cortar com enablePerfectScissor()/RenderSystem.disableScissor() cru, só
+        // que esse é o MESMO padrão errado já documentado em PartyPage#enableScissorStacked — não
+        // empilha com o resto do sistema de recorte da tela, então o corte saía desalinhado do
+        // texto de verdade (exatamente o "cabeçalho cortado errado" que motivou criar
+        // enableScissorStacked em primeiro lugar). Trocado pro método certo.
+        int dbgX = SIDEBAR_X + SIDEBAR_W + 6;
+        enableScissorStacked(c, dbgX, SIDEBAR_Y, 260, 20);
         c.drawTextWithShadow(this.textRenderer, com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.debugStatus(),
-                SIDEBAR_X + SIDEBAR_W + 6, SIDEBAR_Y, 0xFFFF5555);
+                dbgX, SIDEBAR_Y, 0xFFFF5555);
         c.drawTextWithShadow(this.textRenderer, com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.lastClickDebug,
-                SIDEBAR_X + SIDEBAR_W + 6, SIDEBAR_Y + 10, 0xFFFFFF55);
+                dbgX, SIDEBAR_Y + 10, 0xFFFFFF55);
+        c.disableScissor();
     }
 
     /** Chamado todo frame enquanto o botão +/- do offset do pivô está pressionado (ver
@@ -511,14 +566,6 @@ public class Wardrobe3DScreen extends Screen {
             com.f4xizzz.greatcosmetics.client.GizmoDevConfig.save();
             geoOffsetLastStepMs = now;
         }
-    }
-
-    private void updateAlphaFromMouse(double vMouseY) {
-        int trackY0 = sidebarSliderTop();
-        int trackY1 = sidebarSliderBottom();
-        float t = 1f - (float) ((vMouseY - trackY0) / (double) (trackY1 - trackY0));
-        // Nunca deixa chegar em 0% — corpo 100% invisível parece bugado ("sumiu"), não "transparente".
-        characterAlpha = MathHelper.clamp(t, 0.1f, 1.0f);
     }
 
     private void drawTechTab(DrawContext c, Tab tab, String letter, String fullName, int x, int y, int currentW, boolean isHovered) {
@@ -612,7 +659,7 @@ public class Wardrobe3DScreen extends Screen {
 
         if (this.equippedSlotsWidget.mouseClicked(vMouseX, vMouseY, vWidth, vHeight, this.currentTab == Tab.DEV)) return true;
 
-        if (com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activePart != null) {
+        if (com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.hasTarget()) {
             if (over(vMouseX, vMouseY, SIDEBAR_X + 2, SIDEBAR_Y + 2, SIDEBAR_W - 4, SIDEBAR_SNEAK_H)) {
                 isPreviewSneaking = !isPreviewSneaking;
                 if (com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevCosmeticsSubPage.INSTANCE != null) {
@@ -621,12 +668,9 @@ public class Wardrobe3DScreen extends Screen {
                 playClick();
                 return true;
             }
-            int trackX = SIDEBAR_X + SIDEBAR_W / 2;
-            int trackY0 = sidebarSliderTop();
-            int trackY1 = sidebarSliderBottom();
-            if (vMouseX >= trackX - 6 && vMouseX <= trackX + 6 && vMouseY >= trackY0 - 6 && vMouseY <= trackY1 + 6) {
-                isDraggingAlphaSlider = true;
-                updateAlphaFromMouse(vMouseY);
+            if (over(vMouseX, vMouseY, SIDEBAR_X + 2, sidebarAlphaBtnTop(), SIDEBAR_W - 4, SIDEBAR_ALPHA_BTN_H)) {
+                cycleCharacterAlpha();
+                playClick();
                 return true;
             }
             if (showGeoOffsetSection()) {
@@ -730,11 +774,6 @@ public class Wardrobe3DScreen extends Screen {
         double vDeltaX = deltaX / scaleMultiplier;
         double vDeltaY = deltaY / scaleMultiplier;
 
-        if (isDraggingAlphaSlider) {
-            updateAlphaFromMouse(vMy);
-            return true;
-        }
-
         if (this.equippedSlotsWidget.mouseDragged(vMx, vMy, button, vDeltaX, vDeltaY)) return true;
 
         if (this.currentTab != null) {
@@ -791,6 +830,7 @@ public class Wardrobe3DScreen extends Screen {
     @Override
     public void removed() {
         super.removed();
+        com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("Wardrobe3DScreen: closing.");
         isFreecamActive = false;
         isDevTabActive = false;
         com.f4xizzz.greatcosmetics.client.ClientCosmeticCache.isDevModeActive = false;
@@ -800,6 +840,13 @@ public class Wardrobe3DScreen extends Screen {
         characterAlpha = 1.0f;
         previewCosmeticId = null;
         com.f4xizzz.greatcosmetics.client.gui.pages.TagsPage.devPreviewEquippedId = null;
+        // Mesmo motivo do reset em toggleTab() — fechar a tela inteira (Esc, clicar fora) é OUTRO
+        // jeito de "sair" do editor de Cosméticos/Effects sem passar pelo botão "Voltar" deles.
+        com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activePart = null;
+        com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activeEffect = null;
+        com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.currentAxis = com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.Axis.NONE;
+        com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.isDragging = false;
+        com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.onUpdate = null;
         if (this.client != null) {
             this.client.options.setPerspective(this.oldPerspective);
             this.client.options.hudHidden = this.oldHudHidden;
@@ -823,7 +870,6 @@ public class Wardrobe3DScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        this.isDraggingAlphaSlider = false;
         this.isHoldingGeoOffsetButton = false;
         this.equippedSlotsWidget.onMouseReleased();
         return super.mouseReleased(mouseX, mouseY, button);

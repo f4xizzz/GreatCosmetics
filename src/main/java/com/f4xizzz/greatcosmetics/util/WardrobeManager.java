@@ -27,7 +27,7 @@ import java.util.UUID;
 public class WardrobeManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File SAVE_FILE = new File(DIR, "studios.json");
 
     // ==========================================
@@ -81,10 +81,10 @@ public class WardrobeManager {
             if (loaded != null) {
                 studioLocations.clear();
                 studioLocations.putAll(loaded);
-                GreatCosmetics.debugLog("Carregados " + studioLocations.size() + " estudios salvos do Wardrobe!");
+                GreatCosmetics.debugLog("Loaded " + studioLocations.size() + " saved Wardrobe studios!");
             }
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao carregar os estudios do Wardrobe: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to load Wardrobe studios: " + e.getMessage());
         }
     }
 
@@ -93,7 +93,7 @@ public class WardrobeManager {
         try (FileWriter writer = new FileWriter(SAVE_FILE)) {
             GSON.toJson(studioLocations, writer);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao salvar os estudios do Wardrobe: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to save Wardrobe studios: " + e.getMessage());
         }
     }
 
@@ -114,7 +114,7 @@ public class WardrobeManager {
                 }
             }
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao carregar wardrobe_sessions.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to load wardrobe_sessions.json: " + e.getMessage());
         }
     }
 
@@ -127,7 +127,7 @@ public class WardrobeManager {
         try (FileWriter writer = new FileWriter(SESSIONS_FILE)) {
             GSON.toJson(raw, writer);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao salvar wardrobe_sessions.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to save wardrobe_sessions.json: " + e.getMessage());
         }
     }
 
@@ -147,7 +147,7 @@ public class WardrobeManager {
         ServerWorld world = player.getServer().getWorld(worldKey);
         if (world != null) {
             player.teleport(world, saved.x, saved.y, saved.z, saved.yaw, saved.pitch);
-            GreatCosmetics.debugLog("Jogador " + player.getName().getString() + " estava preso no wardrobe/studio — devolvido automaticamente.");
+            GreatCosmetics.debugLog("Player " + player.getName().getString() + " was stuck in the wardrobe/studio — automatically returned.");
         }
         saveSessions();
     }
@@ -165,13 +165,16 @@ public class WardrobeManager {
         studioLocations.put(bgName.toLowerCase(), loc);
         saveStudios();
 
-        player.sendMessage(net.minecraft.text.Text.literal("§a[Cosmetics] Background '" + bgName + "' definido e salvo no disco!"), false);
+        player.sendMessage(com.f4xizzz.greatcosmetics.config.LangConfig.chat("commands.wardrobe.background_set", player.getServer().getRegistryManager(), "name", bgName), false);
     }
 
     // ==========================================
     // COMANDO: /wardrobe [player] [background]
     // ==========================================
     public static void openWardrobe(ServerPlayerEntity target, String bgName) {
+        // Gate de licença (ver security.ActivationManager) — servidor dedicado sem licença não abre a GUI.
+        if (com.f4xizzz.greatcosmetics.GreatCosmetics.licenseBlocked(target)) return;
+
         // 1. Salva a posição atual
         previousLocations.put(target.getUuid(), new RuntimeLocation(
                 target.getServerWorld(), target.getX(), target.getY(), target.getZ(), target.getYaw(), target.getPitch()
@@ -196,7 +199,7 @@ public class WardrobeManager {
                 target.teleport(targetWorld, savedLoc.x, savedLoc.y, savedLoc.z, savedLoc.yaw, savedLoc.pitch);
                 hasSavedBackground = true;
             } else {
-                target.sendMessage(net.minecraft.text.Text.literal("§c[ERRO] A dimensao '" + savedLoc.dimension + "' do estúdio nao foi encontrada!"), false);
+                target.sendMessage(com.f4xizzz.greatcosmetics.config.LangConfig.chat("commands.wardrobe.dimension_not_found", target.getServer().getRegistryManager(), "dimension", savedLoc.dimension), false);
             }
         }
 
@@ -250,7 +253,7 @@ public class WardrobeManager {
 
         if (oldLoc != null) {
             player.teleport(oldLoc.world, oldLoc.x, oldLoc.y, oldLoc.z, oldLoc.yaw, oldLoc.pitch);
-            GreatCosmetics.debugLog("Jogador " + player.getName().getString() + " retornou.");
+            GreatCosmetics.debugLog("Player " + player.getName().getString() + " returned.");
         }
     }
 }

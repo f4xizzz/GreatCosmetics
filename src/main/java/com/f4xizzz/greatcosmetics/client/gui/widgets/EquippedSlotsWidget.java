@@ -251,7 +251,7 @@ public class EquippedSlotsWidget {
             c.fill(btnX, btnY, btnX + btnW, btnY + btnH, hovBtn ? 0xEE222222 : 0xAA0A0A0A);
             c.fill(btnX, btnY, btnX + 1, btnY + btnH, ClientCosmeticCache.isDevModeActive ? 0xFFFFAA00 : 0xFF555555);
 
-            String devText = ClientCosmeticCache.isDevModeActive ? "§eDev: ON" : "§7Dev: OFF";
+            String devText = com.f4xizzz.greatcosmetics.config.LangConfig.legacy(ClientCosmeticCache.isDevModeActive ? "wardrobe.equipped_slots.dev_on" : "wardrobe.equipped_slots.dev_off");
             c.getMatrices().push();
             c.getMatrices().translate(btnX + btnW / 2.0f, btnY + 2, 0);
             c.getMatrices().scale(0.8f, 0.8f, 1.0f); // Texto um pouquinho menor para ficar clean

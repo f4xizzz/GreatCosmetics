@@ -24,6 +24,7 @@ public class AutoCMDManager {
 
     // Limpa a lista no reload
     public static void clear() {
+        com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("AutoCMDManager.clear(): resetting counter (had " + registeredModels.size() + " models + " + registeredIcons.size() + " icons registered).");
         registeredModels.clear();
         registeredIcons.clear();
         currentCmd = STARTING_CMD;

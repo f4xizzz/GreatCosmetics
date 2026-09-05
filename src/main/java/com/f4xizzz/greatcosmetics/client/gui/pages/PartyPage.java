@@ -158,7 +158,7 @@ public class PartyPage extends WardrobePage {
     }
 
     private String currentPreviewPoseLabel() {
-        if (previewPoseIndex == PREVIEW_BATTLE_INDEX) return "Batalha";
+        if (previewPoseIndex == PREVIEW_BATTLE_INDEX) return com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.preview.pose_battle");
         String name = PREVIEW_POSES[previewPoseIndex].name();
         return name.substring(0, 1).toUpperCase() + name.substring(1).toLowerCase();
     }
@@ -205,12 +205,12 @@ public class PartyPage extends WardrobePage {
     /** Nome pra mostrar no botão de forma: "Padrão" na posição 0, ou o próprio aspect configurado
      *  (capitalizado) nas posições seguintes. */
     private String currentPreviewFormLabel() {
-        if (previewFormIndex == 0) return "Padrão";
+        if (previewFormIndex == 0) return com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.form.default");
         int altIndex = previewFormIndex - 1;
         List<String> altForms = previewingSkin.getAltForms();
-        if (altIndex < 0 || altIndex >= altForms.size()) return "Padrão";
+        if (altIndex < 0 || altIndex >= altForms.size()) return com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.form.default");
         String raw = altForms.get(altIndex);
-        if (raw.isEmpty()) return "Padrão";
+        if (raw.isEmpty()) return com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.form.default");
 
         // "battle_bond=ash" / "meteorite_form=attack" (feature composta, ver appendAspectTokens)
         // vira só "Ash" / "Attack" no botão — o admin não precisa ver a chave interna da feature,
@@ -220,7 +220,7 @@ public class PartyPage extends WardrobePage {
         if (eq < 0) eq = raw.indexOf(':');
         if (eq >= 0 && eq < raw.length() - 1) label = raw.substring(eq + 1);
 
-        return label.isEmpty() ? "Padrão" : label.substring(0, 1).toUpperCase() + label.substring(1);
+        return label.isEmpty() ? com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.form.default") : label.substring(0, 1).toUpperCase() + label.substring(1);
     }
 
     /** Parseia uma string de aspect (mesmo formato usado em pokeskins.json: "shiny", "f=alola",
@@ -369,9 +369,7 @@ public class PartyPage extends WardrobePage {
             entity.getDataTracker().set(PokemonEntity.getSPECIES(), dummy.getSpecies().getResourceIdentifier().toString());
             entity.getDataTracker().set(PokemonEntity.getASPECTS(), new HashSet<>(dummy.getAspects()));
             entity.getDataTracker().set(PokemonEntity.getSCALE_MODIFIER(), dummy.getScaleModifier());
-            // DEBUG TEMPORÁRIO — imprime exatamente o que está sendo resolvido pro preview, pra
-            // investigar por que o Scizor ainda não carrega mesmo com a skin/aspecto certo.
-            System.out.println("[GreatCosmetics][DEBUG preview] species=" + previewingSkin.getSpecies()
+            com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("PartyPage preview: species=" + previewingSkin.getSpecies()
                     + " skinAspectRaw=\"" + previewingSkin.getAspect() + "\""
                     + " gender=" + dummy.getGender()
                     + " forcedAspects=" + dummy.getForcedAspects()
@@ -600,7 +598,7 @@ public class PartyPage extends WardrobePage {
             this.isLoaded = true;
             updateAvailableSkins();
         } catch (Exception e) {
-            System.err.println("[Cosmetics] Erro ao carregar a Party do Cobblemon: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error loading a Party do Cobblemon: " + e.getMessage());
         }
     }
 
@@ -650,7 +648,7 @@ public class PartyPage extends WardrobePage {
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), "DEV", devBtnX + (devBtnW / 2), devBtnY + 3, devColor);
         }
 
-        c.drawTextWithShadow(parent.getTextRenderer(), "§eSkins Disponíveis", x + 12, y + 35, 0xFFFFFF);
+        c.drawTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.skins.header"), x + 12, y + 35, 0xFFFFFF);
         c.fill(x + 12, y + 48, x + width - 12, y + 49, 0xFF444444);
 
         // =========================================================
@@ -672,12 +670,12 @@ public class PartyPage extends WardrobePage {
             boolean hovCur = over(mouseX, mouseY, btnClearCurX, btnClearCurY, btnClearW, btnClearH);
             c.fill(btnClearCurX, btnClearCurY, btnClearCurX + btnClearW, btnClearCurY + btnClearH, hovCur ? 0x66FF5555 : 0x44AA0000);
             c.drawBorder(btnClearCurX, btnClearCurY, btnClearW, btnClearH, hovCur ? 0xFFFF5555 : 0xFFAA0000);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "Limpar Atual", btnClearCurX + (btnClearW / 2), btnClearCurY + 6, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.skins.clear_current"), btnClearCurX + (btnClearW / 2), btnClearCurY + 6, 0xFFFFFF);
 
             boolean hovAll = over(mouseX, mouseY, btnClearAllX, btnClearCurY, btnClearW, btnClearH);
             c.fill(btnClearAllX, btnClearCurY, btnClearAllX + btnClearW, btnClearCurY + btnClearH, hovAll ? 0x66FF5555 : 0x44AA0000);
             c.drawBorder(btnClearAllX, btnClearCurY, btnClearW, btnClearH, hovAll ? 0xFFFF5555 : 0xFFAA0000);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "Limpar Party", btnClearAllX + (btnClearW / 2), btnClearCurY + 6, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.skins.clear_party"), btnClearAllX + (btnClearW / 2), btnClearCurY + 6, 0xFFFFFF);
         } else {
             lastListH = height - 65;
         }
@@ -689,7 +687,7 @@ public class PartyPage extends WardrobePage {
         skinListMaxScrollY = Math.max(0, skinTotalContentHeight - lastListH);
 
         if (currentAvailableSkins.isEmpty()) {
-            c.drawTextWithShadow(parent.getTextRenderer(), "§7Nenhuma skin configurada.", x + 12, y + 60, 0xFFFFFF);
+            c.drawTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.skins.none"), x + 12, y + 60, 0xFFFFFF);
         } else {
             // parent.enableScissorStacked() (não c.enableScissor() puro, nem RenderSystem cru) —
             // empilha o recorte (quando o ModelWidget do Cobblemon chama context.enableScissor()/
@@ -767,15 +765,15 @@ public class PartyPage extends WardrobePage {
 
                 String statusText;
                 if (!isUnlocked) {
-                    statusText = "§cVocê não tem essa skin!";
+                    statusText = com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.skins.status.not_owned");
                 } else if (!isCompatible) {
-                    statusText = "§cIncompatível";
+                    statusText = com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.skins.status.incompatible");
                 } else if (onCooldown) {
                     long totalSecs = cdLeft / 1000;
                     String timeStr = totalSecs > 3600 ? String.format("%02d:%02d:%02d", totalSecs / 3600, (totalSecs % 3600) / 60, totalSecs % 60) : String.format("%02d:%02d", totalSecs / 60, totalSecs % 60);
-                    statusText = "§cEm espera: " + timeStr;
+                    statusText = com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.skins.status.cooldown", "time", timeStr);
                 } else {
-                    statusText = isHovered ? "§a> Clique para aplicar" : "§7Pronto para uso";
+                    statusText = com.f4xizzz.greatcosmetics.config.LangConfig.legacy(isHovered ? "party.skins.status.click_apply" : "party.skins.status.ready");
                 }
                 drawMarqueeText(c, net.minecraft.text.Text.literal(statusText), lastListX + 46, itemY + 22, isUnlocked ? maxTextWidth : maxTextWidthLocked, lastListY, lastListH);
 
@@ -832,7 +830,7 @@ public class PartyPage extends WardrobePage {
                     ? com.f4xizzz.greatcosmetics.util.BackpackManager.parseMiniMessage("§f" + previewingSkin.getDisplayName(), regs)
                     : net.minecraft.text.Text.literal(previewingSkin.getDisplayName());
 
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§6§l⚠ MODO PREVIEW ⚠", vWidth / 2, startY - 28, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.preview.title"), vWidth / 2, startY - 28, 0xFFFFFF);
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), skinName, vWidth / 2, startY - 15, 0xFFFFFF);
 
             // --- CONTROLES DO PREVIEW: POSE + FORMA + SHINY, canto inferior esquerdo da tela ---
@@ -845,24 +843,24 @@ public class PartyPage extends WardrobePage {
             boolean hovPose = over(mouseX, mouseY, ctrlX, poseBtnY, ctrlBtnW, ctrlBtnH);
             c.fill(ctrlX, poseBtnY, ctrlX + ctrlBtnW, poseBtnY + ctrlBtnH, hovPose ? 0x66222222 : 0x44000000);
             c.drawBorder(ctrlX, poseBtnY, ctrlBtnW, ctrlBtnH, hovPose ? 0xFFFFAA00 : 0xFFAAAAAA);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§f🔃 " + currentPreviewPoseLabel(), ctrlX + (ctrlBtnW / 2), poseBtnY + 6, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.preview.pose", "label", currentPreviewPoseLabel()), ctrlX + (ctrlBtnW / 2), poseBtnY + 6, 0xFFFFFF);
 
             if (!previewingSkin.getAltForms().isEmpty()) {
                 boolean hovForm = over(mouseX, mouseY, ctrlX, formBtnY, ctrlBtnW, ctrlBtnH);
                 c.fill(ctrlX, formBtnY, ctrlX + ctrlBtnW, formBtnY + ctrlBtnH, hovForm ? 0x66222222 : 0x44000000);
                 c.drawBorder(ctrlX, formBtnY, ctrlBtnW, ctrlBtnH, hovForm ? 0xFFFFAA00 : 0xFFAAAAAA);
-                c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§f🔄 " + currentPreviewFormLabel(), ctrlX + (ctrlBtnW / 2), formBtnY + 6, 0xFFFFFF);
+                c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.preview.form", "label", currentPreviewFormLabel()), ctrlX + (ctrlBtnW / 2), formBtnY + 6, 0xFFFFFF);
             }
 
             boolean hovShiny = over(mouseX, mouseY, ctrlX, shinyBtnY, ctrlBtnW, ctrlBtnH);
             c.fill(ctrlX, shinyBtnY, ctrlX + ctrlBtnW, shinyBtnY + ctrlBtnH, previewShiny ? 0xFF886600 : (hovShiny ? 0x66222222 : 0x44000000));
             c.drawBorder(ctrlX, shinyBtnY, ctrlBtnW, ctrlBtnH, previewShiny ? 0xFFFFD700 : (hovShiny ? 0xFFFFAA00 : 0xFFAAAAAA));
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), previewShiny ? "§e✨ Shiny: ON" : "§7✨ Shiny: OFF", ctrlX + (ctrlBtnW / 2), shinyBtnY + 6, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy(previewShiny ? "party.preview.shiny_on" : "party.preview.shiny_off"), ctrlX + (ctrlBtnW / 2), shinyBtnY + 6, 0xFFFFFF);
         } else if (renderEntity != null) {
             String pokeName = renderEntity.getPokemon().getSpecies().getName().toUpperCase();
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§e§l" + pokeName, vWidth / 2, startY - 15, 0xFFFFFF);
         } else {
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§7Slot Vazio", vWidth / 2, startY - 15, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.slot.empty"), vWidth / 2, startY - 15, 0xFFFFFF);
         }
 
         if (previewingSkin == null && getValidPokemonCount() > 1) {
@@ -941,7 +939,7 @@ public class PartyPage extends WardrobePage {
         boolean pcHovered = over(mouseX, mouseY, pcBtnX, startY, pcBtnW, slotSize);
         c.fill(pcBtnX, startY, pcBtnX + pcBtnW, startY + slotSize, pcHovered ? 0x6600AAFF : 0x330055AA);
         c.drawBorder(pcBtnX, startY, pcBtnW, slotSize, pcHovered ? 0xFF00AAFF : 0xFF0055AA);
-        c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§bPC", pcBtnX + (pcBtnW / 2), startY + (slotSize / 2) - 4, 0xFFFFFF);
+        c.drawCenteredTextWithShadow(parent.getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("party.pc_button"), pcBtnX + (pcBtnW / 2), startY + (slotSize / 2) - 4, 0xFFFFFF);
     }
 
     @Override

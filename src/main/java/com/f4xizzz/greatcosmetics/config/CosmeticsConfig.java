@@ -17,7 +17,7 @@ import java.util.Map;
 public class CosmeticsConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
-    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File CONFIG_FILE = new File(DIR, "cosmeticsconfig.conf");
 
     public static Map<String, CosmeticData> cosmeticsMap = new HashMap<>();
@@ -55,7 +55,7 @@ public class CosmeticsConfig {
                 // cosméticos existentes mantêm sempre o mesmo número, e só cosmético/ícone
                 // genuinamente novo ganha um número novo em cima do contador atual.
 
-                System.out.println("\n[DEBUG-SERVER] --- INICIANDO LEITURA DE COSMETICOS ---");
+                com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("CosmeticsConfig: starting to read " + cosmeticsMap.size() + " cosmetics from cosmeticsconfig.conf.");
 
                 for (Map.Entry<String, CosmeticData> entry : cosmeticsMap.entrySet()) {
                     String id = entry.getKey();
@@ -77,20 +77,21 @@ public class CosmeticsConfig {
                     // nenhum erro visível pro admin (ArmorFeatureRendererMixin pula `render == null`
                     // nos 4 passes de renderização). Corrigido pra HEAD aqui e regravado no disco.
                     if (data.render == null) {
-                        System.err.println("[GreatCosmetics] AVISO: cosmético '" + id + "' está com 'render' inválido ou ausente no cosmeticsconfig.conf — valores aceitos são HEAD, CHEST, LEGS ou FEET. Usando HEAD como padrão; corrija pelo Dev Studio se não for o slot certo.");
+                        System.err.println("[GreatCosmetics] WARNING: cosmetic '" + id + "' has an invalid or missing 'render' in cosmeticsconfig.conf — accepted values are HEAD, CHEST, LEGS or FEET. Using HEAD as default; fix it in the Dev Studio if that's not the right slot.");
                         data.render = CosmeticData.RenderSlot.HEAD;
                     }
 
-                    System.out.println("[DEBUG-SERVER] Lendo item do config: '" + id + "' - Nome: " + data.DisplayName + " - Slot: " + data.slot + " - Render: " + data.render);
+                    com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("CosmeticsConfig: lendo '" + id + "' - Nome: " + data.DisplayName + " - Slot: " + data.slot + " - Render: " + data.render);
 
                     resolveModelIds(data);
                 }
-                System.out.println("[DEBUG-SERVER] --- LEITURA FINALIZADA ---\n");
+                com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("CosmeticsConfig: read finished — " + cosmeticsMap.size() + " cosmetics loadeds.");
 
                 shouldResave = true;
             }
         } catch (Exception e) {
-            System.err.println("[Cosmetics] Erro no arquivo .conf! Restaurando backup...");
+            System.err.println("[GreatCosmetics] Error in the .conf file! Restoring backup...");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("CosmeticsConfig: FAILED to read cosmeticsconfig.conf — " + e + ". Restoring backup (" + backupMap.size() + " cosmetics).");
             e.printStackTrace();
         }
 
@@ -153,49 +154,56 @@ public class CosmeticsConfig {
         String defaultConf = """
         {
           // ====================================================================================
-          // COSMETICSCONFIG.CONF — gerado automaticamente na primeira vez que o servidor liga.
-          // Edite pelo Dev Studio in-game (recomendado) ou direto aqui — o "//" só funciona porque
-          // o mod lê esse arquivo em modo "lenient"; não é JSON padrão, não cole isso em outro
-          // lugar esperando que funcione.
+          // COSMETICSCONFIG.CONF — generated automatically the first time the server starts.
+          // Edit it through the in-game Dev Studio (recommended) or directly here — the "//"
+          // comments only work because the mod reads this file in "lenient" mode; it is not
+          // standard JSON, don't paste it elsewhere expecting it to parse.
           //
-          // COMO O MOD ACHA O MODEL DE CADA "Part" (dentro de "parts" abaixo) — existem DOIS tipos,
-          // cada Part usa só UM (se os dois campos estiverem preenchidos, o GeckoLib sempre ganha):
+          // HOW THE MOD FINDS THE MODEL FOR EACH "Part" (inside "parts" below) — there are TWO
+          // kinds, each Part uses only ONE (if both fields are filled, GeckoLib always wins):
           //
-          //  1) "customModelData_or_ID" -> ícone/model "vanilla" (item JSON comum). Espera um
-          //     arquivo em assets/<namespace>/models/**/<nome>.json.
-          //  2) "geoModelId" -> model 3D de verdade via GeckoLib. Espera TRÊS arquivos com o
-          //     MESMO nome: geo/**/<nome>.geo.json + textures/**/<nome>.png (+
-          //     animations/**/<nome>.animation.json, opcional).
+          //  1) "customModelData_or_ID" -> a "vanilla" icon/model (a plain item JSON). Expects a
+          //     file at assets/<namespace>/models/**/<name>.json.
+          //  2) "geoModelId" -> a real 3D model via GeckoLib. Expects THREE files with the SAME
+          //     name: geo/**/<name>.geo.json + textures/**/<name>.png (+
+          //     animations/**/<name>.animation.json, optional).
           //
-          //  Por padrão ("useExactPath": false) os dois acima procuram só pelo NOME DO ARQUIVO
-          //  (sem pasta), em QUALQUER subpasta — ex: "cigarro" acha tanto models/item/cigarro.json
-          //  quanto models/sas/cigarro.json, o primeiro que aparecer.
+          //  By default ("useExactPath": false) both of the above match by FILE NAME only (no
+          //  folder), in ANY subfolder — e.g. "cigarette" finds both models/item/cigarette.json
+          //  and models/sas/cigarette.json, whichever shows up first.
           //
-          //  Se ligar "useExactPath": true, o campo passa a ser o CAMINHO RELATIVO COMPLETO, sem
-          //  extensão (ex: "sas/cigarro" para assets/<qualquer namespace>/models/sas/cigarro.json,
-          //  ou "item/faxihat" para assets/<qualquer namespace>/geo/item/faxihat.geo.json) — use
-          //  isso quando tiver dois arquivos com o mesmo nome em pastas diferentes e a busca por
-          //  nome estiver pegando o errado.
+          //  If you turn on "useExactPath": true, the field becomes the FULL RELATIVE PATH,
+          //  without extension (e.g. "sas/cigarette" for assets/<any namespace>/models/sas/
+          //  cigarette.json, or "item/faxihat" for assets/<any namespace>/geo/item/faxihat.geo.json)
+          //  — use this when you have two files with the same name in different folders and the
+          //  name search is picking the wrong one.
           // ====================================================================================
           "examplehat": {
             "cmd": 0,
             "render": "HEAD",
             "slot": "HEAD",
             "type": "hat",
+            // GUI icon (Wardrobe/Acessórios list) at textures/icons/squirtle_glasses_icon.png,
+            // namespace "greatcosmetics" (icon lookup, unlike the GeckoLib model below, is always
+            // restricted to this mod's own namespace — see SyncCosmeticsPayload receiver).
+            "iconId": "squirtle_glasses_icon",
             "parts": [
               {
-                // Exemplo usando o tipo 1 (model vanilla, busca por nome — troque pra "geoModelId"
-                // se quiser um model 3D de verdade via GeckoLib, ver explicação acima).
-                "customModelData_or_ID": "examplehat",
-                "geoModelId": "",
+                // Example using kind 2 (real 3D model via GeckoLib, see the explanation above) —
+                // geo/item/squirtle_glasses.geo.json + textures/item/squirtle_glasses.png.
+                "customModelData_or_ID": "",
+                "geoModelId": "squirtle_glasses",
                 "useExactPath": false,
                 "anchor": "HEAD",
                 "offsetX": 0.0,
-                "offsetY": 0.0,
+                "offsetY": 1.792,
                 "offsetZ": 0.0,
                 "rotationX": 0.0,
                 "rotationY": 0.0,
                 "rotationZ": 0.0,
+                "scaleX": 1.61,
+                "scaleY": 1.61,
+                "scaleZ": 1.61,
                 "shiftOffsetX": 0.0,
                 "shiftOffsetY": 0.0,
                 "shiftOffsetZ": 0.0,
@@ -207,7 +215,7 @@ public class CosmeticsConfig {
             "maxDurability": 0,
             "effectVisual": [],
             "flyParticle": [],
-            "DisplayName": "<yellow>Chapéu de Exemplo",
+            "DisplayName": "<yellow>Example Hat",
             "permission": "",
             "isBackpack": false,
             "backpackRows": 3,
@@ -237,9 +245,10 @@ public class CosmeticsConfig {
     public static void saveConfig() {
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(cosmeticsMap, writer);
-            System.out.println("[DEBUG-SERVER] Arquivo cosmeticsconfig.conf salvo com sucesso pelo In-Game Studio!");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("CosmeticsConfig: cosmeticsconfig.conf saved with " + cosmeticsMap.size() + " cosmetics.");
         } catch (IOException e) {
-            System.err.println("[Cosmetics] Erro fatal ao tentar salvar o cosmeticsconfig.conf!");
+            System.err.println("[GreatCosmetics] Fatal error while saving cosmeticsconfig.conf!");
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("CosmeticsConfig: FAILED to save cosmeticsconfig.conf — " + e);
             e.printStackTrace();
         }
     }

@@ -4,9 +4,7 @@ import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
 import com.f4xizzz.greatcosmetics.client.ClientNameTagCache;
 import com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen;
 import com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage;
-import com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager;
 import com.f4xizzz.greatcosmetics.util.TextUtils;
-import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
@@ -58,43 +56,23 @@ public class PlayerEntityRendererMixin {
 
                     MinecraftClient.getInstance().getEntityRenderDispatcher().render(poke, 0.0, 0.0, 0.0, yaw, tickDelta, matrices, vertexConsumers, light);
                 } catch (Exception t) {
-                    System.err.println("[GreatCosmetics] Erro ao renderizar Pokémon no preview da Party — fechando a wardrobe pra não crashar o client. " + t);
+                    System.err.println("[GreatCosmetics] Error rendering Pokémon in the Party preview — closing the wardrobe to avoid crashing the client. " + t);
                     MinecraftClient.getInstance().setScreen(null);
                 }
             }
         }
     }
 
-    // Transparência do CORPO do jogador (barrinha lateral esquerda, ver
-    // Wardrobe3DScreen#renderGizmoSidebar/characterAlpha) — só ativa enquanto uma Part está sendo
-    // configurada no Dev Studio (mutuamente exclusivo com a Party tab acima, que CANCELA esse
-    // render inteiro pra desenhar um Pokémon no lugar; se algum dia deixar de ser exclusivo, essa
-    // suposição precisa ser revista, senão o reset de baixo pode não rodar e vazar transparência
-    // pro resto do frame). RenderSystem.setShaderColor multiplica a cor de TUDO que for desenhado
-    // depois — por isso o reset pro normal roda tanto aqui (TAIL desse render) quanto de novo, sem
-    // condição nenhuma, bem no início do ArmorFeatureRendererMixin (armadura/cosméticos SEMPRE
-    // sólidos) e no início do Wardrobe3DScreen#render (rede de segurança final do frame).
-    @Inject(method = "render(Lnet/minecraft/client/network/AbstractClientPlayerEntity;FFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V", at = @At("HEAD"))
-    private void greatcosmetics$startBodyAlpha(AbstractClientPlayerEntity player, float yaw, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
-        if (player == MinecraftClient.getInstance().player && GizmoManager.activePart != null && Wardrobe3DScreen.characterAlpha < 1.0f) {
-            // setShaderColor sozinho não bastava: a pele do jogador desenha numa RenderLayer SÓLIDA
-            // (sem blending), então o canal alpha do ColorModulator nunca era lido pra misturar com
-            // o fundo — o slider mudava o número mas a pele continuava 100% opaca na tela. Precisa
-            // ligar blending manualmente ao redor desse render pra o alpha ter efeito visual de
-            // verdade.
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.setShaderColor(1f, 1f, 1f, Wardrobe3DScreen.characterAlpha);
-        }
-    }
-
-    @Inject(method = "render(Lnet/minecraft/client/network/AbstractClientPlayerEntity;FFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V", at = @At("TAIL"))
-    private void greatcosmetics$endBodyAlpha(AbstractClientPlayerEntity player, float yaw, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
-        if (player == MinecraftClient.getInstance().player && GizmoManager.activePart != null && Wardrobe3DScreen.characterAlpha < 1.0f) {
-            RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
-            RenderSystem.disableBlend();
-        }
-    }
+    // Visibilidade do CORPO do jogador (botão de 3 estados na barrinha lateral esquerda, ver
+    // Wardrobe3DScreen#renderGizmoSidebar/cycleCharacterAlpha) — a implementação de verdade foi
+    // pro LivingEntityRendererMixin (ver lá o porquê: tentar fazer isso aqui via RenderSystem.
+    // setShaderColor/troca de RenderLayer causou DUAS rodadas de bug — corpo continuava opaco no
+    // "Meio", e a versão seguinte fazia os cosméticos SUMIREM junto — porque tanto o shader color
+    // global quanto o VertexConsumerProvider trocado aqui são compartilhados com o loop de
+    // FeatureRenderer (armadura/cosméticos), que usa a MESMA referência local. A técnica certa
+    // (bytecode-confirmada) é modificar só o argumento "color" da chamada EntityModel.render(...)
+    // dentro de LivingEntityRenderer.render() via @ModifyArg — não toca no VertexConsumerProvider
+    // nem no shader global nenhuma vez, então não pode vazar pros cosméticos.
 
     // Na aba Tags o player renderiza NORMALMENTE (esse mixin não cancela nada aqui, ao contrário
     // da Party) — mas mesmo assim o vanilla nunca mostra o próprio nametag: LivingEntityRenderer.

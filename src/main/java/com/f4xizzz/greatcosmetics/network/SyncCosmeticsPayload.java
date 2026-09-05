@@ -59,13 +59,6 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             data.toughness = buf.readDouble();
             data.isBackpack = buf.readBoolean();
             data.backpackRows = buf.readInt();
-            // backpackPages nunca era lido/escrito aqui — CosmeticData sempre nascia com o default
-            // (1) toda vez que esse payload chegava (join, /gc reload, e o resync automático depois
-            // de qualquer salvamento no Dev Studio), sobrescrevendo silenciosamente qualquer valor >1
-            // configurado. Editar "Páginas da Mochila" no Dev Studio parecia "não salvar" porque o
-            // valor até ia pro servidor certinho (SaveCosmeticPayload manda o CosmeticData inteiro
-            // via JSON/Gson), mas o resync que vem logo depois derrubava de volta pra 1 no client.
-            data.backpackPages = buf.readInt();
             data.backpackDisplayName = buf.readString();
             data.EnableFly = buf.readBoolean();
             data.flySpeedMultiplier = buf.readDouble();
@@ -176,7 +169,6 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             buf.writeDouble(data.toughness);
             buf.writeBoolean(data.isBackpack);
             buf.writeInt(data.backpackRows);
-            buf.writeInt(data.backpackPages);
             buf.writeString(data.backpackDisplayName != null ? data.backpackDisplayName : "");
             buf.writeBoolean(data.EnableFly);
             buf.writeDouble(data.flySpeedMultiplier);

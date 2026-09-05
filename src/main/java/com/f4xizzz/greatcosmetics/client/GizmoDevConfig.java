@@ -25,7 +25,7 @@ public class GizmoDevConfig {
     public static float geoGizmoYOffset = 0.4f;
 
     public static void load() {
-        File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+        File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
         if (!configDir.exists()) configDir.mkdirs();
         FILE = new File(configDir, "gizmo_dev_config.json");
 
@@ -38,7 +38,7 @@ public class GizmoDevConfig {
             Data data = GSON.fromJson(reader, Data.class);
             if (data != null) geoGizmoYOffset = data.geoGizmoYOffset;
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao carregar gizmo_dev_config.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error loading gizmo_dev_config.json: " + e.getMessage());
         }
     }
 
@@ -49,7 +49,7 @@ public class GizmoDevConfig {
             data.geoGizmoYOffset = geoGizmoYOffset;
             GSON.toJson(data, writer);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao salvar gizmo_dev_config.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error saving gizmo_dev_config.json: " + e.getMessage());
         }
     }
 

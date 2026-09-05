@@ -18,7 +18,7 @@ public class BackpackSelectorScreen extends Screen {
     private final List<String> backpackIds;
 
     public BackpackSelectorScreen(List<String> backpackIds) {
-        super(Text.literal("Selecione a Mochila"));
+        super(com.f4xizzz.greatcosmetics.config.LangConfig.text("backpack.selector.title"));
         this.backpackIds = backpackIds;
     }
 
@@ -37,7 +37,7 @@ public class BackpackSelectorScreen extends Screen {
         var world = net.minecraft.client.MinecraftClient.getInstance().world;
         net.minecraft.registry.RegistryWrapper.WrapperLookup regs = world != null ? world.getRegistryManager() : null;
 
-        c.drawCenteredTextWithShadow(this.textRenderer, "Qual mochila você deseja abrir?", this.width / 2, startY - 25, 0xFFFFAA00);
+        c.drawCenteredTextWithShadow(this.textRenderer, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("backpack.selector.title"), this.width / 2, startY - 25, 0xFFFFAA00);
 
         for (int i = 0; i < itemsCount; i++) {
             String id = backpackIds.get(i);
@@ -69,7 +69,7 @@ public class BackpackSelectorScreen extends Screen {
             // Dev Studio apareciam literalmente na tela em vez de virar cor de verdade.
             Text displayName = (data.backpackDisplayName != null && !data.backpackDisplayName.isEmpty() && regs != null)
                     ? com.f4xizzz.greatcosmetics.util.TextUtils.parseToText(data.backpackDisplayName, regs)
-                    : Text.literal("Mochila");
+                    : com.f4xizzz.greatcosmetics.config.LangConfig.text("backpack.selector.fallback_name");
 
             c.getMatrices().push();
             float scale = 0.8f;

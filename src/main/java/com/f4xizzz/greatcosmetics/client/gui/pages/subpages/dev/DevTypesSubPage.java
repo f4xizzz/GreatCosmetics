@@ -44,14 +44,25 @@ public class DevTypesSubPage extends DevSubPage {
     // outras subpáginas Dev).
     private int lastX = 30, lastY = 50, lastWidth = 180, lastHeight = 260;
 
+    private static String L(String key, Object... ph) {
+        return com.f4xizzz.greatcosmetics.config.LangConfig.legacy(key, ph);
+    }
+
     private enum RowType { STRING, INT, BUTTON }
     private static class EditorRow {
-        String label; RowType type; TextFieldWidget textField; Runnable onButtonClick;
-        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.type = type; this.textField = field; }
-        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
+        String label; String id; RowType type; TextFieldWidget textField; Runnable onButtonClick;
+        // Ver DevCosmeticsSubPage#EditorRow.tooltip — mesmo mecanismo de tooltip por hover.
+        String tooltip;
+        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.id = label; this.type = type; this.textField = field; }
+        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.id = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
+        EditorRow withId(String id) { this.id = id; return this; }
+        EditorRow withTooltip(String tooltip) { this.tooltip = tooltip; return this; }
     }
 
     private final List<EditorRow> rows = new ArrayList<>();
+
+    /** Ver DevCosmeticsSubPage#hoveredTooltipRow. */
+    private EditorRow hoveredTooltipRow = null;
 
     public DevTypesSubPage(Wardrobe3DScreen parent, Runnable onBack) {
         super(parent, onBack);
@@ -69,44 +80,53 @@ public class DevTypesSubPage extends DevSubPage {
 
         if (this.editingData == null) return;
 
-        addStringField("ID do Tipo (Nome único)", this.tempId, text -> this.tempId = text);
-        addStringField("Slot Base (Ex: NECK)", this.editingData.slot, text -> this.editingData.slot = text);
-        addIntField("Limite Por Jogador", this.editingData.limitPerPlayer, val -> this.editingData.limitPerPlayer = val);
-        addStringField("Permissão", this.editingData.permission, text -> this.editingData.permission = text);
+        addStringField(L("devstudio.type.field.type_id"), this.tempId, text -> this.tempId = text)
+                .withTooltip(L("devstudio.type.tooltip.type_id"));
+        addStringField(L("devstudio.type.field.base_slot"), this.editingData.slot, text -> this.editingData.slot = text)
+                .withTooltip(L("devstudio.type.tooltip.base_slot"));
+        addIntField(L("devstudio.type.field.limit_per_player"), this.editingData.limitPerPlayer, val -> this.editingData.limitPerPlayer = val)
+                .withTooltip(L("devstudio.type.tooltip.limit_per_player"));
+        addStringField(L("devstudio.type.field.permission"), this.editingData.permission, text -> this.editingData.permission = text)
+                .withTooltip(L("devstudio.type.tooltip.permission"));
 
-        this.rows.add(new EditorRow("DELETAR TIPO", () -> {
+        this.rows.add(new EditorRow(L("devstudio.type.delete"), () -> {
             ClientMainConfigCache.config.types.remove(this.editingId);
             ClientMainConfigCache.sendSave();
             this.hasUnsavedChanges = false;
             this.currentState = State.LIST;
             this.scrollY = 0; // Reset do scroll ao apagar
-        }));
+        }).withId("delete"));
     }
 
-    private void addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
+    private EditorRow addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(128); field.setText(startVal != null ? startVal : "");
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             action.accept(text);
         });
-        this.rows.add(new EditorRow(label, RowType.STRING, field));
+        EditorRow row = new EditorRow(label, RowType.STRING, field);
+        this.rows.add(row);
+        return row;
     }
 
-    private void addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
+    private EditorRow addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(10); field.setText(String.valueOf(startVal));
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             try { if (!text.isEmpty() && !text.equals("-")) action.accept(Integer.parseInt(text)); } catch (Exception ignored) {}
         });
-        this.rows.add(new EditorRow(label, RowType.INT, field));
+        EditorRow row = new EditorRow(label, RowType.INT, field);
+        this.rows.add(row);
+        return row;
     }
 
     @Override
     public void render(DrawContext c, int mouseX, int mouseY, float delta, int x, int y, int width, int height) {
         INSTANCE = this;
         this.lastX = x; this.lastY = y; this.lastWidth = width; this.lastHeight = height;
+        this.hoveredTooltipRow = null;
 
         boolean isMouseDown = GLFW.glfwGetMouseButton(MinecraftClient.getInstance().getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
         if (!isMouseDown) {
@@ -117,14 +137,14 @@ public class DevTypesSubPage extends DevSubPage {
 
         if (currentState == State.LIST) {
             boolean hovBack = mouseX >= x + 12 && mouseX <= x + 62 && mouseY >= topY && mouseY <= topY + 12;
-            c.drawTextWithShadow(parent.getTextRenderer(), "< Voltar", x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
+            c.drawTextWithShadow(parent.getTextRenderer(), L("devstudio.common.back"), x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
 
             // --- NOME ENCURTADO E DESLOCADO PARA NÃO BATER NO VOLTAR ---
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§bTypes", x + (width / 2) + 8, topY + 2, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.type.list_title"), x + (width / 2) + 8, topY + 2, 0xFFFFFF);
 
             boolean hovNew = mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= topY + 15 && mouseY <= topY + 30;
             c.fill(x + 10, topY + 15, x + width - 10, topY + 30, hovNew ? 0xFF5555FF : 0xFF2222AA);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "+ Novo Type", x + (width/2), topY + 19, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.type.new"), x + (width/2), topY + 19, 0xFFFFFF);
 
             List<String> ids = new ArrayList<>(ClientMainConfigCache.config.types.keySet());
             int listY = topY + 35;
@@ -202,6 +222,10 @@ public class DevTypesSubPage extends DevSubPage {
                     continue;
                 }
 
+                if (row.tooltip != null && mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= rowY - 2 && mouseY <= rowY + 30) {
+                    hoveredTooltipRow = row;
+                }
+
                 // SÓ DESENHA A LABEL EXTERNA SE NÃO FOR UM BOTÃO!
                 if (row.type != RowType.BUTTON) {
                     c.drawTextWithShadow(parent.getTextRenderer(), "§f" + row.label, x + 15, rowY, 0xFFFFFF);
@@ -214,7 +238,7 @@ public class DevTypesSubPage extends DevSubPage {
                     row.textField.render(c, mouseX, mouseY, delta);
                 }
                 else if (row.type == RowType.BUTTON) {
-                    boolean isDelete = row.label.equals("DELETAR TIPO");
+                    boolean isDelete = row.id.equals("delete");
                     boolean hovBtn = mouseX >= x + 15 && mouseX <= x + width - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
 
                     c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, hovBtn ? (isDelete ? 0x66FF0000 : 0x66FFAA00) : (isDelete ? 0x44AA0000 : 0x44FFAA00));
@@ -227,6 +251,18 @@ public class DevTypesSubPage extends DevSubPage {
         }
 
         renderExitPopup(c, mouseX, mouseY);
+
+        renderHoveredTooltip(c, mouseX, mouseY);
+    }
+
+    /** Ver DevCosmeticsSubPage#renderHoveredTooltip. */
+    private void renderHoveredTooltip(DrawContext c, int mouseX, int mouseY) {
+        if (hoveredTooltipRow == null || hoveredTooltipRow.tooltip == null) return;
+        List<Text> lines = new ArrayList<>();
+        for (String line : hoveredTooltipRow.tooltip.split("\n")) {
+            lines.add(Text.literal(line));
+        }
+        c.drawTooltip(parent.getTextRenderer(), lines, mouseX, mouseY);
     }
 
     private void drawScrollbar(DrawContext c, int x, int y, int height) {
@@ -268,7 +304,7 @@ public class DevTypesSubPage extends DevSubPage {
 
             if (mx >= x + 10 && mx <= x + width - 10 && my >= topY + 15 && my <= topY + 30) {
                 playClick();
-                String newId = "novo_type_" + (ClientMainConfigCache.config.types.size() + 1);
+                String newId = "new_type_" + (ClientMainConfigCache.config.types.size() + 1);
                 MainConfig.AccessoryType newType = new MainConfig.AccessoryType();
                 newType.slot = "NECK";
                 newType.limitPerPlayer = 1;

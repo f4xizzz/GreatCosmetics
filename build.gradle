@@ -1,6 +1,20 @@
+import proguard.gradle.ProGuardTask
+import java.security.KeyFactory
+import java.security.MessageDigest
+import java.security.PrivateKey
+import java.security.Signature
+import java.security.spec.PKCS8EncodedKeySpec
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+
+buildscript {
+	repositories { mavenCentral() }
+	dependencies { classpath 'com.guardsquare:proguard-gradle:7.4.2' }
+}
+
 plugins {
 	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
-	id 'maven-publish'
 	id 'org.jetbrains.kotlin.jvm' version '2.4.0'
 }
 
@@ -84,8 +98,6 @@ dependencies {
 	modImplementation name: 'GooeyLibs-Fabric-3.1.1-1.21.x'
 	include name: 'GooeyLibs-Fabric-3.1.1-1.21.x'
 
-	modImplementation name: 'Axiom-5.4.2-for-MC1.21.1'
-
 	// 2. API Repack do GooeyLibs
 	modImplementation name: 'api-repack-3.1.1-1.21.x'
 	include name: 'api-repack-3.1.1-1.21.x'
@@ -115,10 +127,8 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
-	withSourcesJar()
+	// NÃO gerar sourcesJar: mod pago/proprietário — publicar o -sources.jar por engano vazaria
+	// o código-fonte inteiro. Sem esta linha o loom não cria nenhum artefato de sources.
 
 	sourceCompatibility = JavaVersion.VERSION_21
 	targetCompatibility = JavaVersion.VERSION_21
@@ -132,20 +142,122 @@ jar {
 	}
 }
 
-// configure the maven publication
-publishing {
-	publications {
-		create("mavenJava", MavenPublication) {
-			artifactId = project.archives_base_name
-			from components.java
-		}
+// ==========================================
+// OFUSCAÇÃO (ProGuard) — roda em cima do remapJar. O -release.jar é o ÚNICO jar distribuído,
+// tanto pro servidor dedicado quanto pro modpack dos jogadores (ver decisão abaixo). O jar "cru"
+// do remapJar (GreatCosmetics-<v>.jar) NÃO deve ser distribuído.
+//
+// Até 2026-09 existia um jar "client-only" separado (clientJar), que removia as páginas do Dev
+// Studio (ver DevStudioAvailability.java) e os drivers de banco antes de distribuir pros
+// jogadores — a ideia era não levar ferramenta de admin nem peso morto de banco pro client. Isso
+// foi removido a pedido do usuário: com o ProGuard ofuscando o jar inteiro, manter dois builds
+// paralelos não compensava mais o custo de manutenção, e a proteção de verdade contra jogador
+// sem permissão abrir a Dev Studio NUNCA foi "a classe não existe nesse jar" — é o gate de
+// permissão sincronizado do servidor (ClientPermissionCache + SyncDevPermissionsPayload, ver
+// Wardrobe3DScreen#hasDevPermission/EquippedSlotsWidget/PartyPage/TagsPage), que já checava
+// ClientPermissionCache.isOperator/hasGcDev/hasGcPermDevmode em TODO lugar que desenha um botão
+// ou processa uma ação de dev — e o servidor confirma de novo em cada handler (isRealOperator ||
+// checkPermission("gc.dev"/node do comando)), então nem um client modificado consegue burlar só
+// mandando o pacote direto. DevStudioAvailability.AVAILABLE (que detecta se a classe existe)
+// virou redundante como gate de segurança agora que só existe um jar — o único lugar que ainda a
+// usa (Wardrobe3DScreen) é só rede de segurança contra NoClassDefFoundError, não proteção.
+// ==========================================
+def proguardOutFile = layout.buildDirectory.file("libs/${project.base.archivesName.get()}-${project.version}-release.jar")
+
+// ==========================================
+// MANIFESTO DE INTEGRIDADE ASSINADO (Fase 1c) — o ÚLTIMO passo de cada jar final. Faz o hash
+// SHA-256 de toda ".class" do jar, assina esse manifesto com a chave de build (SEPARADA da chave
+// de licença da API — só existe em D:\mods\signing\, fora dos dois repos, nunca commitada) e
+// embute o resultado como META-INF/greatcosmetics.sig dentro do PRÓPRIO jar. No boot, o
+// ActivationManager recomputa o mesmo hash do jar em disco e compara — se alguém editar um único
+// byte de bytecode (ex: forçar isModActivated() a sempre devolver true), o hash não bate mais e o
+// mod recusa ativar, mesmo que o "patch" em si funcionasse. Sem a chave de build (que não sai
+// desta máquina), não dá pra gerar um manifesto novo que combine com um jar adulterado.
+ext.SIG_ENTRY_NAME = 'META-INF/greatcosmetics.sig'
+
+def signJarManifest(File jarFile) {
+	// def local (não ext) não sobrevive fora do escopo do método em scripts Gradle — recalcula
+	// o File aqui em vez de fechar sobre uma variável de fora.
+	File signingKeyFile = file('../../signing/build-signing-key.pem')
+	if (!signingKeyFile.exists()) {
+		logger.warn("[integrity] Chave de assinatura não encontrada em ${signingKeyFile} — ${jarFile.name} sai SEM manifesto de integridade (ActivationManager pula a checagem nesse caso).")
+		return
 	}
 
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
+	String pem = signingKeyFile.text
+			.replace('-----BEGIN PRIVATE KEY-----', '')
+			.replace('-----END PRIVATE KEY-----', '')
+			.replaceAll('\\s', '')
+	byte[] der = Base64.decoder.decode(pem)
+	PrivateKey priv = KeyFactory.getInstance('RSA').generatePrivate(new PKCS8EncodedKeySpec(der))
+
+	// Manifesto canônico: "caminho\tsha256hex\n" por classe, ordenado por caminho — TEM que ser
+	// byte-a-byte idêntico ao que ActivationManager.recomputeClassManifest() gera no runtime.
+	def hashes = new TreeMap<String, String>()
+	new ZipFile(jarFile).withCloseable { zf ->
+		zf.entries().each { e ->
+			if (e.directory || !e.name.endsWith('.class') || e.name == SIG_ENTRY_NAME) return
+			MessageDigest sha = MessageDigest.getInstance('SHA-256')
+			zf.getInputStream(e).withCloseable { is ->
+				byte[] buf = new byte[8192]; int r
+				while ((r = is.read(buf)) != -1) sha.update(buf, 0, r)
+			}
+			hashes[e.name] = sha.digest().collect { String.format('%02x', it) }.join()
+		}
 	}
+	ByteArrayOutputStream manifestOut = new ByteArrayOutputStream()
+	hashes.each { name, hash -> manifestOut.write("${name}\t${hash}\n".getBytes('UTF-8')) }
+	byte[] manifest = manifestOut.toByteArray()
+
+	Signature signer = Signature.getInstance('SHA256withRSA')
+	signer.initSign(priv)
+	signer.update(manifest)
+	byte[] sig = signer.sign()
+
+	ByteArrayOutputStream sigFileOut = new ByteArrayOutputStream()
+	sigFileOut.write(Base64.encoder.encode(sig))
+	sigFileOut.write((int) ('\n' as char))
+	sigFileOut.write(manifest)
+	byte[] sigFileBytes = sigFileOut.toByteArray()
+
+	File tmp = File.createTempFile('signed', '.jar', jarFile.parentFile)
+	new ZipFile(jarFile).withCloseable { zf ->
+		new ZipOutputStream(new FileOutputStream(tmp)).withCloseable { zos ->
+			zf.entries().each { e ->
+				if (e.name == SIG_ENTRY_NAME) return // remove versão velha se estiver reassinando
+				zos.putNextEntry(new ZipEntry(e.name))
+				if (!e.directory) { zf.getInputStream(e).withCloseable { is -> zos << is } }
+				zos.closeEntry()
+			}
+			zos.putNextEntry(new ZipEntry(SIG_ENTRY_NAME))
+			zos.write(sigFileBytes)
+			zos.closeEntry()
+		}
+	}
+	jarFile.delete()
+	tmp.renameTo(jarFile)
+	logger.lifecycle("[integrity] ${jarFile.name}: manifesto assinado (${hashes.size()} classes).")
 }
+
+tasks.register('proguardJar', ProGuardTask) {
+	group = 'build'
+	description = 'Jar de release OFUSCADO — ÚNICO jar distribuído, servidor E jogadores. Distribua ESTE, não o remapJar cru.'
+	dependsOn tasks.named('remapJar')
+
+	injars tasks.named('remapJar').flatMap { it.archiveFile }
+	outjars proguardOutFile
+	configuration file('proguard-rules.pro')
+
+	def javaHome = System.getProperty('java.home')
+	libraryjars([jarfilter: '!**.jar', filter: '!module-info.class'], "${javaHome}/jmods/java.base.jmod")
+	// FileCollection resolvida na execução (não no configure) pra não atropelar o setup do loom.
+	libraryjars(configurations.compileClasspath)
+
+	doLast { signJarManifest(proguardOutFile.get().asFile) }
+}
+
+tasks.named('build') { dependsOn tasks.named('proguardJar') }
+tasks.named('assemble') { dependsOn tasks.named('proguardJar') }
+
+// Publicação Maven removida de propósito: mod pago/proprietário, nada de publicar jar/pom/sources
+// em repositório nenhum. Distribuição é só pelo canal oficial (ver LICENSE).

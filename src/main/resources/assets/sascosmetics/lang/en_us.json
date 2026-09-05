@@ -1,7 +1,8 @@
 {
-  "key.sascosmetics.toggle_ui": "Alternar Interface (UI)",
-  "key.sascosmetics.warps": "Menu de Warps",
-  "key.sascosmetics.enderchest": "Abrir Enderchest",
-  "key.sascosmetics.pc": "Acessar o PC",
-  "category.sascosmetics.keys": "CobbleSAS Configs"
+  "key.sascosmetics.ui": "Toggle Interface (UI)",
+  "key.sascosmetics.toggle_ui": "Toggle Interface (UI)",
+  "key.sascosmetics.warps": "Warps Menu",
+  "key.sascosmetics.enderchest": "Open Enderchest",
+  "key.sascosmetics.pc": "Open PC",
+  "category.sascosmetics.keys": "GreatCosmetics"
 }

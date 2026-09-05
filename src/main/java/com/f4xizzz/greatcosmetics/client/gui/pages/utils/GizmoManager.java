@@ -1,6 +1,7 @@
 package com.f4xizzz.greatcosmetics.client.gui.pages.utils;
 
 import com.f4xizzz.greatcosmetics.config.CosmeticData.CosmeticPart;
+import com.f4xizzz.greatcosmetics.config.EffectData;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayer;
@@ -37,6 +38,17 @@ import org.joml.Vector4f;
  */
 public class GizmoManager {
     public static CosmeticPart activePart = null;
+
+    // Alvo alternativo pro MESMO gizmo, usado pelo editor de Effects (DevEffectsSubPage) — um
+    // EffectData só tem offsetX/Y/Z (posição do emissor de partícula relativa ao jogador), sem
+    // rotação/escala, então o modo fica travado em TRANSLATE sempre que este estiver preenchido.
+    // Nunca os dois preenchidos ao mesmo tempo — activePart e activeEffect são mutuamente
+    // exclusivos (ver DevCosmeticsSubPage/DevEffectsSubPage, cada um zera o outro ao abrir).
+    public static EffectData activeEffect = null;
+
+    public static boolean hasTarget() {
+        return activePart != null || activeEffect != null;
+    }
 
     public enum Mode { TRANSLATE, ROTATE, SCALE }
     public enum Axis { NONE, X, Y, Z }
@@ -130,19 +142,21 @@ public class GizmoManager {
     // Preenchido pelo tryGrab a cada clique (sucesso ou falha) — mostrado na barrinha (ver
     // Wardrobe3DScreen#renderGizmoSidebar), não no chat: o HUD/chat fica escondido com a
     // Wardrobe3DScreen aberta, uma mensagem de chat nunca apareceria pro jogador ver.
-    public static String lastClickDebug = "(ainda não clicou)";
+    public static String lastClickDebug = "(hasn't clicked yet)";
 
     public static String debugStatus() {
         long since = lastProjectionUpdateMs == 0 ? -1 : System.currentTimeMillis() - lastProjectionUpdateMs;
-        String offsets = activePart != null
+        String offsets = activeEffect != null
+                ? String.format(java.util.Locale.US, "off=%.2f,%.2f,%.2f (effect)", activeEffect.offsetX, activeEffect.offsetY, activeEffect.offsetZ)
+                : activePart != null
                 ? String.format(java.util.Locale.US, "off=%.2f,%.2f,%.2f", activePart.offsetX, activePart.offsetY, activePart.offsetZ)
                 : "off=N/A";
-        return "part=" + (activePart != null ? "SIM" : "NAO")
-                + " origin=" + (originScreen != null ? "SIM" : "NAO")
+        return "part=" + (hasTarget() ? "YES" : "NO")
+                + " origin=" + (originScreen != null ? "YES" : "NO")
                 + " clipW=" + (Float.isNaN(lastOriginClipW) ? "N/A" : String.format(java.util.Locale.US, "%.3f", lastOriginClipW))
-                + " proj_ha=" + (since < 0 ? "NUNCA" : since + "ms")
+                + " proj_ago=" + (since < 0 ? "NEVER" : since + "ms")
                 + " " + offsets
-                + " modo=" + currentMode;
+                + " mode=" + currentMode;
     }
 
     /** Chamado pelo ArmorFeatureRendererMixin logo depois de desenhar as linhas do gizmo, com a
@@ -239,12 +253,15 @@ public class GizmoManager {
      *  quem chama deve considerar o clique "consumido" nesse caso (não deixar passar pra rotação
      *  de câmera etc). */
     public static boolean tryGrab(double virtualMouseX, double virtualMouseY) {
-        if (activePart == null) {
-            lastClickDebug = "tryGrab: activePart == null (nenhuma Part selecionada)";
+        if (!hasTarget()) {
+            lastClickDebug = "tryGrab: no active target (neither Part nor Effect selected)";
             return false;
         }
+        // Effect não tem rotação/escala — trava em TRANSLATE mesmo que o modo tenha ficado em
+        // ROTATE/SCALE de uma sessão anterior (editando cosméticos) antes de abrir um Effect.
+        if (activeEffect != null && currentMode != Mode.TRANSLATE) currentMode = Mode.TRANSLATE;
         if (originScreen == null) {
-            lastClickDebug = "tryGrab: originScreen == null (gizmo não projetado esse frame)";
+            lastClickDebug = "tryGrab: originScreen == null (gizmo not projected this frame)";
             return false;
         }
 
@@ -278,9 +295,9 @@ public class GizmoManager {
         // acha que ele está). Guardado num campo (não manda no chat) porque o HUD/chat fica
         // escondido com a Wardrobe3DScreen aberta — ver Wardrobe3DScreen#renderGizmoSidebar.
         lastClickDebug = String.format(java.util.Locale.US,
-                "clique=(%.0f,%.0f) origem=(%.0f,%.0f) distX=%.0f distY=%.0f distZ=%.0f -> %s",
+                "click=(%.0f,%.0f) origin=(%.0f,%.0f) distX=%.0f distY=%.0f distZ=%.0f -> %s",
                 mouse.x, mouse.y, originScreen.x, originScreen.y, dx, dy, dz,
-                best == Axis.NONE ? "NENHUM (fora do raio de " + (int) PICK_RADIUS_PX + "px)" : ("AGARROU " + best));
+                best == Axis.NONE ? "NONE (outside the " + (int) PICK_RADIUS_PX + "px radius)" : ("GRABBED " + best));
 
         if (best == Axis.NONE) return false;
 
@@ -367,7 +384,7 @@ public class GizmoManager {
      *  arraste, trava no eixo já agarrado (não teria sentido "achar mais perto" outro eixo no meio
      *  do arraste) e só recalcula ONDE ao longo dele. */
     public static void updateHover(double virtualMouseX, double virtualMouseY) {
-        if (activePart == null || originScreen == null) { hoveredAxis = Axis.NONE; return; }
+        if (!hasTarget() || originScreen == null) { hoveredAxis = Axis.NONE; return; }
 
         Vector2f mouse = virtualMouseToFramebuffer(virtualMouseX, virtualMouseY);
 
@@ -432,7 +449,8 @@ public class GizmoManager {
      *  o movimento do mouse na direção 2D do eixo agarrado na tela — puxar a seta pra onde ela
      *  aponta na tela sempre aumenta o valor, não importa o ângulo da câmera. */
     public static void handleDrag(double virtualMouseX, double virtualMouseY, boolean isSneaking) {
-        if (activePart == null || currentAxis == Axis.NONE || !isDragging) return;
+        if (!hasTarget() || currentAxis == Axis.NONE || !isDragging) return;
+        if (activeEffect != null && currentMode != Mode.TRANSLATE) currentMode = Mode.TRANSLATE;
 
         // Segurando Shift no teclado (não confundir com "isSneaking" acima, que é o toggle
         // "Visualizar Posição: SNEAK" da GUI — outra coisa): aplica o MESMO delta desse arraste
@@ -459,7 +477,12 @@ public class GizmoManager {
                     if (allAxes || currentAxis == Axis.Z) activePart.shiftRotationZ += deltaDeg;
                 }
                 lastAngle = angle;
-                if (onUpdate != null) onUpdate.run();
+                // BUG (2026-09): onUpdate.run() (marca "tem alteração não salva") rodava até
+                // quando deltaDeg saía zero (mouse mexeu um pixel dentro do mesmo bucket de
+                // ângulo — muito comum num "clique parado", já que segurar o botão sem soltar já
+                // dispara mouseDragged com deslocamento mínimo/nenhum) — o usuário via o popup de
+                // "salvar alterações?" só de ter clicado numa seta, sem girar nada de verdade.
+                if (deltaDeg != 0f && onUpdate != null) onUpdate.run();
             }
             lastMouseX = virtualMouseX;
             lastMouseY = virtualMouseY;
@@ -502,7 +525,16 @@ public class GizmoManager {
 
         switch (currentMode) {
             case TRANSLATE:
-                if (!isSneaking) {
+                if (activeEffect != null) {
+                    // Effect não tem variante "shift" (agachado) — sempre grava no offset normal.
+                    // Os TRÊS eixos com sinal invertido (-= em vez de +=) — ver o comentário no
+                    // bloco de desenho do gizmo em ArmorFeatureRendererMixin (translate usa
+                    // -offsetX/-offsetY/-offsetZ pelo mesmo motivo). Testado ao vivo: só invertendo
+                    // X (primeira tentativa) Y e Z continuavam espelhados — os três precisam.
+                    if (allAxes || currentAxis == Axis.X) activeEffect.offsetX -= delta;
+                    if (allAxes || currentAxis == Axis.Y) activeEffect.offsetY -= delta;
+                    if (allAxes || currentAxis == Axis.Z) activeEffect.offsetZ -= delta;
+                } else if (!isSneaking) {
                     if (allAxes || currentAxis == Axis.X) activePart.offsetX += delta;
                     if (allAxes || currentAxis == Axis.Y) activePart.offsetY += delta;
                     if (allAxes || currentAxis == Axis.Z) activePart.offsetZ += delta;
@@ -523,7 +555,11 @@ public class GizmoManager {
                 break;
         }
 
-        if (onUpdate != null) onUpdate.run();
+        // Mesmo bug do bloco ROTATE acima: delta pode sair 0 (dirLen < 0.5f logo ali em cima, ou
+        // um mouseDragged com deslocamento residual/nenhum — comum num clique "parado" que o
+        // Minecraft ainda assim reporta como drag) — sem essa checagem, um clique único na seta
+        // já marcava "tem alteração não salva" mesmo o offset/escala não tendo mudado NADA.
+        if (delta != 0f && onUpdate != null) onUpdate.run();
 
         lastMouseX = virtualMouseX;
         lastMouseY = virtualMouseY;

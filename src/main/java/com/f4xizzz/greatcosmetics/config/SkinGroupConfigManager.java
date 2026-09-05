@@ -24,7 +24,7 @@ public class SkinGroupConfigManager {
     public static final String DEFAULT_COLOR = "#FFAA00";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final File CONFIG_DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+    private static final File CONFIG_DIR = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
     private static final File CONFIG_FILE = new File(CONFIG_DIR, "skin_groups.json");
 
     private static Map<String, String> groupColors = new HashMap<>();
@@ -41,8 +41,10 @@ public class SkinGroupConfigManager {
             Type type = new TypeToken<Map<String, String>>() {}.getType();
             Map<String, String> loaded = GSON.fromJson(reader, type);
             if (loaded != null) groupColors = loaded;
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("SkinGroupConfigManager: skin_groups.json loaded — " + groupColors.size() + " grupo(s).");
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao carregar skin_groups.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error loading skin_groups.json: " + e.getMessage());
+            com.f4xizzz.greatcosmetics.GreatCosmetics.debugLog("SkinGroupConfigManager: FAILED to load skin_groups.json — " + e);
         }
     }
 
@@ -51,7 +53,7 @@ public class SkinGroupConfigManager {
         try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             GSON.toJson(groupColors, writer);
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Erro ao salvar skin_groups.json: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Error saving skin_groups.json: " + e.getMessage());
         }
     }
 

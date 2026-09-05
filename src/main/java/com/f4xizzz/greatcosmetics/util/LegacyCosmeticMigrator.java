@@ -64,10 +64,10 @@ public class LegacyCosmeticMigrator {
                 // cosmeticsconfig.conf, a migração pula esse item pra sempre sem avisar ninguém —
                 // parecia "não estar funcionando" quando na verdade só faltava cadastrar o cosmético.
                 if (warnedMissingIds.add(newCosmeticId)) {
-                    GreatCosmetics.LOGGER.warn("[SASCosmetics] legacy_cosmetic_migration.json aponta pro id '"
-                            + newCosmeticId + "', mas nenhum cosmético com esse id existe no catálogo atual — "
-                            + "esse item antigo NÃO será migrado/removido até esse cosmético ser criado no Dev Studio "
-                            + "(ou o id no JSON ser corrigido pra um que já existe).");
+                    GreatCosmetics.LOGGER.warn("[GreatCosmetics] legacy_cosmetic_migration.json points to id '"
+                            + newCosmeticId + "', but no cosmetic with that id exists in the current catalog — "
+                            + "this old item will NOT be migrated/removed until that cosmetic is created in the Dev Studio "
+                            + "(or the id in the JSON is fixed to one that already exists).");
                 }
                 continue;
             }
@@ -77,9 +77,10 @@ public class LegacyCosmeticMigrator {
             DatabaseManager.unlockCosmetic(player.getUuid(), newCosmeticId);
             DatabaseManager.equipCosmetic(player.getUuid(), newCosmeticId, data.slot.name(), data.type);
 
-            player.sendMessage(BackpackManager.parseMiniMessage(
-                    "<green>[Cosmetics] Seu cosmético antigo foi migrado automaticamente para: <white>" + data.getChatSafeDisplayName() + "<green>!",
-                    player.getServer().getOverworld().getRegistryManager()), false);
+            player.sendMessage(com.f4xizzz.greatcosmetics.config.LangConfig.chat(
+                    "messages.cosmetic.migrated",
+                    player.getServer().getOverworld().getRegistryManager(),
+                    "name", data.getChatSafeDisplayName()), false);
 
             migratedAny = true;
         }

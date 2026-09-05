@@ -24,17 +24,17 @@ public class CustomizePage extends WardrobePage {
         this.lastX = x;
         this.lastY = y;
 
-        c.drawTextWithShadow(getTextRenderer(), "> Esconder Armadura", x + 16, y + 40, 0xFFFFAA);
+        c.drawTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.header"), x + 16, y + 40, 0xFFFFAA);
 
         if (MinecraftClient.getInstance().player == null) return;
         UUID uuid = MinecraftClient.getInstance().player.getUuid();
         ClientCosmeticCache.PlayerSettings settings = ClientCosmeticCache.getSettings(uuid);
 
         // Desenhando os 4 botões de armadura
-        drawToggleButton(c, "Capacete", settings.hideHelmet(), x + 16, y + 60, mouseX, mouseY);
-        drawToggleButton(c, "Peitoral", settings.hideChestplate(), x + 16, y + 85, mouseX, mouseY);
-        drawToggleButton(c, "Calça", settings.hideLeggings(), x + 16, y + 110, mouseX, mouseY);
-        drawToggleButton(c, "Botas", settings.hideBoots(), x + 16, y + 135, mouseX, mouseY);
+        drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.helmet"), settings.hideHelmet(), x + 16, y + 60, mouseX, mouseY);
+        drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.chestplate"), settings.hideChestplate(), x + 16, y + 85, mouseX, mouseY);
+        drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.leggings"), settings.hideLeggings(), x + 16, y + 110, mouseX, mouseY);
+        drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.boots"), settings.hideBoots(), x + 16, y + 135, mouseX, mouseY);
     }
 
     private void drawToggleButton(DrawContext c, String label, boolean isHidden, int bx, int by, int mx, int my) {
@@ -45,7 +45,7 @@ public class CustomizePage extends WardrobePage {
         int accentColor = isHidden ? 0xFFAA0000 : 0xFF00AA00;
         c.fill(bx, by, bx + 2, by + 20, accentColor);
 
-        String status = isHidden ? "OCULTO" : "VISÍVEL";
+        String status = com.f4xizzz.greatcosmetics.config.LangConfig.legacy(isHidden ? "wardrobe.customize.hidden" : "wardrobe.customize.visible");
         c.drawTextWithShadow(getTextRenderer(), label, bx + 8, by + 6, 0xFFFFFF);
         c.drawTextWithShadow(getTextRenderer(), status, bx + 148 - getTextRenderer().getWidth(status) - 6, by + 6, accentColor);
     }

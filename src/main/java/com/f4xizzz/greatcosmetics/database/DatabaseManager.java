@@ -55,33 +55,39 @@ public class DatabaseManager {
 
                 String url = "jdbc:mysql://" + host + ":" + port + "/" + database + "?autoReconnect=true";
                 connection = DriverManager.getConnection(url, user, password);
-                GreatCosmetics.LOGGER.info("[SASCosmetics] Conectado ao banco de dados MySQL com sucesso!");
+                GreatCosmetics.LOGGER.info("[GreatCosmetics] Connected to the MySQL database successfully!");
                 mysqlSuccess = true;
             } catch (Exception e) {
-                GreatCosmetics.LOGGER.error("[SASCosmetics] Erro ao conectar ao MySQL: " + e.getMessage());
-                GreatCosmetics.LOGGER.warn("[SASCosmetics] Realizando Fallback automático para SQLite local!");
+                GreatCosmetics.LOGGER.error("[GreatCosmetics] Error connecting to MySQL: " + e.getMessage());
+                GreatCosmetics.LOGGER.warn("[GreatCosmetics] Performing automatic fallback to local SQLite!");
+                GreatCosmetics.debugLog("DatabaseManager.initialize: MySQL connection failed — " + e);
             }
         }
 
         if (!useMySQL || !mysqlSuccess) {
             try {
-                File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "greatcosmetics");
+                File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "GreatCosmetics");
                 if (!configDir.exists()) configDir.mkdirs();
 
                 File dbFile = new File(configDir, "database.db");
                 String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
                 connection = DriverManager.getConnection(url);
-                GreatCosmetics.LOGGER.info("[SASCosmetics] Conectado ao banco de dados SQLite (Local) com sucesso!");
+                GreatCosmetics.LOGGER.info("[GreatCosmetics] Connected to the SQLite (local) database successfully!");
             } catch (Exception e) {
-                GreatCosmetics.LOGGER.error("[SASCosmetics] Erro CRÍTICO ao conectar ao SQLite de Fallback: " + e.getMessage());
+                GreatCosmetics.LOGGER.error("[GreatCosmetics] CRITICAL error connecting to the fallback SQLite: " + e.getMessage());
+                GreatCosmetics.debugLog("DatabaseManager.initialize: FAILED to connect to the fallback SQLite — " + e);
             }
         }
 
+        GreatCosmetics.debugLog("DatabaseManager.initialize: connection=" + (connection != null ? "OK" : "NULL") + " useMySQL=" + useMySQL + " mysqlSuccess=" + mysqlSuccess);
         createTables();
     }
 
     private static void createTables() {
-        if (connection == null) return;
+        if (connection == null) {
+            GreatCosmetics.debugLog("DatabaseManager.createTables: aborted — connection is null.");
+            return;
+        }
         try {
             // Tabelas de Cosméticos (Acessórios)
             String sqlCosmetics = "CREATE TABLE IF NOT EXISTS player_unlocked_cosmetics (" +
@@ -145,8 +151,10 @@ public class DatabaseManager {
                     "PRIMARY KEY (uuid, tag_id))";
             try (PreparedStatement stmt = connection.prepareStatement(sqlTags)) { stmt.execute(); }
 
+            GreatCosmetics.debugLog("DatabaseManager.createTables: all tables verified/created successfully.");
         } catch (Exception e) {
-            GreatCosmetics.LOGGER.error("[SASCosmetics] Erro ao criar/atualizar tabelas no BD: " + e.getMessage());
+            GreatCosmetics.LOGGER.error("[GreatCosmetics] Error creating/updating DB tables: " + e.getMessage());
+            GreatCosmetics.debugLog("DatabaseManager.createTables: FAILED — " + e);
         }
     }
 
@@ -162,7 +170,10 @@ public class DatabaseManager {
             stmt.setString(2, skinId.toLowerCase());
             stmt.executeUpdate();
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.unlockPokemonSkin: FAILED for " + playerUuid + " skin='" + skinId + "' — " + e);
+            return false;
+        }
     }
 
     public static boolean removePokemonSkin(UUID playerUuid, String skinId) {
@@ -173,7 +184,10 @@ public class DatabaseManager {
             stmt.setString(2, skinId.toLowerCase());
             stmt.executeUpdate();
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.removePokemonSkin: FAILED for " + playerUuid + " skin='" + skinId + "' — " + e);
+            return false;
+        }
     }
 
     public static boolean hasPokemonSkin(UUID playerUuid, String skinId) {
@@ -184,7 +198,10 @@ public class DatabaseManager {
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next();
             }
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.hasPokemonSkin: FAILED for " + playerUuid + " skin='" + skinId + "' — " + e);
+            return false;
+        }
     }
 
     public static List<String> getPlayerUnlockedSkins(UUID playerUuid) {
@@ -198,7 +215,9 @@ public class DatabaseManager {
                     unlockedList.add(rs.getString("skin_id"));
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getPlayerUnlockedSkins: FAILED for " + playerUuid + " — " + e);
+        }
         return unlockedList;
     }
 
@@ -220,7 +239,8 @@ public class DatabaseManager {
                 stmt.executeUpdate();
             }
         } catch (Exception e) {
-            GreatCosmetics.LOGGER.error("[Cosmetics] Erro ao salvar cooldown de skin: " + e.getMessage());
+            GreatCosmetics.LOGGER.error("[GreatCosmetics] Error saving skin cooldown: " + e.getMessage());
+            GreatCosmetics.debugLog("DatabaseManager.setSkinCooldown: FAILED for " + playerUuid + " skin='" + skinId + "' — " + e);
         }
     }
 
@@ -233,7 +253,9 @@ public class DatabaseManager {
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) return rs.getLong("last_applied");
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getSkinLastApplied: FAILED for " + playerUuid + " skin='" + skinId + "' — " + e);
+        }
         return 0L;
     }
 
@@ -246,6 +268,8 @@ public class DatabaseManager {
         UUID uuid = player.getUuid();
         java.util.List<String> equipped = getPlayerEquippedCosmetics(uuid);
         PlayerSettings settings = getPlayerSettings(uuid);
+
+        GreatCosmetics.debugLog("DatabaseManager.broadcastPlayerCosmetics: " + player.getName().getString() + " equipados=" + equipped);
 
         com.f4xizzz.greatcosmetics.network.SyncPlayerCosmeticsPayload payload =
                 new com.f4xizzz.greatcosmetics.network.SyncPlayerCosmeticsPayload(
@@ -270,7 +294,10 @@ public class DatabaseManager {
             stmt.setString(2, cosmeticId.toLowerCase());
             stmt.executeUpdate();
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.unlockCosmetic: FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
+            return false;
+        }
     }
 
     public static PlayerSettings getPlayerSettings(UUID playerUuid) {
@@ -287,7 +314,9 @@ public class DatabaseManager {
                     hB = rs.getBoolean("hide_boots");
                 }
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getPlayerSettings: FAILED for " + playerUuid + " — " + e);
+        }
         return new PlayerSettings(hH, hC, hL, hB, getHiddenCosmeticIds(playerUuid));
     }
 
@@ -305,7 +334,9 @@ public class DatabaseManager {
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) result.add(rs.getString("cosmetic_id"));
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.queryHiddenCosmeticIds: FAILED for " + playerUuid + " — " + e);
+        }
         return result;
     }
 
@@ -321,7 +352,9 @@ public class DatabaseManager {
                 stmt.setString(1, playerUuid.toString());
                 stmt.setString(2, cosmeticId);
                 stmt.executeUpdate();
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                GreatCosmetics.debugLog("DatabaseManager.setCosmeticHidden(true): FAILED (probably already hidden) for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
+            }
         } else {
             try (PreparedStatement stmt = connection.prepareStatement(
                     "DELETE FROM player_hidden_cosmetics WHERE uuid = ? AND cosmetic_id = ?")) {
@@ -329,7 +362,8 @@ public class DatabaseManager {
                 stmt.setString(2, cosmeticId);
                 stmt.executeUpdate();
             } catch (Exception e) {
-                System.err.println("[GreatCosmetics] Erro ao mostrar cosmético '" + cosmeticId + "': " + e.getMessage());
+                System.err.println("[GreatCosmetics] Error showing cosmetic '" + cosmeticId + "': " + e.getMessage());
+                GreatCosmetics.debugLog("DatabaseManager.setCosmeticHidden(false): FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
             }
         }
     }
@@ -358,7 +392,9 @@ public class DatabaseManager {
                     stmt.executeUpdate();
                 }
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.updatePlayerSetting: FAILED for " + playerUuid + " column='" + column + "' value=" + value + " — " + e);
+        }
     }
 
     public static boolean removeCosmetic(UUID playerUuid, String cosmeticId) {
@@ -370,7 +406,10 @@ public class DatabaseManager {
             stmt.executeUpdate();
             unequipCosmetic(playerUuid, cosmeticId);
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.removeCosmetic: FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
+            return false;
+        }
     }
 
     public static boolean hasCosmetic(UUID playerUuid, String cosmeticId) {
@@ -379,7 +418,10 @@ public class DatabaseManager {
             stmt.setString(1, playerUuid.toString());
             stmt.setString(2, cosmeticId.toLowerCase());
             try (ResultSet rs = stmt.executeQuery()) { return rs.next(); }
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.hasCosmetic: FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
+            return false;
+        }
     }
 
     public static List<String> getPlayerUnlockedCosmetics(UUID playerUuid) {
@@ -391,7 +433,9 @@ public class DatabaseManager {
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) { unlockedList.add(rs.getString("cosmetic_id")); }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getPlayerUnlockedCosmetics: FAILED for " + playerUuid + " — " + e);
+        }
         return unlockedList;
     }
 
@@ -406,7 +450,10 @@ public class DatabaseManager {
             stmt.executeUpdate();
             equippedCache.remove(playerUuid);
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.equipCosmetic: FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' slot=" + virtualSlot + " type=" + type + " — " + e);
+            return false;
+        }
     }
 
     public static boolean unequipCosmetic(UUID playerUuid, String cosmeticId) {
@@ -417,7 +464,10 @@ public class DatabaseManager {
             stmt.executeUpdate();
             equippedCache.remove(playerUuid);
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.unequipCosmetic: FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
+            return false;
+        }
     }
 
     public static List<String> getPlayerEquippedCosmetics(UUID playerUuid) {
@@ -433,7 +483,9 @@ public class DatabaseManager {
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) { equippedList.add(rs.getString("cosmetic_id")); }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.queryPlayerEquippedCosmetics: FAILED for " + playerUuid + " — " + e);
+        }
         return equippedList;
     }
 
@@ -456,7 +508,10 @@ public class DatabaseManager {
             stmt.setString(2, tagId.toLowerCase());
             stmt.executeUpdate();
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.unlockTag: FAILED for " + playerUuid + " tag='" + tagId + "' — " + e);
+            return false;
+        }
     }
 
     public static boolean hasTag(UUID playerUuid, String tagId) {
@@ -465,7 +520,10 @@ public class DatabaseManager {
             stmt.setString(1, playerUuid.toString());
             stmt.setString(2, tagId.toLowerCase());
             try (ResultSet rs = stmt.executeQuery()) { return rs.next(); }
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.hasTag: FAILED for " + playerUuid + " tag='" + tagId + "' — " + e);
+            return false;
+        }
     }
 
     public static List<String> getPlayerOwnedTags(UUID playerUuid) {
@@ -477,7 +535,9 @@ public class DatabaseManager {
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) { owned.add(rs.getString("tag_id")); }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getPlayerOwnedTags: FAILED for " + playerUuid + " — " + e);
+        }
         return owned;
     }
 
@@ -489,7 +549,9 @@ public class DatabaseManager {
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) return rs.getString("tag_id");
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getEquippedTagId: FAILED for " + playerUuid + " — " + e);
+        }
         return null;
     }
 
@@ -509,14 +571,18 @@ public class DatabaseManager {
             stmt.setString(2, tagId.toLowerCase());
             int updated = stmt.executeUpdate();
             if (updated > 0) return;
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.equipTag(update): FAILED for " + playerUuid + " tag='" + tagId + "' — " + e);
+        }
 
         String insertSql = "INSERT INTO player_tags (uuid, tag_id, equipped) VALUES (?, ?, TRUE)";
         try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
             stmt.setString(1, playerUuid.toString());
             stmt.setString(2, tagId.toLowerCase());
             stmt.executeUpdate();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.equipTag(insert): FAILED for " + playerUuid + " tag='" + tagId + "' — " + e);
+        }
     }
 
     public static void unequipAllForPlayer(UUID playerUuid) {
@@ -524,7 +590,9 @@ public class DatabaseManager {
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setString(1, playerUuid.toString());
             stmt.executeUpdate();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.unequipAllForPlayer: FAILED for " + playerUuid + " — " + e);
+        }
     }
 
     public static boolean removeTagOwnership(UUID playerUuid, String tagId) {
@@ -535,7 +603,10 @@ public class DatabaseManager {
             stmt.setString(2, tagId.toLowerCase());
             stmt.executeUpdate();
             return true;
-        } catch (Exception e) { return false; }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.removeTagOwnership: FAILED for " + playerUuid + " tag='" + tagId + "' — " + e);
+            return false;
+        }
     }
 
     /** Limpa toda referência a uma tag que foi apagada do catálogo (todos os jogadores). */
@@ -544,7 +615,9 @@ public class DatabaseManager {
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setString(1, tagId.toLowerCase());
             stmt.executeUpdate();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.removeAllOwnershipOfTag: FAILED tag='" + tagId + "' — " + e);
+        }
     }
 
     public static int getEquippedCountBySlot(UUID playerUuid, String virtualSlot) {
@@ -553,7 +626,9 @@ public class DatabaseManager {
             stmt.setString(1, playerUuid.toString());
             stmt.setString(2, virtualSlot.toUpperCase());
             try (ResultSet rs = stmt.executeQuery()) { if (rs.next()) return rs.getInt("total"); }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getEquippedCountBySlot: FAILED for " + playerUuid + " slot=" + virtualSlot + " — " + e);
+        }
         return 0;
     }
 
@@ -563,7 +638,9 @@ public class DatabaseManager {
             stmt.setString(1, playerUuid.toString());
             stmt.setString(2, type.toLowerCase());
             try (ResultSet rs = stmt.executeQuery()) { if (rs.next()) return rs.getInt("total"); }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getEquippedCountByType: FAILED for " + playerUuid + " type=" + type + " — " + e);
+        }
         return 0;
     }
 
@@ -587,7 +664,8 @@ public class DatabaseManager {
             // id de cosmético já perto do limite ESTOURA 64 caracteres com o sufixo "#p1"/"#p2" da
             // paginação, e o INSERT falhava silenciosamente aqui (constraint/truncamento). Logando
             // pra parar de esconder esse tipo de falha.
-            GreatCosmetics.LOGGER.error("[SASCosmetics] Erro ao salvar mochila '" + cosmeticId + "' de " + playerUuid + " na database: " + e.getMessage());
+            GreatCosmetics.LOGGER.error("[GreatCosmetics] Error saving mochila '" + cosmeticId + "' de " + playerUuid + " na database: " + e.getMessage());
+            GreatCosmetics.debugLog("DatabaseManager.saveBackpackData: FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
         }
     }
 
@@ -601,7 +679,8 @@ public class DatabaseManager {
                 if (rs.next()) return rs.getString("inventory_data");
             }
         } catch (Exception e) {
-            GreatCosmetics.LOGGER.error("[SASCosmetics] Erro ao ler mochila '" + cosmeticId + "' de " + playerUuid + " da database: " + e.getMessage());
+            GreatCosmetics.LOGGER.error("[GreatCosmetics] Error reading mochila '" + cosmeticId + "' de " + playerUuid + " da database: " + e.getMessage());
+            GreatCosmetics.debugLog("DatabaseManager.getBackpackData: FAILED for " + playerUuid + " cosmetic='" + cosmeticId + "' — " + e);
         }
         return "";
     }
@@ -611,6 +690,8 @@ public class DatabaseManager {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.close: FAILED to close connection — " + e);
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev;
 
 import com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen;
+import com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager;
 import com.f4xizzz.greatcosmetics.config.EffectConfig;
 import com.f4xizzz.greatcosmetics.config.EffectData;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -57,18 +58,29 @@ public class DevEffectsSubPage extends DevSubPage {
     private float particleDropdownMaxScrollY = 0f;
 
     private boolean isDraggingScrollbar = false;
-    private boolean isDraggingGizmo = false; // Novo
-    private double lastMouseX = 0, lastMouseY = 0; // Novo
     private long lastTick = 0;
 
     private enum RowType { STRING, INT, DOUBLE, BUTTON, DIVIDER, GIZMO_INFO } // Novos tipos
     private static class EditorRow {
-        String label; RowType type; TextFieldWidget textField; Runnable onButtonClick;
-        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.type = type; this.textField = field; }
-        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
+        String label; String id; RowType type; TextFieldWidget textField; Runnable onButtonClick;
+        // Explicação em tooltip ao passar o mouse em cima da row — ver hoveredTooltipRow/
+        // renderHoveredTooltip, mesmo mecanismo do DevCosmeticsSubPage.
+        String tooltip;
+        EditorRow(String label, RowType type, TextFieldWidget field) { this.label = label; this.id = label; this.type = type; this.textField = field; }
+        EditorRow(String label, Runnable onButtonClick) { this.label = label; this.id = label; this.type = RowType.BUTTON; this.onButtonClick = onButtonClick; }
+        EditorRow withId(String id) { this.id = id; return this; }
+        EditorRow withTooltip(String tooltip) { this.tooltip = tooltip; return this; }
     }
 
     private final List<EditorRow> rows = new ArrayList<>();
+
+    /** Ver DevCosmeticsSubPage#hoveredTooltipRow — mesmo mecanismo, preenchido no loop de rows do
+     *  render() e desenhado por último (ver renderHoveredTooltip). */
+    private EditorRow hoveredTooltipRow = null;
+
+    private static String L(String key, Object... ph) {
+        return com.f4xizzz.greatcosmetics.config.LangConfig.legacy(key, ph);
+    }
 
     public DevEffectsSubPage(Wardrobe3DScreen parent, Runnable onBack) {
         super(parent, onBack);
@@ -103,6 +115,13 @@ public class DevEffectsSubPage extends DevSubPage {
 
     private void syncGizmoToFields() {
         if (this.editingData == null) return;
+        // BUG (2026-09, ver o mesmo fix em DevCosmeticsSubPage#syncGizmoToFields):
+        // TextFieldWidget#setText() dispara o changedListener SEMPRE, mesmo escrevendo o MESMO
+        // valor que já tava lá — esse método só espelha o valor atual, não deveria por si só
+        // marcar "alteração não salva". Snapshot/restore cancela o disparo espúrio; quem chamou
+        // isso por uma mudança de verdade (arraste com delta != 0) já setou hasUnsavedChanges=true
+        // ANTES de chamar, então o valor restaurado continua correto nesse caso.
+        boolean wasUnsavedBeforeSync = this.hasUnsavedChanges;
         for (EditorRow r : rows) {
             if (r.textField == null) continue;
             try {
@@ -111,6 +130,7 @@ public class DevEffectsSubPage extends DevSubPage {
                 if (r.label.startsWith("Offset Z")) r.textField.setText(String.valueOf(Math.round(this.editingData.offsetZ * 1000.0) / 1000.0));
             } catch (Exception ignored) {}
         }
+        this.hasUnsavedChanges = wasUnsavedBeforeSync;
     }
 
     private void loadEditor(String id) {
@@ -121,77 +141,109 @@ public class DevEffectsSubPage extends DevSubPage {
         this.scrollY = 0; // Reseta o scroll ao entrar no editor
         this.rows.clear();
 
+        // Ativa o MESMO gizmo 3D de setas que o editor de Cosméticos usa (ver GizmoManager,
+        // ArmorFeatureRendererMixin) — só TRANSLATE, Effect não tem rotação/escala.
+        // activePart = null de propósito: os dois alvos são mutuamente exclusivos.
+        GizmoManager.activePart = null;
+        GizmoManager.activeEffect = null;
+        GizmoManager.currentAxis = GizmoManager.Axis.NONE;
+
         if (this.editingData == null) return;
 
-        addDivider("=== IDENTIFICAÇÃO ===");
-        addStringField("ID do Efeito (Nome no Arquivo)", this.tempId, text -> this.tempId = text);
-        addStringField("Particle ID (Ex: minecraft:flame)", this.editingData.particleId, text -> {
+        GizmoManager.activeEffect = this.editingData;
+        GizmoManager.currentMode = GizmoManager.Mode.TRANSLATE;
+        GizmoManager.onUpdate = () -> {
+            this.hasUnsavedChanges = true;
+            this.syncGizmoToFields();
+        };
+
+        addDivider(L("devstudio.effect.divider.identification"));
+        addStringField(L("devstudio.effect.field.effect_id"), this.tempId, text -> this.tempId = text)
+                .withTooltip(L("devstudio.effect.tooltip.effect_id"));
+        addStringField(L("devstudio.effect.field.particle_id"), this.editingData.particleId, text -> {
             this.editingData.particleId = text;
             filterParticles(text);
-        });
+        }).withTooltip(L("devstudio.effect.tooltip.particle_id"));
         this.particleIdRow = this.rows.get(this.rows.size() - 1);
         this.particleDropdownOpen = false;
         filterParticles(this.editingData.particleId);
 
-        addDivider("=== CONFIGURAÇÃO ===");
-        addIntField("Quantidade (Count)", this.editingData.count, val -> this.editingData.count = val);
-        addIntField("Intervalo (Ticks)", this.editingData.tickInterval, val -> this.editingData.tickInterval = val);
+        addDivider(L("devstudio.effect.divider.configuration"));
+        addIntField(L("devstudio.effect.field.count"), this.editingData.count, val -> this.editingData.count = val)
+                .withTooltip(L("devstudio.effect.tooltip.count"));
+        addIntField(L("devstudio.effect.field.tick_interval"), this.editingData.tickInterval, val -> this.editingData.tickInterval = val)
+                .withTooltip(L("devstudio.effect.tooltip.tick_interval"));
 
-        addDivider("=== FERRAMENTA 3D ===");
-        this.rows.add(new EditorRow("Segure X, Y ou Z e arraste o mouse!", RowType.GIZMO_INFO, null));
+        addDivider(L("devstudio.effect.divider.tool_3d"));
+        this.rows.add(new EditorRow(L("devstudio.effect.gizmo_info"), RowType.GIZMO_INFO, null));
 
-        addDivider("=== OFFSETS (POSIÇÃO) ===");
-        addDoubleField("Offset X (Lados)", this.editingData.offsetX, val -> this.editingData.offsetX = val);
-        addDoubleField("Offset Y (Altura)", this.editingData.offsetY, val -> this.editingData.offsetY = val);
-        addDoubleField("Offset Z (Frente/Trás)", this.editingData.offsetZ, val -> this.editingData.offsetZ = val);
+        addDivider(L("devstudio.effect.divider.offsets"));
+        addDoubleField(L("devstudio.effect.field.offset_x"), this.editingData.offsetX, val -> this.editingData.offsetX = val)
+                .withTooltip(L("devstudio.effect.tooltip.offset_x"));
+        addDoubleField(L("devstudio.effect.field.offset_y"), this.editingData.offsetY, val -> this.editingData.offsetY = val)
+                .withTooltip(L("devstudio.effect.tooltip.offset_y"));
+        addDoubleField(L("devstudio.effect.field.offset_z"), this.editingData.offsetZ, val -> this.editingData.offsetZ = val)
+                .withTooltip(L("devstudio.effect.tooltip.offset_z"));
 
-        addDivider("=== ESPALHAMENTO ===");
-        addDoubleField("Spread X (Espalhamento X)", this.editingData.spreadX, val -> this.editingData.spreadX = val);
-        addDoubleField("Spread Y (Espalhamento Y)", this.editingData.spreadY, val -> this.editingData.spreadY = val);
-        addDoubleField("Spread Z (Espalhamento Z)", this.editingData.spreadZ, val -> this.editingData.spreadZ = val);
-        addDoubleField("Velocidade (Speed)", this.editingData.speed, val -> this.editingData.speed = val);
+        addDivider(L("devstudio.effect.divider.spread"));
+        addDoubleField(L("devstudio.effect.field.spread_x"), this.editingData.spreadX, val -> this.editingData.spreadX = val)
+                .withTooltip(L("devstudio.effect.tooltip.spread_x"));
+        addDoubleField(L("devstudio.effect.field.spread_y"), this.editingData.spreadY, val -> this.editingData.spreadY = val)
+                .withTooltip(L("devstudio.effect.tooltip.spread_y"));
+        addDoubleField(L("devstudio.effect.field.spread_z"), this.editingData.spreadZ, val -> this.editingData.spreadZ = val)
+                .withTooltip(L("devstudio.effect.tooltip.spread_z"));
+        addDoubleField(L("devstudio.effect.field.speed"), this.editingData.speed, val -> this.editingData.speed = val)
+                .withTooltip(L("devstudio.effect.tooltip.speed"));
 
-        addDivider("=== PERIGO ===");
-        this.rows.add(new EditorRow("DELETAR EFEITO", () -> {
+        addDivider(L("devstudio.effect.divider.danger"));
+        this.rows.add(new EditorRow(L("devstudio.effect.delete"), () -> {
             EffectConfig.effectsMap.remove(this.editingId);
             EffectConfig.saveEffects();
             sendDeleteEffect(this.editingId);
             this.hasUnsavedChanges = false;
             this.currentState = State.LIST;
             this.scrollY = 0;
-        }));
+            GizmoManager.activeEffect = null;
+            GizmoManager.onUpdate = null;
+        }).withId("delete"));
 
         this.hasUnsavedChanges = false;
     }
 
-    private void addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
+    private EditorRow addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(128); field.setText(startVal != null ? startVal : "");
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             action.accept(text);
         });
-        this.rows.add(new EditorRow(label, RowType.STRING, field));
+        EditorRow row = new EditorRow(label, RowType.STRING, field);
+        this.rows.add(row);
+        return row;
     }
 
-    private void addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
+    private EditorRow addIntField(String label, int startVal, java.util.function.Consumer<Integer> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(10); field.setText(String.valueOf(startVal));
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             try { if (!text.isEmpty() && !text.equals("-")) action.accept(Integer.parseInt(text)); } catch (Exception ignored) {}
         });
-        this.rows.add(new EditorRow(label, RowType.INT, field));
+        EditorRow row = new EditorRow(label, RowType.INT, field);
+        this.rows.add(row);
+        return row;
     }
 
-    private void addDoubleField(String label, double startVal, java.util.function.Consumer<Double> action) {
+    private EditorRow addDoubleField(String label, double startVal, java.util.function.Consumer<Double> action) {
         TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, 140, 16, Text.literal(""));
         field.setMaxLength(20); field.setText(String.valueOf(startVal));
         field.setChangedListener(text -> {
             hasUnsavedChanges = true;
             try { if (!text.isEmpty() && !text.equals("-") && !text.equals(".")) action.accept(Double.parseDouble(text)); } catch (Exception ignored) {}
         });
-        this.rows.add(new EditorRow(label, RowType.DOUBLE, field));
+        EditorRow row = new EditorRow(label, RowType.DOUBLE, field);
+        this.rows.add(row);
+        return row;
     }
 
     // ==========================================
@@ -235,11 +287,12 @@ public class DevEffectsSubPage extends DevSubPage {
     public void render(DrawContext c, int mouseX, int mouseY, float delta, int x, int y, int width, int height) {
         INSTANCE = this; // <--- ADICIONE ESTA LINHA
         this.lastX = x; this.lastY = y; this.lastWidth = width; this.lastHeight = height;
+        this.hoveredTooltipRow = null;
 
         boolean isMouseDown = GLFW.glfwGetMouseButton(MinecraftClient.getInstance().getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
         if (!isMouseDown) {
             isDraggingScrollbar = false;
-            isDraggingGizmo = false;
+            GizmoManager.release();
         }
 
         // --- LOOP PARA MOSTRAR A PARTÍCULA NO BONECO ---
@@ -260,13 +313,13 @@ public class DevEffectsSubPage extends DevSubPage {
 
         if (currentState == State.LIST) {
             boolean hovBack = mouseX >= x + 12 && mouseX <= x + 62 && mouseY >= topY && mouseY <= topY + 12;
-            c.drawTextWithShadow(parent.getTextRenderer(), "< Voltar", x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "§dEfeitos", x + (width / 2), topY + 2, 0xFFFFFF);
+            c.drawTextWithShadow(parent.getTextRenderer(), L("devstudio.common.back"), x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.effect.list_title"), x + (width / 2), topY + 2, 0xFFFFFF);
 
             // Botão Novo Efeito
             boolean hovNew = mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= topY + 15 && mouseY <= topY + 30;
             c.fill(x + 10, topY + 15, x + width - 10, topY + 30, hovNew ? 0xFF55FF55 : 0xFF22AA22);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), "+ Novo Efeito", x + (width/2), topY + 19, 0xFFFFFF);
+            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.effect.new"), x + (width/2), topY + 19, 0xFFFFFF);
 
             List<String> ids = new ArrayList<>(EffectConfig.effectsMap.keySet());
             int listY = topY + 35;
@@ -326,6 +379,10 @@ public class DevEffectsSubPage extends DevSubPage {
                     continue;
                 }
 
+                if (row.tooltip != null && mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= rowY - 2 && mouseY <= rowY + 30) {
+                    hoveredTooltipRow = row;
+                }
+
                 if (row.type == RowType.DIVIDER) {
                     c.fill(x + 10, rowY + 4, x + width - 10, rowY + 20, 0x88FFAA00);
                     c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, x + (width/2), rowY + 8, 0xFFFFFF);
@@ -348,7 +405,7 @@ public class DevEffectsSubPage extends DevSubPage {
                     row.textField.render(c, mouseX, mouseY, delta);
                 }
                 else if (row.type == RowType.BUTTON) {
-                    boolean isDelete = row.label.equals("DELETAR EFEITO");
+                    boolean isDelete = row.id.equals("delete");
                     boolean hovBtn = mouseX >= x + 15 && mouseX <= x + width - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
 
                     c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, hovBtn ? (isDelete ? 0x66FF0000 : 0x66FFAA00) : (isDelete ? 0x44AA0000 : 0x44FFAA00));
@@ -369,6 +426,18 @@ public class DevEffectsSubPage extends DevSubPage {
 
         // --- RENDERIZANDO O POPUP UNIVERSAL DE SAÍDA POR CIMA DE TUDO ---
         renderExitPopup(c, mouseX, mouseY);
+
+        renderHoveredTooltip(c, mouseX, mouseY);
+    }
+
+    /** Ver DevCosmeticsSubPage#renderHoveredTooltip. */
+    private void renderHoveredTooltip(DrawContext c, int mouseX, int mouseY) {
+        if (hoveredTooltipRow == null || hoveredTooltipRow.tooltip == null) return;
+        List<Text> lines = new ArrayList<>();
+        for (String line : hoveredTooltipRow.tooltip.split("\n")) {
+            lines.add(Text.literal(line));
+        }
+        c.drawTooltip(parent.getTextRenderer(), lines, mouseX, mouseY);
     }
 
     /** Lista suspensa com todas as partículas registradas, filtrada pelo texto do campo. Desenhada
@@ -393,7 +462,7 @@ public class DevEffectsSubPage extends DevSubPage {
         c.drawBorder(ddX, ddY, ddW, listH + 4, 0xFF666666);
 
         if (filteredParticleIds.isEmpty()) {
-            c.drawTextWithShadow(parent.getTextRenderer(), "§7(nenhuma partícula encontrada)", ddX + 3, ddY + 4, 0xFFAAAAAA);
+            c.drawTextWithShadow(parent.getTextRenderer(), L("devstudio.effect.particles_none"), ddX + 3, ddY + 4, 0xFFAAAAAA);
         } else {
             parent.enablePerfectScissor(c, ddX, ddY + 2, ddW, listH);
             for (int i = 0; i < filteredParticleIds.size(); i++) {
@@ -426,6 +495,12 @@ public class DevEffectsSubPage extends DevSubPage {
 
         if (button != 0) return false;
 
+        // Testa se o clique caiu numa seta do gizmo de verdade (ver GizmoManager) ANTES de
+        // qualquer hit-test de row — mesma prioridade que DevCosmeticsSubPage já dá pro gizmo de
+        // Parts. Se caiu, agarra o eixo e consome o clique; senão deixa passar reto (câmera gira /
+        // clique de fundo, ver o fallback mais abaixo).
+        if (currentState == State.EDITOR && GizmoManager.activeEffect != null && GizmoManager.tryGrab(mx, my)) return true;
+
         int x = lastX; int y = lastY; int width = lastWidth; int height = lastHeight;
         int topY = y + 35;
 
@@ -452,7 +527,7 @@ public class DevEffectsSubPage extends DevSubPage {
             // Criar Novo
             if (mx >= x + 10 && mx <= x + width - 10 && my >= topY + 15 && my <= topY + 30) {
                 playClick();
-                String newId = "novo_efeito_" + UUID.randomUUID().toString().substring(0, 4);
+                String newId = "new_effect_" + UUID.randomUUID().toString().substring(0, 4);
                 EffectData newData = new EffectData();
                 newData.particleId = "minecraft:flame";
                 EffectConfig.effectsMap.put(newId, newData);
@@ -481,6 +556,8 @@ public class DevEffectsSubPage extends DevSubPage {
                     this.currentState = State.LIST;
                     this.scrollY = 0; // Reset ao voltar pra lista de efeitos
                     this.particleDropdownOpen = false;
+                    GizmoManager.activeEffect = null;
+                    GizmoManager.onUpdate = null;
                 });
                 return true;
             }
@@ -553,12 +630,9 @@ public class DevEffectsSubPage extends DevSubPage {
             }
             if (!clickedAny) {
                 for (EditorRow r : rows) if (r.textField != null) r.textField.setFocused(false);
-
-                // Inicia o arrasto do Gizmo se clicar no fundo vazio
-                isDraggingGizmo = true;
-                lastMouseX = mx;
-                lastMouseY = my;
-                return false; // Retorna false para permitir a câmera girar
+                // Não caiu em nenhuma seta do gizmo (já testado no topo do método) nem em nenhuma
+                // row — deixa passar reto pra câmera girar normalmente.
+                return false;
             }
         }
         return false;
@@ -566,32 +640,11 @@ public class DevEffectsSubPage extends DevSubPage {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double deltaX, double deltaY) {
-        if (isDraggingGizmo && currentState == State.EDITOR && this.editingData != null) {
-            long window = MinecraftClient.getInstance().getWindow().getHandle();
-            boolean isX = net.minecraft.client.util.InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_X);
-            boolean isY = net.minecraft.client.util.InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_Y);
-            boolean isZ = net.minecraft.client.util.InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_Z);
-
-            if (isX || isY || isZ) {
-                // Matemática corrigida para fluidez: deltaX afeta eixos X e Z, deltaY afeta eixo Y (invertido)
-                float moveX = (float) (mx - lastMouseX) * 0.01f;
-                float moveY = (float) (my - lastMouseY) * -0.01f; // Invertido porque a tela cresce pra baixo
-
-                if (isX) this.editingData.offsetX += moveX;
-                else if (isY) this.editingData.offsetY += moveY;
-                else if (isZ) this.editingData.offsetZ += moveX; // Z usa movimento horizontal do mouse
-
-                syncGizmoToFields();
-                this.hasUnsavedChanges = true;
-
-                lastMouseX = mx;
-                lastMouseY = my;
-                return true; // Bloqueia a câmera
-            } else {
-                lastMouseX = mx;
-                lastMouseY = my;
-                // Deixa o return false rodar lá embaixo para girar a câmera
-            }
+        // O eixo já foi decidido no clique (GizmoManager.tryGrab, ver mouseClicked) — só continua
+        // arrastando a seta agarrada, igual DevCosmeticsSubPage.
+        if (GizmoManager.isDragging && GizmoManager.currentAxis != GizmoManager.Axis.NONE) {
+            GizmoManager.handleDrag(mx, my, Wardrobe3DScreen.isPreviewSneaking);
+            return true;
         }
         if (isDraggingScrollbar && maxScrollY > 0) {
             int y = lastY;

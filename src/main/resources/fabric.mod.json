@@ -1,17 +1,16 @@
 {
 	"schemaVersion": 1,
 	"id": "great-cosmetics",
-	"version": "${version}",
+	"version": "1.1.0",
 	"name": "great-cosmetics",
-	"description": "Cosmetics mods for servers!",
+	"description": "Cosmetics mod for servers.",
 	"authors": [
 		"f4xizzz"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "<CANAL OFICIAL DE VENDA>"
 	},
-	"license": "CC0-1.0",
+	"license": "All Rights Reserved",
 	"icon": "assets/greatcosmetics/icon.png",
 	"environment": "*",
 	"accessWidener": "greatcosmetics.accesswidener",

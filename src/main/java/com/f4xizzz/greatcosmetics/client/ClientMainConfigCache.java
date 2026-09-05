@@ -19,7 +19,7 @@ public class ClientMainConfigCache {
             MainConfig.ConfigData parsed = GSON.fromJson(json, MainConfig.ConfigData.class);
             if (parsed != null) config = parsed;
         } catch (Exception e) {
-            System.err.println("[GreatCosmetics] Falha ao ler mainconfig sincronizado do servidor: " + e.getMessage());
+            System.err.println("[GreatCosmetics] Failed to read the server-synced mainconfig: " + e.getMessage());
         }
     }
 
