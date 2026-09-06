@@ -82,6 +82,25 @@ Checklist: entrar no servidor (JOIN sync + licença), equipar cosmético/tag/ski
 renderizando, `/lightmode` `/darkmode`. Se o `.sig` do build de teste não bater com a chave da
 API, `/gc activation` falha — nesse caso testar com uma build sem `../../signing/` (sem `.sig`).
 
+## HUD de Lure (2026-09-06) — feito no master + portado pra cá
+
+Feature nova (não é parte do port): coluna à direita da hotbar com os bônus de Lure AGREGADOS de
+todos os cosméticos/armaduras-cosmético equipados que dão Lure ativo. Feita primeiro no `master`
+(Yarn, `HudRenderCallback`, `GreatCosmetics.getCosmeticById`), depois portada pra cá:
+
+- `common/.../client/gui/LureHudOverlay.java` — novo. `render(GuiGraphics)`; espelho client-side
+  de `LureManager.collectActiveLureStats` (equipados via `ClientCosmeticCache.getEquipped` +
+  armaduras reais vestidas casadas por `realItemId` em `ClientArmorCosmeticsCache`) + soma.
+  Usa `CosmeticsConfig.getCosmeticById` (não `GreatCosmetics.` — no multiloader mora em
+  `CosmeticsConfig`).
+- Registrado em `GreatCosmeticsClientInit.initClient()` via `ClientGuiEvent.RENDER_HUD`
+  (`(graphics, deltaTracker)`) — no lugar do `HudRenderCallback` do Fabric.
+- `MainConfig.ConfigData.lureHud` (default true, sync via `SyncMainConfigPayload`) liga/desliga;
+  toggle "Lure HUD" no Dev Studio > Server Config; chaves de lang `hud.lure.*`.
+- Sem mudança de proguard (`client.**` já é `-keep`).
+- `:common:build` / `:fabric:build` / `:neoforge:build` passam; `LureHudOverlay.class` nos 2
+  `-release.jar`. Não testado ao vivo.
+
 ## Phase 2 — o que foi feito (2026-09-06)
 
 **Ponte de código comum → entrypoint** (evita `common` referenciar o entrypoint Fabric):

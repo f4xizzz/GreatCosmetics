@@ -11,6 +11,7 @@ import com.f4xizzz.greatcosmetics.network.OpenWardrobePayload;
 import com.f4xizzz.greatcosmetics.network.SyncCosmeticsPayload;
 import com.f4xizzz.greatcosmetics.util.AutoCMDManager;
 import dev.architectury.event.events.client.ClientCommandRegistrationEvent;
+import dev.architectury.event.events.client.ClientGuiEvent;
 import dev.architectury.event.events.client.ClientPlayerEvent;
 import dev.architectury.event.events.client.ClientTickEvent;
 import dev.architectury.event.events.client.ClientTooltipEvent;
@@ -75,6 +76,12 @@ public final class GreatCosmeticsClientInit {
 		// JOIN, false no /gc reload), e o receiver desse payload arma/limpa o estado. Aqui só
 		// garantimos que nada vaza de uma conexão pra outra.
 		ClientPlayerEvent.CLIENT_PLAYER_QUIT.register(p -> com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.resetAll());
+
+		// HUD dos bônus de Lure — coluna à direita da hotbar quando o player usa cosmético que dá
+		// Lure ativo (ver LureHudOverlay). Ligado por mainconfig.conf -> lureHud (default on,
+		// sincronizado do servidor via SyncMainConfigPayload).
+		ClientGuiEvent.RENDER_HUD.register((graphics, deltaTracker) ->
+				com.f4xizzz.greatcosmetics.client.gui.LureHudOverlay.render(graphics));
 
 		// Registra os Comandos Client-Side
 		ClientCommandRegistrationEvent.EVENT.register((dispatcher, registryAccess) -> {

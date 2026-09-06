@@ -313,6 +313,26 @@ public class LangConfig {
         items.put("items.lure.fishing_shiny", "<gray>  ▪ <yellow>Shiny: <green>+{value}x");
         items.put("items.lure.fishing_iv_chance", "<gray>  ▪ <green>IV Chance: <green>+{value}%");
         items.put("items.lure.fishing_speed", "<gray>  ▪ <aqua>Speed: <green>+{value}%");
+        // ---------------- HUD de Lure (LureHudOverlay — coluna à direita da hotbar) ----------------
+        items.put("hud.lure.header", "<light_purple>✦ Lure Bonus");
+        items.put("hud.lure.type", "<white>▪ Type: <aqua>{value}");
+        items.put("hud.lure.shiny", "<yellow>✨ Shiny <green>+{value}x");
+        items.put("hud.lure.ultrarare", "<dark_purple>🔮 Ultra Rare <green>+{value}x");
+        items.put("hud.lure.hidden_ability", "<dark_aqua>👁 Hidden Ability <green>+{value}x");
+        items.put("hud.lure.iv", "<gold>⭐ Perfect IVs <green>+{value}");
+        items.put("hud.lure.iv_chance", "<blue>🎲 IV Chance <green>+{value}%");
+        items.put("hud.lure.expall", "<aqua>⚡ Exp (Team) <green>+{value}x");
+        items.put("hud.lure.exp", "<aqua>📘 Exp (Main) <green>+{value}x");
+        items.put("hud.lure.ev", "<green>🐍 Battle EV <green>+{value}x");
+        items.put("hud.lure.friendship", "<light_purple>❤ Friendship <green>+{value}x");
+        items.put("hud.lure.capture", "<red>🎯 Capture <green>+{value}x");
+        items.put("hud.lure.fishing_header", "<aqua>🎣 Fishing");
+        items.put("hud.lure.fishing_shiny", "<gray> <yellow>✨ Shiny <green>+{value}x");
+        items.put("hud.lure.fishing_ultrarare", "<gray> <dark_purple>🔮 Ultra Rare <green>+{value}x");
+        items.put("hud.lure.fishing_iv", "<gray> <gold>⭐ Perfect IVs <green>+{value}");
+        items.put("hud.lure.fishing_iv_chance", "<gray> <blue>🎲 IV Chance <green>+{value}%");
+        items.put("hud.lure.fishing_speed", "<gray> <aqua>💨 Speed <green>+{value}%");
+        items.put("hud.lure.fishing_power", "<gray> <aqua>🐟 Fishing Power <green>+{value}x");
         items.put("items.scanner.divider", "&8&m                                     ");
         items.put("items.scanner.line", "&e[Scanner] &fCurrent ID: &c{cmd}");
         // chaves migradas do lang.json antigo (wardrobe item ghost/unconfigured)
@@ -629,6 +649,8 @@ public class LangConfig {
         d.put("devstudio.serverconfig.title", "<green>Server Config");
         d.put("devstudio.serverconfig.field.auto_detect_models", "Auto Detect Models");
         d.put("devstudio.serverconfig.tooltip.auto_detect_models", "<gray>When ON, the mod automatically scans your resource\n<gray>pack for new 3D models on startup. Turn OFF only\n<gray>if you want full manual control over model IDs.");
+        d.put("devstudio.serverconfig.field.lure_hud", "Lure HUD");
+        d.put("devstudio.serverconfig.tooltip.lure_hud", "<gray>When ON, players wearing a cosmetic that grants Lure\n<gray>see the combined Lure bonuses in a column to the\n<gray>right of their hotbar. It hides when no Lure is active.");
         d.put("devstudio.serverconfig.field.use_mysql", "Use MySQL");
         d.put("devstudio.serverconfig.tooltip.use_mysql", "<gray>ON: player cosmetic data is stored in a MySQL\n<gray>database (needed for server networks/BungeeCord).\n<gray>OFF (default): stored in local files, simpler for\n<gray>a single server.");
         d.put("devstudio.serverconfig.field.mysql_host", "MySQL Host");
