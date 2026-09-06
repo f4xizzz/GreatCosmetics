@@ -21,6 +21,6 @@
 		"java": ">=21",
 		"fabric-api": "*",
 		"architectury": ">=13.0.0",
-		"cobblemon": ">=1.7.0"
+		"cobblemon": ">=1.8.0"
 	}
 }

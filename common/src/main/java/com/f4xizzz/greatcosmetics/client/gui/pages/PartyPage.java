@@ -476,7 +476,7 @@ public class PartyPage extends WardrobePage {
                     dummy.setForcedAspects(forced);
                     dummy.updateAspects();
                 }
-                ModelWidget widget = new ModelWidget(0, 0, 40, 40, dummy.asRenderablePokemon(), skinsScale, 0f, 0.0, false, false);
+                ModelWidget widget = new ModelWidget(0, 0, 40, 40, dummy.asRenderablePokemon(), skinsScale, 0f, 0.0, false, false, 13);
                 skinWidgets.put(skin.getId(), widget);
             } catch (Exception ignored) {}
         }
@@ -911,7 +911,7 @@ public class PartyPage extends WardrobePage {
                 int realSize = (int)(slotSize * scaleMultiplier);
 
                 if (slotWidgets[i] == null || lastScale != scaleMultiplier) {
-                    slotWidgets[i] = new ModelWidget(realX, realY, realSize, realSize, partyCache[i].asRenderablePokemon(), 0.8f * scaleMultiplier, 0f, 0.0, false, false);
+                    slotWidgets[i] = new ModelWidget(realX, realY, realSize, realSize, partyCache[i].asRenderablePokemon(), 0.8f * scaleMultiplier, 0f, 0.0, false, false, 13);
                 }
 
                 ModelWidget widget = slotWidgets[i];
