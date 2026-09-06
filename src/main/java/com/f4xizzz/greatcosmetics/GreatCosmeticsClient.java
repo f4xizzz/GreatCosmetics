@@ -434,7 +434,16 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 					// ficava com {teste=resolvedIconCmd} em vez de {teste=data.cmd}.
 
 					for (CosmeticData.CosmeticPart part : data.parts) {
-						if (part.customModelData_or_ID != null && part.resolvedCmd > 0) {
+						// !isEmpty() (não só != null): Part que SÓ tem geoModelId (customModelData_or_ID
+						// vazio) mesmo assim recebe part.resolvedCmd > 0 do servidor (getOrCreateCmd
+						// "geo:<id>", ver CosmeticsConfig#resolveModelIds) — mas essa Part é 100%
+						// GeckoLib (GeoModelRegistry, via rebuildAllGeoModels abaixo), NUNCA um override
+						// de model chapado. Sem esse isEmpty(), a chave virava "" e o override do
+						// carved_pumpkin ficava {resolvedCmd -> "greatcosmetics:"} (path vazio,
+						// inbakeável) — o que fazia o Minecraft descartar o modelo inteiro e TODO
+						// cosmético (inclusive os que só tinham iconId, tipo o examplehat) cair pro
+						// visual genérico de abóbora.
+						if (part.customModelData_or_ID != null && !part.customModelData_or_ID.isEmpty() && part.resolvedCmd > 0) {
 							// useExactPath precisa virar o MESMO prefixo "exact:" que o SERVIDOR usa pra
 							// gerar a chave (ver CosmeticsConfig#resolveModelIds) — sem isso, o ramo
 							// "exact:" em modifyModelOnLoad (que busca em QUALQUER namespace pelo caminho
