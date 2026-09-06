@@ -36,19 +36,33 @@
 
 | # | Escopo | Estado |
 |---|---|---|
-| **0** | Esqueleto Architectury + stubs + provar que os 3 subprojetos buildam e as deps NeoForge resolvem | **EM ANDAMENTO** |
-| 1 | Mover código sem-loader de `src/` → `common/` (remap Yarn→Mojmap). Abstrair paths de config. `fabric/` volta a compilar. | pendente |
-| 2 | Cola de loader: networking (`PayloadTypeRegistry`→`RegisterPayloadHandlersEvent`), eventos (`ClientTickEvents` etc → `NeoForge.EVENT_BUS`), entrypoints, keybinds, comandos — atrás das APIs do Architectury em `common/` com impls por plataforma | pendente |
-| 3 | Os 21 mixins → `common/` (Mojmap). Refmap. AccessWidener→AT no lado NeoForge. | pendente |
+| **0** | Esqueleto Architectury + stubs + provar que os 3 subprojetos buildam e as deps NeoForge resolvem | ✅ FEITO |
+| **1** | Mod inteiro Yarn→Mojmap, compilando + buildando no `fabric/` (NÃO split ainda) | ✅ FEITO |
+| 2 | Split `fabric/` → `common/`: mover pra common tudo que NÃO toca Fabric API direto (`config/`, `security/`, `database/`, boa parte de `util/`, `geckolib/`, GUI). Abstrair paths de config. Os 21 mixins → `common/` (Architectury aplica nos dois). AccessWidener→AT auto no lado NeoForge (loom faz se o AW estiver no common). | pendente |
+| 3 | Cola de loader: networking (`PayloadTypeRegistry`→`RegisterPayloadHandlersEvent`, ou `dev.architectury.networking.NetworkManager`), eventos (`ClientTickEvents` etc → `dev.architectury.event.events.*`), entrypoints, keybinds, comandos — atrás das APIs do Architectury em `common/` com impls por plataforma | pendente |
 | 4 | `ModelLoadingPlugin` (injeção de CustomModelData no `carved_pumpkin`) → `ModelEvent.ModifyBakingResult` por plataforma | pendente |
 | 5 | ProGuard + StrV + manifesto de integridade + assinatura por plataforma | pendente |
 | 6 | BattleHUB, mesmo playbook | pendente |
 
-## Notas Yarn→Mojmap (referência rápida)
+## Yarn→Mojmap — FEITO via `./gradlew migrateMappings`
 
-`DrawContext`→`GuiGraphics`, `drawGuiTexture`→`GuiGraphics#blitSprite`, `PlayerEntity`→`Player`,
-`ServerPlayerEntity`→`ServerPlayer`, `ItemStack` igual, `Identifier`→`ResourceLocation`,
-`Text`→`Component`, `NbtCompound`→`CompoundTag`, `SimpleInventory`→`SimpleContainer`,
-`getScaledWindowWidth()`→`guiWidth()`, `MinecraftClient`→`Minecraft`, `World`→`Level`,
-`SplashOverlay`→`LoadingOverlay`, `InGameHud`→`Gui`, `renderHealthBar` etc — nomes Mojmap
-diferentes, conferir com javap no jar `neoforge` (`.gradle/loom-cache/.../minecraft-...-neoforge-*.jar`).
+O loom (`net.fabricmc.fabric-loom-remap` 1.17.17 no master) tem a task `migrateMappings`. Rodada
+num worktree do master:
+
+```
+./gradlew migrateMappings --mappings "net.minecraft:mappings:1.21.1" --output <dir>
+./gradlew migrateClassTweakerMappings --mappings "net.minecraft:mappings:1.21.1"   # o accesswidener
+```
+
+Converteu os 128 arquivos + o accesswidener MECANICAMENTE, sem NENHUM warning de "não consegui
+remapear". Inclusive remapeou os nomes dos métodos-alvo nos `@Inject`/`@At` dos 21 mixins
+(`renderHealthBar`→`renderHearts`, descriptors, etc.). O `:fabric:build` completo passou de
+primeira (compile + Mixin AP + refmap + accesswidener válido + remapJar).
+
+**Se precisar rodar de novo** (ex: pegar mudança nova do master): worktree do master, mesmos
+comandos. O prefixo `net.minecraft:mappings:` é o que faz o loom entender "Mojang mappings".
+
+Nomes comuns: `DrawContext`→`GuiGraphics`, `PlayerEntity`→`Player`, `Identifier`→`ResourceLocation`,
+`Text`→`Component`, `MathHelper`→`Mth`, `MinecraftClient`→`Minecraft`, `InGameHud`→`Gui`,
+`SplashOverlay`→`LoadingOverlay`, `World`→`Level`, `NbtCompound`→`CompoundTag`,
+`SimpleInventory`→`SimpleContainer`, `RenderLayer`→`RenderType`, `RenderPhase`→`RenderStateShard`.

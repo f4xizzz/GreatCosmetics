@@ -1,0 +1,8 @@
+accessWidener	v2	named
+accessible	class	net/minecraft/client/renderer/RenderType$CompositeRenderType
+accessible	method	net/minecraft/client/renderer/RenderType$CompositeRenderType	<init>	(Ljava/lang/String;Lcom/mojang/blaze3d/vertex/VertexFormat;Lcom/mojang/blaze3d/vertex/VertexFormat$Mode;IZZLnet/minecraft/client/renderer/RenderType$CompositeState;)V
+accessible	field	net/minecraft/client/renderer/RenderStateShard	RENDERTYPE_LINES_SHADER	Lnet/minecraft/client/renderer/RenderStateShard$ShaderStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	NO_TRANSPARENCY	Lnet/minecraft/client/renderer/RenderStateShard$TransparencyStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	NO_CULL	Lnet/minecraft/client/renderer/RenderStateShard$CullStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	DEFAULT_LINE	Lnet/minecraft/client/renderer/RenderStateShard$LineStateShard;
+accessible	field	net/minecraft/client/renderer/RenderStateShard	NO_LAYERING	Lnet/minecraft/client/renderer/RenderStateShard$LayeringStateShard;
