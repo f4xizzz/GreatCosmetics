@@ -1353,6 +1353,24 @@ public final class GreatCosmeticsServer {
 						SWIM_SPEED_MODIFIER_ID, swimMult - 1.0,
 						net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
 			}
+
+			// A aceleração de NADO submerso do vanilla é fixa (~0.02) e NÃO lê MOVEMENT_SPEED — só a
+			// de "andar em água rasa" lê. Pra nado de verdade o atributo é WATER_MOVEMENT_EFFICIENCY
+			// (1.0 = mantém 100% da velocidade de terra na água). Aplica o mesmo multiplicador ali.
+			net.minecraft.world.entity.ai.attributes.AttributeInstance waterEff =
+					player.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.WATER_MOVEMENT_EFFICIENCY);
+			if (waterEff != null) {
+				waterEff.removeModifier(SWIM_SPEED_MODIFIER_ID);
+				if (swimMult != 1.0 && player.isInWater()) {
+					waterEff.addTransientModifier(new net.minecraft.world.entity.ai.attributes.AttributeModifier(
+							SWIM_SPEED_MODIFIER_ID, swimMult - 1.0,
+							net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_VALUE));
+				}
+			}
+
+			com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("handleSpeedLogic: " + player.getName().getString()
+					+ " swimMult=" + swimMult + " inWater=" + player.isInWater() + " groundMult=" + groundMult
+					+ " flyMult=" + flyMult + " speedAttrValue=" + speedAttr.getValue());
 		}
 	}
 
