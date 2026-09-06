@@ -1,0 +1,47 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "All Rights Reserved"
+issueTrackerURL = ""
+
+[[mods]]
+modId = "greatcosmetics"
+version = "${version}"
+displayName = "GreatCosmetics"
+authors = "F4xizzz"
+description = '''GreatCosmetics'''
+logoFile = "greatcosmetics-icon.png"
+
+[[dependencies.greatcosmetics]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.greatcosmetics]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.21.2)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.greatcosmetics]]
+modId = "architectury"
+type = "required"
+versionRange = "[13.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.greatcosmetics]]
+modId = "cobblemon"
+type = "required"
+versionRange = "[1.7,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.greatcosmetics]]
+modId = "kotlinforforge"
+type = "required"
+versionRange = "[5.7,)"
+ordering = "AFTER"
+side = "BOTH"

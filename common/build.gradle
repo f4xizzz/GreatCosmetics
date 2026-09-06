@@ -1,0 +1,9 @@
+architectury {
+	common enabled_platforms.split(',')
+}
+
+dependencies {
+	// Fabric Loader aqui só pelas anotações @Environment (o Architectury remapeia pra cada loader).
+	modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
+	modApi "dev.architectury:architectury:${architectury_api_version}"
+}

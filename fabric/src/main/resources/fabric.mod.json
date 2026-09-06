@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "greatcosmetics",
+  "version": "${version}",
+  "name": "GreatCosmetics",
+  "description": "GreatCosmetics",
+  "authors": ["F4xizzz"],
+  "contact": {},
+  "license": "All Rights Reserved",
+  "icon": "greatcosmetics-icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.f4xizzz.greatcosmetics.fabric.GreatCosmeticsFabric"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "architectury": ">=13.0.0",
+    "cobblemon": ">=1.7.0"
+  }
+}

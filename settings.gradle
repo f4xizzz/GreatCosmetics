@@ -1,10 +1,19 @@
 pluginManagement {
 	repositories {
-		maven {
-			name = 'Fabric'
-			url = 'https://maven.fabricmc.net/'
-		}
-		mavenCentral()
+		maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
+		maven { name = 'Architectury'; url = 'https://maven.architectury.dev/' }
+		maven { name = 'NeoForged'; url = 'https://maven.neoforged.net/releases/' }
 		gradlePluginPortal()
+		mavenCentral()
 	}
 }
+
+// ── MULTILOADER (Architectury) — Phase 0 ──────────────────────────────────────────────────────
+// Estrutura nova: common/ (código sem loader) + fabric/ + neoforge/. O build Fabric antigo (raiz)
+// está parkeado em build.gradle.legacy e src/ ainda tem o código Fabric/Yarn original — a Phase 1
+// migra src/ pra common/ + fabric/ (com remap Yarn→Mojmap). Ver docs/NEOFORGE-PORT.md.
+rootProject.name = 'GreatCosmetics'
+
+include 'common'
+include 'fabric'
+include 'neoforge'
