@@ -40,8 +40,8 @@
 | **1** | Mod inteiro Yarn→Mojmap, compilando + buildando no `fabric/` (NÃO split ainda) | ✅ FEITO |
 | **2** | Split `fabric/` → `common/`: TODO o mod (config, security, database, util, geckolib, client/GUI, os 21 mixins, network, manager, assets, AW, mixins.json) mora em `common/`. Só `GreatCosmetics`/`GreatCosmeticsClient` (entrypoints), `command/CosmeticsCommand` e `fabric/KeybindManager` ficaram no `fabric/`. Os 3 subprojetos compilam + buildam. | ✅ FEITO |
 | **3** | Cola de loader — networking via `dev.architectury.networking.NetworkManager`, eventos via `dev.architectury.event.events.*`, `DeferredRegister`, `KeyMappingRegistry`, `CommandRegistrationEvent`. Entrypoints Fabric viraram stubs; lógica toda em `common/` (`GreatCosmeticsServer`/`GreatCosmeticsClientInit`). NeoForge `@Mod` → `GreatCosmeticsServer.init()` + guard client. Os 3 subprojetos buildam. | ✅ FEITO (commit `00691c1`) |
-| 4 | `ModelLoadingPlugin` (injeção de CMD no `carved_pumpkin` + models sintéticos `greatcosmetics:icon_*`) → hook por plataforma. Lógica já extraída em `GcModelOverrides` (common); falta o wiring NeoForge. | **PRÓXIMA** |
-| 5 | ProGuard + StrV + manifesto de integridade + assinatura por plataforma + JiJ das deps no NeoForge (`jarJar` — adventure, sqlite/mysql) | pendente |
+| **4** | `ModelLoadingPlugin` → **mixin comum** `ModelManagerMixin` (`@Inject` no RETURN de `ModelManager#loadBlockModels`, pós-processa o `Map<ResourceLocation, BlockModel>` via `GcModelOverrides.injectInto`). Funciona igual nos 2 loaders; o `ModelLoadingPlugin` do Fabric foi REMOVIDO. | ✅ FEITO |
+| 5 | ProGuard + StrV + manifesto de integridade + assinatura por plataforma + JiJ das deps no NeoForge (`jarJar` — adventure, sqlite/mysql) | **PRÓXIMA** |
 | 6 | BattleHUB, mesmo playbook | pendente |
 
 ## Phase 2 — o que foi feito (2026-09-06)
@@ -117,19 +117,32 @@ reproduz nos eventos de registro certos.
 por `Env` evita o duplicado, mas não deu pra testar ao vivo); ordem dos eventos Architectury vs
 Fabric. Testar nos DOIS loaders.
 
-## Phase 4 — pendente
+## Phase 4 — feito (2026-09-06)
 
-`GcModelOverrides` (common) já tem `resolveGreatCosmeticsModel(id)` / `isCarvedPumpkinItemModel(id)`
-/ `applyCarvedPumpkinOverrides(BlockModel)`. Falta o hook NeoForge. Opções:
-1. **Mixin comum** em `ModelManager#loadBlockModels` (`@Inject` no RETURN, pós-processa o
-   `Map<ResourceLocation, BlockModel>`) — funciona idêntico nos dois loaders, **substitui** o
-   `ModelLoadingPlugin` do Fabric. Mais limpo pra multiloader, mas mexe no caminho de render que
-   hoje funciona no Fabric.
-2. **`ModelEvent` do NeoForge** (`ModifyBakingResult`/`RegisterAdditional`) — mantém o Fabric
-   como está, adiciona só o lado NeoForge. API bem diferente, pós-bake, mais código.
+`GcModelOverrides.injectInto(Map<ResourceLocation, BlockModel>, ResourceManager)` (common): (1)
+adiciona models sintéticos `greatcosmetics:icon_<name>` (`item/generated` + layer0 =
+`greatcosmetics:icons/<name>`), (2) pega o `BlockModel` do `minecraft:item/carved_pumpkin` e
+`getOverrides().addAll(...)` os overrides de CMD gerados (mesma lógica string→`BlockModel.fromString`
+de antes). `getOverrides()` devolve um `ArrayList` mutável no 1.21.1 (deserializer usa
+`Lists.newArrayList`), então o `addAll` funciona.
 
-**Ainda NÃO funciona em runtime no NeoForge** sem a Phase 4 (models/ícones não geram) e a Phase 5
-(sem JiJ de adventure/jdbc, qualquer classe de config quebra por `NoClassDefFoundError` se fosse
+`ModelManagerMixin` (common, `client` na mixins.json): `@Inject(method="loadBlockModels",
+at=@At("RETURN"), cancellable=true)` — `cir.setReturnValue(cir.getReturnValue().thenApply(map ->
+{ copia mutável + injectInto; return }))`. `loadBlockModels` = `class_1092;method_45881` no
+intermediary (refmap gerado OK). `@At("RETURN")` casa 1x só (método tem 1 `areturn`).
+
+O `ModelLoadingPlugin.register(...)` foi **removido** do `fabric/GreatCosmeticsClient` (o mixin
+cobre os dois). `fabric/GreatCosmeticsClient` e `neoforge/GreatCosmeticsNeoForgeClient` agora só
+chamam `GreatCosmeticsClientInit.initClient()`.
+
+**Risco não testado:** o `thenApply` roda numa thread de worker (igual o `modifyModelOnLoad` do
+Fabric já rodava); `injectInto` lê o `ResourceManager` off-thread (o código do Fabric já fazia
+isso). Perda vs Fabric: a normalização de textura do ramo `resolveModel` pra models
+`greatcosmetics:<path>` com caminho de textura "solto" (raro — o arquivo do admin normalmente já
+tem o caminho certo). Testar ícone chapado + model 3D + `/gc reload` nos 2 loaders.
+
+**Ainda NÃO roda em runtime no NeoForge** sem a Phase 5 (sem JiJ de adventure/jdbc, qualquer
+classe de config quebra por `NoClassDefFoundError` se fosse
 tocada. O jar Fabric (`greatcosmetics-fabric-1.1.0.jar`, 17 MB, 10 JiJ) é o único shippável.
 
 ## Yarn→Mojmap — FEITO via `./gradlew migrateMappings`

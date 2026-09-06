@@ -26,7 +26,8 @@
 		"client.AbstractClientPlayerFovMixin",
 		"client.PlayerListHudMixin",
 		"client.ServerResourcePackLoaderMixin",
-		"client.InGameHudMixin"
+		"client.InGameHudMixin",
+		"client.ModelManagerMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

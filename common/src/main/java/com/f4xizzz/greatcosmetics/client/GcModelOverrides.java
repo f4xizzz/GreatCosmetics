@@ -3,7 +3,6 @@ package com.f4xizzz.greatcosmetics.client;
 import com.f4xizzz.greatcosmetics.GreatCosmeticsCommon;
 import com.f4xizzz.greatcosmetics.config.MainConfig;
 import com.f4xizzz.greatcosmetics.util.AutoCMDManager;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.block.model.BlockModel;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -13,72 +12,40 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Lógica de geração de overrides de model (auto-detect de CustomModelData no {@code carved_pumpkin}
- * + models {@code greatcosmetics:icon_*}/{@code greatcosmetics:*}). Loader-agnóstica: cada
- * plataforma pluga isso no seu próprio evento de model loading (Fabric {@code ModelLoadingPlugin},
- * NeoForge {@code ModelEvent}).
+ * Sistema de geração de overrides de model (auto-detect de CustomModelData no {@code carved_pumpkin}
+ * + models sintéticos {@code greatcosmetics:icon_*}). Chamado por {@code ModelManagerMixin} (mixin
+ * comum) logo depois do vanilla carregar todos os {@code BlockModel} do resourcepack e antes do
+ * bake — funciona igual nos dois loaders (era {@code ModelLoadingPlugin} só no Fabric).
  */
 public final class GcModelOverrides {
 
 	private GcModelOverrides() {}
 
-	/** Resolve um model {@code greatcosmetics:<path>} lido do resourcepack (ícone chapado ou
-	 *  model json com texturas normalizadas). Devolve {@code null} se não for nosso / não existir. */
-	public static BlockModel resolveGreatCosmeticsModel(ResourceLocation id) {
-		if (!MainConfig.config.autoDetectModels) return null;
-		if (id == null || !id.getNamespace().equals("greatcosmetics")) return null;
+	/** Pós-processa o mapa {@code id -> BlockModel} recém-carregado: adiciona os models de ícone
+	 *  sintéticos e injeta os overrides de CMD no {@code minecraft:item/carved_pumpkin}. */
+	public static void injectInto(Map<ResourceLocation, BlockModel> models, ResourceManager rm) {
+		if (!MainConfig.config.autoDetectModels) return;
 
-		if (id.getPath().startsWith("icon_")) {
-			String iconName = id.getPath().replace("icon_", "");
-			if (AutoCMDManager.registeredIcons.containsKey(iconName)) {
-				String json = String.format("{ \"parent\": \"minecraft:item/generated\", \"textures\": { \"layer0\": \"greatcosmetics:icons/%s\" } }", iconName);
+		// 1. Models de ícone sintéticos (greatcosmetics:icon_<name> -> item/generated com layer0
+		//    = greatcosmetics:icons/<name>). Não existem como arquivo — os overrides apontam pra eles.
+		for (String iconName : AutoCMDManager.registeredIcons.keySet()) {
+			ResourceLocation id = ResourceLocation.fromNamespaceAndPath("greatcosmetics", "icon_" + iconName);
+			models.computeIfAbsent(id, k -> {
+				String json = "{ \"parent\": \"minecraft:item/generated\", \"textures\": { \"layer0\": \"greatcosmetics:icons/" + iconName + "\" } }";
 				return BlockModel.fromString(json);
-			}
+			});
 		}
 
-		try {
-			ResourceLocation fileId = ResourceLocation.fromNamespaceAndPath("greatcosmetics", "models/" + id.getPath() + ".json");
-			ResourceManager rm = Minecraft.getInstance().getResourceManager();
-			var resourceOpt = rm.getResource(fileId);
-
-			if (resourceOpt.isPresent()) {
-				try (java.io.Reader reader = resourceOpt.get().openAsReader()) {
-					com.google.gson.JsonObject json = com.google.gson.JsonParser.parseReader(reader).getAsJsonObject();
-
-					if (json.has("textures")) {
-						com.google.gson.JsonObject textures = json.getAsJsonObject("textures");
-						for (Map.Entry<String, com.google.gson.JsonElement> entry : textures.entrySet()) {
-							String texPath = entry.getValue().getAsString();
-
-							if (!texPath.startsWith("#")) {
-								String cleanPath = texPath.replace("greatcosmetics:", "");
-
-								if (!cleanPath.startsWith("item/") && !cleanPath.startsWith("block/")) {
-									textures.addProperty(entry.getKey(), "greatcosmetics:item/" + cleanPath);
-								} else {
-									textures.addProperty(entry.getKey(), "greatcosmetics:" + cleanPath);
-								}
-							}
-						}
-					}
-					return BlockModel.fromString(json.toString());
-				}
-			}
-		} catch (Exception e) {
-			GreatCosmeticsCommon.debugLog("resolveModel: failed reading models/" + id.getPath() + ".json — " + e);
+		// 2. Overrides de CMD no carved_pumpkin.
+		BlockModel pumpkin = models.get(ResourceLocation.withDefaultNamespace("item/carved_pumpkin"));
+		if (pumpkin != null) {
+			applyCarvedPumpkinOverrides(pumpkin, rm);
 		}
-		return null;
-	}
-
-	/** true se este model é o {@code minecraft:item/carved_pumpkin} onde injetamos os overrides. */
-	public static boolean isCarvedPumpkinItemModel(ResourceLocation id) {
-		return id != null && id.getNamespace().equals("minecraft") && id.getPath().equals("item/carved_pumpkin");
 	}
 
 	/** Adiciona os overrides de CustomModelData (models + ícones registrados no AutoCMDManager) no
-	 *  BlockModel do {@code carved_pumpkin}. Chamado pelo hook de model loading de cada plataforma. */
-	public static void applyCarvedPumpkinOverrides(BlockModel jsonModel) {
-		ResourceManager rm = Minecraft.getInstance().getResourceManager();
+	 *  BlockModel do {@code carved_pumpkin}. */
+	public static void applyCarvedPumpkinOverrides(BlockModel jsonModel, ResourceManager rm) {
 		Map<String, String> modelMap = new HashMap<>();
 		for (ResourceLocation resId : rm.listResources("models", res -> res.getNamespace().equals("greatcosmetics") && res.getPath().endsWith(".json")).keySet()) {
 			String fullPath = resId.getPath().substring(7, resId.getPath().length() - 5);
@@ -125,14 +92,14 @@ public final class GcModelOverrides {
 
 		overridesJson.append(" ] }");
 
-		GreatCosmeticsCommon.debugLog("modifyModelOnLoad(carved_pumpkin): generating " + sortedOverrides.size() + " overrides ("
+		GreatCosmeticsCommon.debugLog("ModelManagerMixin(carved_pumpkin): generating " + sortedOverrides.size() + " overrides ("
 				+ AutoCMDManager.registeredModels.size() + " models + " + AutoCMDManager.registeredIcons.size() + " icons).");
 
 		try {
 			BlockModel dummyModel = BlockModel.fromString(overridesJson.toString());
 			jsonModel.getOverrides().addAll(dummyModel.getOverrides());
 		} catch (Exception e) {
-			GreatCosmeticsCommon.debugLog("modifyModelOnLoad(carved_pumpkin): FAILED to apply overrides — " + e);
+			GreatCosmeticsCommon.debugLog("ModelManagerMixin(carved_pumpkin): FAILED to apply overrides — " + e);
 			e.printStackTrace();
 		}
 	}
