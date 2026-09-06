@@ -39,8 +39,8 @@
 | **0** | Esqueleto Architectury + stubs + provar que os 3 subprojetos buildam e as deps NeoForge resolvem | ✅ FEITO |
 | **1** | Mod inteiro Yarn→Mojmap, compilando + buildando no `fabric/` (NÃO split ainda) | ✅ FEITO |
 | **2** | Split `fabric/` → `common/`: TODO o mod (config, security, database, util, geckolib, client/GUI, os 21 mixins, network, manager, assets, AW, mixins.json) mora em `common/`. Só `GreatCosmetics`/`GreatCosmeticsClient` (entrypoints), `command/CosmeticsCommand` e `fabric/KeybindManager` ficaram no `fabric/`. Os 3 subprojetos compilam + buildam. | ✅ FEITO |
-| 3 | Cola de loader: networking (`PayloadTypeRegistry`→`RegisterPayloadHandlersEvent`, ou `dev.architectury.networking.NetworkManager`), eventos (`ClientTickEvents` etc → `dev.architectury.event.events.*`), entrypoints, keybinds, comandos — atrás das APIs do Architectury em `common/` com impls por plataforma | pendente |
-| 4 | `ModelLoadingPlugin` (injeção de CustomModelData no `carved_pumpkin`) → `ModelEvent.ModifyBakingResult` por plataforma | pendente |
+| **3** | Cola de loader — networking via `dev.architectury.networking.NetworkManager`, eventos via `dev.architectury.event.events.*`, `DeferredRegister`, `KeyMappingRegistry`, `CommandRegistrationEvent`. Entrypoints Fabric viraram stubs; lógica toda em `common/` (`GreatCosmeticsServer`/`GreatCosmeticsClientInit`). NeoForge `@Mod` → `GreatCosmeticsServer.init()` + guard client. Os 3 subprojetos buildam. | ✅ FEITO (commit `00691c1`) |
+| 4 | `ModelLoadingPlugin` (injeção de CMD no `carved_pumpkin` + models sintéticos `greatcosmetics:icon_*`) → hook por plataforma. Lógica já extraída em `GcModelOverrides` (common); falta o wiring NeoForge. | **PRÓXIMA** |
 | 5 | ProGuard + StrV + manifesto de integridade + assinatura por plataforma + JiJ das deps no NeoForge (`jarJar` — adventure, sqlite/mysql) | pendente |
 | 6 | BattleHUB, mesmo playbook | pendente |
 
@@ -74,9 +74,62 @@ common; fabric e neoforge apontam pra `project(':common').loom.accessWidenerPath
 `META-INF/accesstransformer.cfg` escrito **à mão** (7 linhas, espelha o AW) — o architectury-loom
 1.9 NÃO converte AW→AT sozinho no lado NeoForge. Qualquer linha nova no AW tem que ser espelhada lá.
 
-**Ainda NÃO funciona em runtime no NeoForge** (esperado — é Phase 3): o `@Mod` só chama
-`GreatCosmeticsCommon.init()` (loga). Sem registro de payload/receiver/eventos, e sem JiJ das deps
-(adventure/jdbc) — então qualquer classe de config quebraria por `NoClassDefFoundError` se fosse
+## Phase 3 — o que foi feito (2026-09-06, commit `00691c1`)
+
+- **`GreatCosmeticsServer`** (common, ex `GreatCosmetics.java`): `PayloadTypeRegistry`/
+  `ServerPlayNetworking` → `NetworkManager` (helper `s2c()` registra o tipo S2C **só no servidor
+  dedicado** — no client o `registerReceiver(Side.S2C)` já registra, e o `PayloadTypeRegistry` do
+  Fabric reclama de tipo duplicado). `ServerLifecycleEvents`→`LifecycleEvent`,
+  `ServerTickEvents.END_SERVER_TICK`→`TickEvent.SERVER_POST`, `ServerPlayConnectionEvents.JOIN/
+  DISCONNECT`→`PlayerEvent.PLAYER_JOIN/PLAYER_QUIT` (só dá `ServerPlayer` — `handler.player`→o
+  param, `handler.disconnect`→`player.connection.disconnect`), `UseBlockCallback`→
+  `InteractionEvent.RIGHT_CLICK_BLOCK` (`InteractionResult.FAIL`→`EventResult.interruptFalse()`).
+  `context.player()`→`(ServerPlayer) context.getPlayer()` (helper `sp()`), `context.server()`→
+  `sp(context).getServer()`, `context.server().execute`→`context.queue`.
+- **`GreatCosmeticsClientInit`** (common, ex `GreatCosmeticsClient.java`): idem no lado client —
+  `NetworkManager.registerReceiver(Side.S2C, ...)`, `ClientTickEvent.CLIENT_POST`,
+  `ClientTooltipEvent.ITEM` (ordem dos params muda: `(stack, lines, ctx, flag)`),
+  `ClientPlayerEvent.CLIENT_PLAYER_QUIT`, `ClientCommandRegistrationEvent`
+  (`.sendFeedback(x)`→`.arch$sendSuccess(() -> x, false)`).
+- **`CosmeticsCommand`** → common. `CommandRegistrationCallback`→`CommandRegistrationEvent`
+  (mesma aridade de params).
+- **`KeybindManager`** → common. `KeyBindingHelper.registerKeyBinding(km)` → `new KeyMapping(...)`
+  + `KeyMappingRegistry.register(km)`; `ClientTickEvents`→`ClientTickEvent.CLIENT_POST`.
+- **`GreatCosmeticsItems`** → Architectury `DeferredRegister<Item>` (NeoForge não aceita
+  `Registry.register` direto). `GEO_DISPLAY` virou `RegistrySupplier<Item>` → usos = `.get()`.
+- **`GcModelOverrides`** (common): lógica de override de model (carved_pumpkin + `icon_*` +
+  normalização de textura) extraída do `ModelLoadingPlugin`. Fabric pluga via `ModelLoadingPlugin`
+  no `fabric/GreatCosmeticsClient`; NeoForge = Phase 4.
+- **`GcNet`**: delega direto pro `NetworkManager` (sem `bind`).
+- `Platform.getEnv()`/`net.fabricmc.api.EnvType` → `Platform.getEnvironment()`/
+  `dev.architectury.utils.Env` — `EnvType` **não existe no runtime NeoForge** (não vem em
+  nenhuma dep). Consertado no `GreatCosmeticsServer.s2c()` e no `CosmeticsConfig.getCosmeticById`
+  (esse era um bug latente da Phase 2).
+
+**Entrypoints:** `fabric/` só tem `GreatCosmetics` + `GreatCosmeticsClient` (finos, delegam).
+`neoforge/` tem `GreatCosmeticsNeoForge` (`@Mod` → `GreatCosmeticsServer.init()` + guard
+`FMLEnvironment.dist == CLIENT` → `GreatCosmeticsNeoForgeClient.init()`) — tudo no construtor do
+mod; o Architectury bufferiza os `registerReceiver`/`DeferredRegister`/`KeyMappingRegistry` e
+reproduz nos eventos de registro certos.
+
+**Riscos não testados (Phase 3):** timing/threading de `PLAYER_JOIN` vs `ServerPlayConnectionEvents.JOIN`;
+`registerReceiver(Side.S2C)` no client depois do `s2c()` no servidor dedicado (a lógica de guard
+por `Env` evita o duplicado, mas não deu pra testar ao vivo); ordem dos eventos Architectury vs
+Fabric. Testar nos DOIS loaders.
+
+## Phase 4 — pendente
+
+`GcModelOverrides` (common) já tem `resolveGreatCosmeticsModel(id)` / `isCarvedPumpkinItemModel(id)`
+/ `applyCarvedPumpkinOverrides(BlockModel)`. Falta o hook NeoForge. Opções:
+1. **Mixin comum** em `ModelManager#loadBlockModels` (`@Inject` no RETURN, pós-processa o
+   `Map<ResourceLocation, BlockModel>`) — funciona idêntico nos dois loaders, **substitui** o
+   `ModelLoadingPlugin` do Fabric. Mais limpo pra multiloader, mas mexe no caminho de render que
+   hoje funciona no Fabric.
+2. **`ModelEvent` do NeoForge** (`ModifyBakingResult`/`RegisterAdditional`) — mantém o Fabric
+   como está, adiciona só o lado NeoForge. API bem diferente, pós-bake, mais código.
+
+**Ainda NÃO funciona em runtime no NeoForge** sem a Phase 4 (models/ícones não geram) e a Phase 5
+(sem JiJ de adventure/jdbc, qualquer classe de config quebra por `NoClassDefFoundError` se fosse
 tocada. O jar Fabric (`greatcosmetics-fabric-1.1.0.jar`, 17 MB, 10 JiJ) é o único shippável.
 
 ## Yarn→Mojmap — FEITO via `./gradlew migrateMappings`
