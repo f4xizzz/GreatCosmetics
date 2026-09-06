@@ -71,11 +71,22 @@ public class BackpackSelectorScreen extends Screen {
                     ? com.f4xizzz.greatcosmetics.util.TextUtils.parseToText(data.backpackDisplayName, regs)
                     : com.f4xizzz.greatcosmetics.config.LangConfig.text("backpack.selector.fallback_name");
 
-            c.getMatrices().push();
+            // Encaixa o nome na largura da caixa: parte de 0.8 e vai reduzindo se não couber (piso
+            // 0.5 pra continuar legível). Sem isso, nome de mochila comprido vazava pros lados do
+            // slot. O scissor na coluna da caixa é a rede de segurança pro caso extremo.
+            int maxTextW = boxSize - 4;
+            int rawW = this.textRenderer.getWidth(displayName);
             float scale = 0.8f;
+            if (rawW > 0 && rawW * scale > maxTextW) {
+                scale = Math.max(0.5f, (float) maxTextW / rawW);
+            }
+
+            c.enableScissor(itemX + 1, itemY, itemX + boxSize - 1, itemY + boxSize);
+            c.getMatrices().push();
             c.getMatrices().scale(scale, scale, 1.0f);
-            c.drawCenteredTextWithShadow(this.textRenderer, displayName, (int)((itemX + (boxSize / 2f)) / scale), (int)((itemY + boxSize - 12) / scale), 0xFFFFFF);
+            c.drawCenteredTextWithShadow(this.textRenderer, displayName, Math.round((itemX + (boxSize / 2f)) / scale), Math.round((itemY + boxSize - 12) / scale), 0xFFFFFF);
             c.getMatrices().pop();
+            c.disableScissor();
         }
     }
 
