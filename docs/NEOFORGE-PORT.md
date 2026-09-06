@@ -41,8 +41,24 @@
 | **2** | Split `fabric/` → `common/`: TODO o mod (config, security, database, util, geckolib, client/GUI, os 21 mixins, network, manager, assets, AW, mixins.json) mora em `common/`. Só `GreatCosmetics`/`GreatCosmeticsClient` (entrypoints), `command/CosmeticsCommand` e `fabric/KeybindManager` ficaram no `fabric/`. Os 3 subprojetos compilam + buildam. | ✅ FEITO |
 | **3** | Cola de loader — networking via `dev.architectury.networking.NetworkManager`, eventos via `dev.architectury.event.events.*`, `DeferredRegister`, `KeyMappingRegistry`, `CommandRegistrationEvent`. Entrypoints Fabric viraram stubs; lógica toda em `common/` (`GreatCosmeticsServer`/`GreatCosmeticsClientInit`). NeoForge `@Mod` → `GreatCosmeticsServer.init()` + guard client. Os 3 subprojetos buildam. | ✅ FEITO (commit `00691c1`) |
 | **4** | `ModelLoadingPlugin` → **mixin comum** `ModelManagerMixin` (`@Inject` no RETURN de `ModelManager#loadBlockModels`, pós-processa o `Map<ResourceLocation, BlockModel>` via `GcModelOverrides.injectInto`). Funciona igual nos 2 loaders; o `ModelLoadingPlugin` do Fabric foi REMOVIDO. | ✅ FEITO |
-| 5 | ProGuard + StrV + manifesto de integridade + assinatura por plataforma + JiJ das deps no NeoForge (`jarJar` — adventure, sqlite/mysql) | **PRÓXIMA** |
+| **5a** | JiJ das deps no NeoForge (`include()` = jarJar — adventure, sqlite/mysql) | ✅ FEITO (commit `a27a16d`) |
+| 5b | ProGuard + StrV + manifesto de integridade + assinatura por plataforma (ver `build.gradle.legacy`) | **PRÓXIMA** |
 | 6 | BattleHUB, mesmo playbook | pendente |
+
+## Estado (2026-09-06) — GreatCosmetics NeoForge FUNCIONALMENTE COMPLETO (não testado)
+
+Depois das fases 2–5a, o jar NeoForge (`greatcosmetics-neoforge-1.1.0.jar`, ~17 MB) tem:
+código comum inteiro, rede/eventos/registros via Architectury, model overrides via mixin comum,
+adventure + JDBC via jarJar, `[[mixins]]` + `[[accessTransformers]]` na `neoforge.mods.toml`.
+O jar Fabric (`greatcosmetics-fabric-1.1.0.jar`, 17 MB) é o mesmo código relocado.
+
+**NADA foi testado ao vivo.** Antes da 5b/6, o usuário deve rodar:
+- jar Fabric num servidor de teste (a camada de rede/eventos foi TODA reescrita pra Architectury)
+- jar NeoForge numa instância NeoForge 21.1.133 + Cobblemon 1.7.3
+
+Checklist: entrar no servidor (JOIN sync), equipar cosmético/tag/skin, abrir wardrobe/mochila,
+`/gc reload`, `/gc debug`, keybinds U/Y/P/B, ícone chapado + model 3D GeckoLib renderizando,
+`/lightmode` `/darkmode`.
 
 ## Phase 2 — o que foi feito (2026-09-06)
 
