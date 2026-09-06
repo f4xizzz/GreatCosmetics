@@ -307,12 +307,36 @@ public class PartyPage extends WardrobePage {
      *  PokemonProperties), só que como entidade completa pra render no mundo, igual entityCache[]
      *  faz com Pokémon reais. Forma/shiny do preview são só aspects INJETADOS em cima do aspect
      *  base da skin — nunca mudam a skin/config de verdade, só o que é mostrado no preview. */
+    /** Cobblemon 1.8: {@code Pokemon.initialize()} (chamado por {@code PokemonProperties.create()})
+     *  passou a gerar um moveset via {@code CobblemonMovesetBuilders} — um JsonDataRegistry de
+     *  datapack. No CLIENT esse mapa fica VAZIO (não sincroniza como o resto), então todo
+     *  {@code create()} de dummy pra render explodia com
+     *  {@code IllegalArgumentException: Unknown MovesetBuilder id: cobblemon:wild}. Registra um
+     *  {@code DefaultMovesetBuilder} vazio pros ids que o Cobblemon usa por padrão (wild/alpha),
+     *  só client-side, sem sobrescrever nada que por acaso venha a existir de verdade. */
+    private static void ensureClientMovesetBuilders() {
+        try {
+            java.util.Map<net.minecraft.util.Identifier, com.cobblemon.mod.common.api.moves.MovesetBuilder> map =
+                    com.cobblemon.mod.common.CobblemonMovesetBuilders.INSTANCE.getMovesetBuilders();
+            for (String path : new String[]{"wild", "alpha"}) {
+                net.minecraft.util.Identifier id = net.minecraft.util.Identifier.of("cobblemon", path);
+                map.computeIfAbsent(id, k -> {
+                    com.cobblemon.mod.common.api.moves.DefaultMovesetBuilder b =
+                            new com.cobblemon.mod.common.api.moves.DefaultMovesetBuilder();
+                    b.setId(k);
+                    return b;
+                });
+            }
+        } catch (Throwable ignored) {}
+    }
+
     private void rebuildPreviewEntity() {
         if (previewingSkin == null) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null) return;
 
         try {
+            ensureClientMovesetBuilders();
             StringBuilder propsBuilder = new StringBuilder("species=" + previewingSkin.getSpecies());
             java.util.Set<String> extraAspects = new HashSet<>();
             appendAspectTokens(propsBuilder, extraAspects, previewingSkin.getAspect());
@@ -456,6 +480,7 @@ public class PartyPage extends WardrobePage {
 
         // Skins não desbloqueadas continuam aparecendo na lista (bloqueadas, com cadeado) em vez
         // de sumir completamente — igual o padrão já usado na TagsPage.
+        ensureClientMovesetBuilders();
         for (PokemonSkin skin : SkinConfigManager.getAllSkins()) {
             currentAvailableSkins.add(skin);
             try {
