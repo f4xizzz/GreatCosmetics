@@ -3,13 +3,14 @@ package com.f4xizzz.greatcosmetics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Ponto de entrada COMUM (sem loader) do GreatCosmetics — chamado por
- *  {@code com.f4xizzz.greatcosmetics.fabric.GreatCosmeticsFabric} e
+/** Estado/helpers COMUNS (sem loader) do GreatCosmetics. Guarda o {@link #debugMode} +
+ *  {@link #debugLog}, hooks pra código comum não referenciar os entrypoints Fabric
+ *  ({@link #clientGeoRebuild}), e o {@link #init()} chamado por
  *  {@code com.f4xizzz.greatcosmetics.neoforge.GreatCosmeticsNeoForge}.
  *
- *  <p>Phase 0: só um stub que loga. Phase 1+ migra a lógica real de
- *  {@code src/} (Fabric/Yarn) pra cá (Mojmap), com a cola de eventos/rede/registro atrás das
- *  APIs do Architectury. */
+ *  <p>Phase 2: o mod inteiro mora em {@code common/}; a cola de rede/eventos/registro continua
+ *  nos entrypoints Fabric ({@code GreatCosmetics}/{@code GreatCosmeticsClient}) — Phase 3 move
+ *  isso pra cá atrás das APIs do Architectury, e o NeoForge passa a chamar por aqui também. */
 public final class GreatCosmeticsCommon {
 
 	public static final String MOD_ID = "greatcosmetics";
