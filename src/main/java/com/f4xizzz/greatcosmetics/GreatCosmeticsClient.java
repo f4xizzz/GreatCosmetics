@@ -18,6 +18,7 @@ import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.model.loading.v1.ModelLoadingPlugin;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.model.json.JsonUnbakedModel;
 import net.minecraft.component.DataComponentTypes;
@@ -76,6 +77,12 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// JOIN, false no /gc reload), e o receiver desse payload arma/limpa o estado. Aqui só
 		// garantimos que nada vaza de uma conexão pra outra.
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> com.f4xizzz.greatcosmetics.client.ClientJoinReloadState.resetAll());
+
+		// HUD dos bônus de Lure — coluna à direita da hotbar quando o player usa cosmético que dá
+		// Lure ativo (ver LureHudOverlay). Ligado por mainconfig.conf -> lureHud (default on,
+		// sincronizado do servidor via SyncMainConfigPayload).
+		HudRenderCallback.EVENT.register((drawContext, tickCounter) ->
+				com.f4xizzz.greatcosmetics.client.gui.LureHudOverlay.render(drawContext));
 
 		// Registra os Comandos Client-Side
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {

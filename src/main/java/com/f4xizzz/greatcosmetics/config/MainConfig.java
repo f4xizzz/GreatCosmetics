@@ -48,6 +48,13 @@ public class MainConfig {
         // num servidor com atributos vanilla nunca dispara. Ver InGameHudMixin.
         public boolean compactStatusBars = true;
 
+        // --- HUD: BÔNUS DE LURE AO LADO DA HOTBAR ---
+        // Quando o player está usando cosméticos (ou armaduras-cosmético) que dão Lure com
+        // enabled=true, o HUD mostra os bônus AGREGADOS (soma de todos, igual o LureManager
+        // aplica de verdade) numa coluna à direita da hotbar. Some quando não tem nenhum Lure
+        // ativo. Ver LureHudOverlay.
+        public boolean lureHud = true;
+
         // --- PERMISSÃO DO DEV MODE ---
         public String devModePermission = "gc.perm.devmode";
 

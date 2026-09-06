@@ -72,6 +72,8 @@ public class DevServerConfigSubPage extends DevSubPage {
 
         addToggleField(L("devstudio.serverconfig.field.auto_detect_models"), ClientMainConfigCache.config.autoDetectModels, val -> ClientMainConfigCache.config.autoDetectModels = val)
                 .withTooltip(L("devstudio.serverconfig.tooltip.auto_detect_models"));
+        addToggleField(L("devstudio.serverconfig.field.lure_hud"), ClientMainConfigCache.config.lureHud, val -> ClientMainConfigCache.config.lureHud = val)
+                .withTooltip(L("devstudio.serverconfig.tooltip.lure_hud"));
         addToggleField(L("devstudio.serverconfig.field.use_mysql"), ClientMainConfigCache.config.useMySQL, val -> ClientMainConfigCache.config.useMySQL = val)
                 .withTooltip(L("devstudio.serverconfig.tooltip.use_mysql"));
         addStringField(L("devstudio.serverconfig.field.mysql_host"), ClientMainConfigCache.config.mysqlHost, val -> ClientMainConfigCache.config.mysqlHost = val)
