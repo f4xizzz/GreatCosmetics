@@ -454,7 +454,7 @@ public class CosmeticsCommand {
         if (isBlockedByLicense(source, "give")) return 0;
         if (target == null) return 0;
         HolderLookup.Provider regs = source.getLevel().registryAccess();
-        CosmeticData data = getCosmeticById(idProcurado);
+        CosmeticData data = CosmeticsConfig.getCosmeticById(idProcurado);
 
         if (data == null) {
             source.sendSuccess(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
@@ -487,7 +487,7 @@ public class CosmeticsCommand {
         if (isBlockedByLicense(source, "cosmetics")) return 0;
         if (target == null) return 0;
         HolderLookup.Provider regs = source.getLevel().registryAccess();
-        CosmeticData data = getCosmeticById(idProcurado);
+        CosmeticData data = CosmeticsConfig.getCosmeticById(idProcurado);
 
         if (data == null) {
             source.sendSuccess(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
@@ -507,7 +507,7 @@ public class CosmeticsCommand {
         if (isBlockedByLicense(source, "cosmetics")) return 0;
         if (target == null) return 0;
         HolderLookup.Provider regs = source.getLevel().registryAccess();
-        CosmeticData data = getCosmeticById(idProcurado);
+        CosmeticData data = CosmeticsConfig.getCosmeticById(idProcurado);
 
         if (data == null) {
             source.sendSuccess(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
@@ -596,7 +596,7 @@ public class CosmeticsCommand {
         if (isBlockedByLicense(source, "giveitem")) return 0;
         if (target == null) return 0;
         HolderLookup.Provider regs = source.getLevel().registryAccess();
-        CosmeticData data = getCosmeticById(idProcurado);
+        CosmeticData data = CosmeticsConfig.getCosmeticById(idProcurado);
 
         if (data == null) {
             source.sendSuccess(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
@@ -620,7 +620,7 @@ public class CosmeticsCommand {
         if (isBlockedByLicense(source, "remove")) return 0;
         if (target == null) return 0;
         HolderLookup.Provider regs = source.getLevel().registryAccess();
-        CosmeticData data = getCosmeticById(idProcurado);
+        CosmeticData data = CosmeticsConfig.getCosmeticById(idProcurado);
 
         if (data == null) {
             source.sendSuccess(() -> LangConfig.chat("general.error.cosmetic_not_found", regs, "id", idProcurado), false);
@@ -676,7 +676,7 @@ public class CosmeticsCommand {
     private static int executeNpcEquip(CommandSourceStack source, String idProcurado, ServerPlayer executor) {
         if (isBlockedByLicense(source, "npc")) return 0;
         HolderLookup.Provider regs = source.getLevel().registryAccess();
-        CosmeticData data = getCosmeticById(idProcurado);
+        CosmeticData data = CosmeticsConfig.getCosmeticById(idProcurado);
 
         if (data == null) {
             source.sendSuccess(() -> LangConfig.chat("commands.npc.not_found", regs), false);
@@ -785,14 +785,10 @@ public class CosmeticsCommand {
         return 1;
     }
 
-    // Delega pra GreatCosmetics.getCosmeticById() — que também cai pro ArmorCosmeticsConfig como
-    // fallback (ver GreatCosmetics.java) — em vez de reimplementar só a busca em
-    // CosmeticsConfig.cosmeticsMap. Essa cópia local ficava sem o fallback de armadura convertida
-    // em cosmético, então TODO comando daqui (give, giveitem, cosmetics equip/unequip, remove...)
-    // respondia "não encontrado" pra qualquer id de armor_cosmetics.json, mesmo o autocomplete
-    // (SUGGEST_COSMETICS, que checa os dois lugares) sugerindo o id certinho.
     private static CosmeticData getCosmeticById(String idProcurado) {
-        return GreatCosmetics.getCosmeticById(idProcurado);
+        // CosmeticsConfig.getCosmeticById já cai pro ArmorCosmeticsConfig/ClientArmorCosmeticsCache
+        // como fallback (armadura convertida em cosmético).
+        return CosmeticsConfig.getCosmeticById(idProcurado);
     }
 
     public static ItemStack buildCosmeticIcon(CosmeticData data, HolderLookup.Provider regs) {
@@ -979,8 +975,8 @@ public class CosmeticsCommand {
         if (isBlockedByLicense(source, "debug")) return 0;
         HolderLookup.Provider regs = source.getLevel().registryAccess();
 
-        GreatCosmetics.isDebugMode = !GreatCosmetics.isDebugMode;
-        boolean enabled = GreatCosmetics.isDebugMode;
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugMode = !com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugMode;
+        boolean enabled = com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugMode;
 
         com.f4xizzz.greatcosmetics.network.DebugModePayload payload = new com.f4xizzz.greatcosmetics.network.DebugModePayload(enabled);
         for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {

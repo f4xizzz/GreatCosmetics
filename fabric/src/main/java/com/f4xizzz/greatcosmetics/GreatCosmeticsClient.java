@@ -35,11 +35,10 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger("GreatCosmetics-Client");
 
-	// Espelha GreatCosmetics.isDebugMode/debugLog() do lado servidor — sincronizado via
-	// DebugModePayload (ligado/desligado por /gc debug). Cada lado imprime no PRÓPRIO console
-	// (server nunca vê os logs client automaticamente, exceto os que o próprio client decide
-	// encaminhar via DebugLogPayload — ver debugLog() abaixo).
-	public static boolean isDebugMode = false;
+	// Estado de debug espelhado do servidor — sincronizado via DebugModePayload (ligado/desligado
+	// por /gc debug). Fonte única em GreatCosmeticsCommon.debugMode (common) no split multiloader.
+	// Cada lado imprime no PRÓPRIO console (server nunca vê os logs client automaticamente, exceto
+	// os que o próprio client decide encaminhar via DebugLogPayload — ver debugLog() abaixo).
 
 	private static int idleTickCounter = 0;
 
@@ -49,7 +48,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 	 *  então um admin acompanhando só o console do server continua vendo o que acontece no
 	 *  client de qualquer jogador com debug ativo. */
 	public static void debugLog(String message) {
-		if (!isDebugMode) return;
+		if (!GreatCosmeticsCommon.debugMode) return;
 		LOGGER.info("[GreatCosmetics DEBUG] " + message);
 
 		if (Minecraft.getInstance().getConnection() != null
@@ -60,6 +59,12 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+
+		// Ponte de envio de pacotes C2S pro código comum client-side (client/gui/**).
+		com.f4xizzz.greatcosmetics.platform.GcNet.bindClient(ClientPlayNetworking::send);
+
+		// Hooks que código comum client-side (Dev Studio) dispara sem referenciar este entrypoint.
+		GreatCosmeticsCommon.clientGeoRebuild = GreatCosmeticsClient::rebuildAllGeoModels;
 
 		// Carrega a preferência salva do jogador
 		ThemeManager.load();
@@ -122,8 +127,11 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		// REGISTRO DE KEYBINDS E PACOTES DA MOCHILA
 		// ==========================================
-		com.f4xizzz.greatcosmetics.client.KeybindManager.registerKeybinds();
-		ClientSkinCache.registerNetworkReceivers();
+		com.f4xizzz.greatcosmetics.fabric.KeybindManager.registerKeybinds();
+
+		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncPokemonSkinsPayload.ID, (payload, context) -> {
+			context.client().execute(() -> ClientSkinCache.apply(payload.unlockedSkins(), payload.cooldowns()));
+		});
 
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.ShowBackpackSelectorPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
@@ -137,8 +145,8 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DebugModePayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
-				isDebugMode = payload.enabled();
-				LOGGER.info("[GreatCosmetics] Debug mode (client) " + (isDebugMode ? "ENABLED" : "DESENABLED") + ".");
+				GreatCosmeticsCommon.debugMode = payload.enabled();
+				LOGGER.info("[GreatCosmetics] Debug mode (client) " + (GreatCosmeticsCommon.debugMode ? "ENABLED" : "DESENABLED") + ".");
 			});
 		});
 

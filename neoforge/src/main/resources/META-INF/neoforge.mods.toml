@@ -3,13 +3,19 @@ loaderVersion = "[4,)"
 license = "All Rights Reserved"
 issueTrackerURL = ""
 
+[[mixins]]
+config = "greatcosmetics.mixins.json"
+
+[[accessTransformers]]
+file = "META-INF/accesstransformer.cfg"
+
 [[mods]]
 modId = "greatcosmetics"
 version = "${version}"
 displayName = "GreatCosmetics"
 authors = "F4xizzz"
 description = '''GreatCosmetics'''
-logoFile = "greatcosmetics-icon.png"
+logoFile = "assets/greatcosmetics/icon.png"
 
 [[dependencies.greatcosmetics]]
 modId = "neoforge"

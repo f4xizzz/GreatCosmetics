@@ -38,11 +38,46 @@
 |---|---|---|
 | **0** | Esqueleto Architectury + stubs + provar que os 3 subprojetos buildam e as deps NeoForge resolvem | ✅ FEITO |
 | **1** | Mod inteiro Yarn→Mojmap, compilando + buildando no `fabric/` (NÃO split ainda) | ✅ FEITO |
-| 2 | Split `fabric/` → `common/`: mover pra common tudo que NÃO toca Fabric API direto (`config/`, `security/`, `database/`, boa parte de `util/`, `geckolib/`, GUI). Abstrair paths de config. Os 21 mixins → `common/` (Architectury aplica nos dois). AccessWidener→AT auto no lado NeoForge (loom faz se o AW estiver no common). | pendente |
+| **2** | Split `fabric/` → `common/`: TODO o mod (config, security, database, util, geckolib, client/GUI, os 21 mixins, network, manager, assets, AW, mixins.json) mora em `common/`. Só `GreatCosmetics`/`GreatCosmeticsClient` (entrypoints), `command/CosmeticsCommand` e `fabric/KeybindManager` ficaram no `fabric/`. Os 3 subprojetos compilam + buildam. | ✅ FEITO |
 | 3 | Cola de loader: networking (`PayloadTypeRegistry`→`RegisterPayloadHandlersEvent`, ou `dev.architectury.networking.NetworkManager`), eventos (`ClientTickEvents` etc → `dev.architectury.event.events.*`), entrypoints, keybinds, comandos — atrás das APIs do Architectury em `common/` com impls por plataforma | pendente |
 | 4 | `ModelLoadingPlugin` (injeção de CustomModelData no `carved_pumpkin`) → `ModelEvent.ModifyBakingResult` por plataforma | pendente |
-| 5 | ProGuard + StrV + manifesto de integridade + assinatura por plataforma | pendente |
+| 5 | ProGuard + StrV + manifesto de integridade + assinatura por plataforma + JiJ das deps no NeoForge (`jarJar` — adventure, sqlite/mysql) | pendente |
 | 6 | BattleHUB, mesmo playbook | pendente |
+
+## Phase 2 — o que foi feito (2026-09-06)
+
+**Ponte de código comum → entrypoint** (evita `common` referenciar o entrypoint Fabric):
+- `platform/GcNet` (common) — `bindServer`/`bindClient` (ligados no topo de `onInitialize`/
+  `onInitializeClient`) + `toPlayer`/`toServer`. Todo `ServerPlayNetworking.send`/
+  `ClientPlayNetworking.send` do código leaf virou `GcNet.toPlayer`/`toServer`. **REGISTRO de
+  payload + RECEIVERS continuam 100% no entrypoint Fabric** — Phase 3 migra.
+- `GreatCosmeticsCommon.debugMode`/`debugLog` — era `GreatCosmetics.isDebugMode`/`debugLog`.
+- `GreatCosmeticsCommon.clientGeoRebuild` (Runnable) — hook pro `GreatCosmeticsClient::rebuildAllGeoModels`.
+- `GcServer` (common) — `isRealOperator`, `sendOpMessage`, `licenseBlocked`, `checkPermission`,
+  `playCustomSound`, `playCosmeticSound`. `GreatCosmetics` mantém delegadores (mesma assinatura)
+  pros ~40 receivers dele.
+- `CosmeticsConfig.getCosmeticById`/`getCosmeticData`/`invalidateCosmeticIndex` — eram de `GreatCosmetics`.
+  `FabricLoader.getEnvironmentType()` → `dev.architectury.platform.Platform.getEnv()`.
+- `LuckPermsTagManager.onGroupDataRecalculated` (Consumer<ServerPlayer>) — hook; o entrypoint liga
+  `validateEquippedGroupTag`+`autoEquipCurrentGroupTag`+`syncPlayerTags` (essas 3 continuam no
+  entrypoint, Phase 3).
+- `ClientSkinCache` — dados ficam em common; `registerNetworkReceivers()` virou um receiver inline
+  em `GreatCosmeticsClient` + `ClientSkinCache.apply(...)`.
+- `FabricLoader.getConfigDir()` → `Platform.getConfigFolder()` (21 arquivos, já feito antes).
+
+**Build (common/build.gradle):** `modCompileOnly com.cobblemon:mod` + `geckolib-common-1.21.1`
+(variantes COMUNS — existem), `compileOnly` kotlin-stdlib 2.0.21 (o POM do `com.cobblemon:mod` é
+vazio, não traz transitivo), `compileOnly` adventure/luckperms/jdbc. `loom.accessWidenerPath` no
+common; fabric e neoforge apontam pra `project(':common').loom.accessWidenerPath`.
+
+**NeoForge:** `neoforge.mods.toml` ganhou `[[mixins]]` + `[[accessTransformers]]`.
+`META-INF/accesstransformer.cfg` escrito **à mão** (7 linhas, espelha o AW) — o architectury-loom
+1.9 NÃO converte AW→AT sozinho no lado NeoForge. Qualquer linha nova no AW tem que ser espelhada lá.
+
+**Ainda NÃO funciona em runtime no NeoForge** (esperado — é Phase 3): o `@Mod` só chama
+`GreatCosmeticsCommon.init()` (loga). Sem registro de payload/receiver/eventos, e sem JiJ das deps
+(adventure/jdbc) — então qualquer classe de config quebraria por `NoClassDefFoundError` se fosse
+tocada. O jar Fabric (`greatcosmetics-fabric-1.1.0.jar`, 17 MB, 10 JiJ) é o único shippável.
 
 ## Yarn→Mojmap — FEITO via `./gradlew migrateMappings`
 

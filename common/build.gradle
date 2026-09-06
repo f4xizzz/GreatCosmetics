@@ -2,8 +2,44 @@ architectury {
 	common enabled_platforms.split(',')
 }
 
+loom {
+	accessWidenerPath = file('src/main/resources/greatcosmetics.accesswidener')
+}
+
+repositories {
+	maven { name = 'ParchmentMC'; url = 'https://maven.parchmentmc.org' }
+	maven { name = 'Ladysnake / Cardinal'; url = 'https://maven.ladysnake.org/releases' }
+	maven { name = 'TerraformersMC'; url = 'https://maven.terraformersmc.com/' }
+	maven { name = 'JitPack'; url = 'https://jitpack.io' }
+}
+
 dependencies {
 	// Fabric Loader aqui só pelas anotações @Environment (o Architectury remapeia pra cada loader).
 	modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
 	modApi "dev.architectury:architectury:${architectury_api_version}"
+
+	// Cobblemon / GeckoLib — variantes COMUNS (loader-agnósticas). Só pra compilar; cada
+	// plataforma traz a própria variante (fabric/neoforge) no classpath de runtime.
+	modCompileOnly "com.cobblemon:mod:${cobblemon_version}"
+	modCompileOnly "software.bernie.geckolib:geckolib-common-1.21.1:${geckolib_version}"
+
+	// O POM do com.cobblemon:mod é vazio (não declara deps), então o kotlin-stdlib que aparece
+	// nas assinaturas da API do Cobblemon (Function1, KMappedMarker, ...) não vem transitivo —
+	// precisa estar no classpath de compilação. Runtime vem do fabric-language-kotlin /
+	// kotlinforforge em cada plataforma.
+	compileOnly "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
+
+	// LuckPerms — soft dep (checado em runtime); só precisa compilar contra a API.
+	compileOnly "net.luckperms:api:5.5"
+
+	// Adventure: só as libs PURAS. As plataformas fazem o shading (fabric: include, neoforge: jarJar).
+	compileOnly "net.kyori:adventure-api:4.17.0"
+	compileOnly "net.kyori:adventure-text-minimessage:4.17.0"
+	compileOnly "net.kyori:adventure-text-serializer-gson:4.17.0"
+	compileOnly "net.kyori:adventure-text-serializer-legacy:4.17.0"
+	compileOnly "net.kyori:adventure-key:4.17.0"
+
+	// Drivers de banco — só compilação aqui; JiJ acontece nas plataformas.
+	compileOnly "org.xerial:sqlite-jdbc:3.45.1.0"
+	compileOnly "com.mysql:mysql-connector-j:8.3.0"
 }

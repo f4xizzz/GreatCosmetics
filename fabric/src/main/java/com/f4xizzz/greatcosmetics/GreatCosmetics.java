@@ -39,7 +39,8 @@ public class GreatCosmetics implements ModInitializer {
 	public static final String MOD_ID = "great-cosmetics";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-	public static boolean isDebugMode = false;
+	// isDebugMode/debugLog moveram pra GreatCosmeticsCommon.debugMode/debugLog (common) no split
+	// multiloader — código comum (config/, database/, util/) loga por lá.
 	public static final Set<UUID> activeFlyPlayers = new HashSet<>();
 	// Jogadores cujo PlayerAbilities#flySpeed está sendo controlado por um cosmético de
 	// flySpeedMultiplier AGORA (ver handleSpeedLogic) — só existe pra saber quando devolver o
@@ -74,9 +75,7 @@ public class GreatCosmetics implements ModInitializer {
 	private static Integer pendingStartupCommandsTick = null;
 
 	public static void debugLog(String message) {
-		if (isDebugMode) {
-			LOGGER.info("[GreatCosmetics DEBUG] " + message);
-		}
+		GreatCosmeticsCommon.debugLog(message);
 	}
 
 	/**
@@ -86,65 +85,39 @@ public class GreatCosmetics implements ModInitializer {
 	 * permissão nenhuma) pra checagens de nível que ele não gerencia especificamente. isOperator()
 	 * lê a lista real de operadores, sem passar por nenhuma camada de permission plugin.
 	 */
+	// isRealOperator / sendOpMessage / licenseBlocked / checkPermission / playCustomSound /
+	// playCosmeticSound moveram pra GcServer (common) no split multiloader. Delegadores abaixo pra
+	// não tocar nos ~40 receivers deste arquivo (Phase 3 termina a cola de entrypoint).
 	public static boolean isRealOperator(ServerPlayer player) {
-		return player.getServer().getPlayerList().isOp(player.getGameProfile());
+		return com.f4xizzz.greatcosmetics.GcServer.isRealOperator(player);
 	}
 
 	public static void sendOpMessage(ServerPlayer player, Component message, boolean actionBar) {
-		if (isRealOperator(player)) {
-			player.displayClientMessage(message, actionBar);
-		}
+		com.f4xizzz.greatcosmetics.GcServer.sendOpMessage(player, message, actionBar);
 	}
 
-	/**
-	 * Gate de licença pros payloads server-side (ver security.ActivationManager). Num servidor
-	 * dedicado sem licença válida, avisa o jogador e devolve true (o receiver deve dar return).
-	 * Singleplayer nunca bloqueia (o ActivationManager já marca isActivated=true nesse caso).
-	 */
 	public static boolean licenseBlocked(ServerPlayer player) {
-		net.minecraft.server.MinecraftServer server = player.getServer();
-		if (server == null || !server.isDedicatedServer()) return false;
-		if (com.f4xizzz.greatcosmetics.security.ActivationManager.isModActivated()) return false;
-		player.displayClientMessage(LangConfig.chat("general.license.locked", server.registryAccess()), false);
-		return true;
+		return com.f4xizzz.greatcosmetics.GcServer.licenseBlocked(player);
 	}
 
-	// Toca som baseado na antiga SoundConfig
 	public static void playCustomSound(ServerPlayer player, String soundKey) {
-		var soundData = SoundConfig.getSoundData(soundKey);
-		if (soundData == null || soundData.id == null || soundData.id.isEmpty() || soundData.id.equalsIgnoreCase("none")) return;
-		playCosmeticSound(player, soundData.id, (float) soundData.volume, (float) soundData.pitch);
+		com.f4xizzz.greatcosmetics.GcServer.playCustomSound(player, soundKey);
 	}
 
-	// --- NOVO: Toca o som puro das configurações do Cosmético ---
 	public static void playCosmeticSound(ServerPlayer player, String soundId) {
-		playCosmeticSound(player, soundId, 1.0f, 1.0f);
+		com.f4xizzz.greatcosmetics.GcServer.playCosmeticSound(player, soundId);
 	}
 
 	public static void playCosmeticSound(ServerPlayer player, String soundId, float volume, float pitch) {
-		if (soundId == null || soundId.trim().isEmpty() || soundId.equalsIgnoreCase("none")) return;
-		ResourceLocation id = ResourceLocation.tryParse(soundId);
-		if (id != null) {
-			var optionalSound = BuiltInRegistries.SOUND_EVENT.getHolder(id);
-			net.minecraft.core.Holder<net.minecraft.sounds.SoundEvent> soundToPlay;
-			if (optionalSound.isPresent()) {
-				soundToPlay = optionalSound.get();
-			} else {
-				soundToPlay = net.minecraft.core.Holder.direct(net.minecraft.sounds.SoundEvent.createVariableRangeEvent(id));
-			}
-
-			player.connection.send(new net.minecraft.network.protocol.game.ClientboundSoundPacket(
-					soundToPlay,
-					net.minecraft.sounds.SoundSource.PLAYERS,
-					player.getX(), player.getY(), player.getZ(),
-					volume, pitch,
-					player.level().getRandom().nextLong()
-			));
-		}
+		com.f4xizzz.greatcosmetics.GcServer.playCosmeticSound(player, soundId, volume, pitch);
 	}
 
 	@Override
 	public void onInitialize() {
+		// Ponte de envio de pacotes pro código comum (config/, util/, database/, client/gui/, ...).
+		// O registro dos payloads + os receivers continuam aqui embaixo (Phase 3 migra).
+		com.f4xizzz.greatcosmetics.platform.GcNet.bindServer(ServerPlayNetworking::send);
+
 		com.f4xizzz.greatcosmetics.geckolib.GreatCosmeticsItems.register();
 
 		PayloadTypeRegistry.playS2C().register(OpenWardrobePayload.ID, OpenWardrobePayload.CODEC);
@@ -210,7 +183,13 @@ public class GreatCosmetics implements ModInitializer {
 			broadcastTagsCatalog(server);
 
 			// Passa a escutar troca de cargo do LuckPerms em tempo real — ver
-			// LuckPermsTagManager.registerRankChangeListener().
+			// LuckPermsTagManager.registerRankChangeListener(). O callback abaixo estava chamado
+			// direto de dentro do listener; moveu pra hook porque LuckPermsTagManager agora é common.
+			com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.onGroupDataRecalculated = player -> {
+				validateEquippedGroupTag(player);
+				autoEquipCurrentGroupTag(player);
+				syncPlayerTags(player);
+			};
 			com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.registerRankChangeListener(server);
 
 			// Força /sr toda vez que o server termina de iniciar.
@@ -309,7 +288,7 @@ public class GreatCosmetics implements ModInitializer {
 							CosmeticsConfig.cosmeticsMap.remove(payload.oldId());
 						}
 						CosmeticsConfig.cosmeticsMap.put(payload.newId(), data);
-						invalidateCosmeticIndex();
+						CosmeticsConfig.invalidateCosmeticIndex();
 						CosmeticsConfig.saveConfig();
 						broadcastCosmeticsCatalog(context.server(), false);
 						debugLog("SaveCosmeticPayload: '" + payload.oldId() + "' -> '" + payload.newId() + "' saved by " + player.getName().getString() + ".");
@@ -339,7 +318,7 @@ public class GreatCosmetics implements ModInitializer {
 						broadcastArmorCosmeticsCatalog(context.server(), false);
 					} else {
 						CosmeticsConfig.cosmeticsMap.remove(id);
-						invalidateCosmeticIndex();
+						CosmeticsConfig.invalidateCosmeticIndex();
 						CosmeticsConfig.saveConfig();
 						broadcastCosmeticsCatalog(context.server(), false);
 					}
@@ -354,7 +333,7 @@ public class GreatCosmetics implements ModInitializer {
 
 		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DebugLogPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
-				if (isDebugMode) {
+				if (GreatCosmeticsCommon.debugMode) {
 					LOGGER.info("[GreatCosmetics DEBUG] [Client:" + context.player().getName().getString() + "] " + payload.message());
 				}
 			});
@@ -601,7 +580,7 @@ public class GreatCosmetics implements ModInitializer {
 
 				// 1. Sincroniza Acessórios (Antigo)
 				ServerPlayNetworking.send(handler.player, new SyncCosmeticsPayload(CosmeticsConfig.cosmeticsMap, true));
-				ServerPlayNetworking.send(handler.player, new com.f4xizzz.greatcosmetics.network.DebugModePayload(isDebugMode));
+				ServerPlayNetworking.send(handler.player, new com.f4xizzz.greatcosmetics.network.DebugModePayload(GreatCosmeticsCommon.debugMode));
 
 				// PERMISSÕES DE DEV: calculadas aqui (única fonte confiável) e sincronizadas —
 				// ver SyncDevPermissionsPayload pro motivo de nunca calcular isso no client.
@@ -707,7 +686,7 @@ public class GreatCosmetics implements ModInitializer {
 
 				debugLog("EquipCosmeticPayload from " + player.getName().getString() + ": cosmeticId='" + cosmeticId + "' devMode=" + requestedDevMode);
 
-				CosmeticData data = getCosmeticById(cosmeticId);
+				CosmeticData data = CosmeticsConfig.getCosmeticById(cosmeticId);
 				if (data == null) {
 					debugLog("EquipCosmeticPayload: cosmetic '" + cosmeticId + "' not found — ignored.");
 					return;
@@ -1111,7 +1090,7 @@ public class GreatCosmetics implements ModInitializer {
 				// rastro de partícula ficava, entregando visualmente que ele ainda tava equipado.
 				java.util.Set<String> hiddenIds = com.f4xizzz.greatcosmetics.database.DatabaseManager.getHiddenCosmeticIds(player.getUUID());
 				for (String id : equippedIds) {
-					CosmeticData data = getCosmeticById(id);
+					CosmeticData data = CosmeticsConfig.getCosmeticById(id);
 					if (data != null) {
 						if (data.permission != null && !data.permission.isEmpty() && !checkPermission(player, data.permission)) continue;
 
@@ -1388,100 +1367,12 @@ public class GreatCosmetics implements ModInitializer {
 	 * mode/GUIs de admin pra todo mundo. A versão booleana nunca toca em hasPermissionLevel().
 	 */
 	public static boolean checkPermission(ServerPlayer player, String permission) {
-		if (permission == null || permission.isEmpty()) return false;
-		try {
-			Class<?> permsClass = Class.forName("me.lucko.fabric.api.permissions.v0.Permissions");
-			java.lang.reflect.Method checkMethod = permsClass.getMethod("check", net.minecraft.world.entity.Entity.class, String.class, boolean.class);
-			return (boolean) checkMethod.invoke(null, player, permission, false);
-		} catch (Exception e) {
-			return false;
-		}
+		return com.f4xizzz.greatcosmetics.GcServer.checkPermission(player, permission);
 	}
 
-	public static CosmeticData getCosmeticData(int cmdToFind) {
-		for (CosmeticData data : CosmeticsConfig.cosmeticsMap.values()) {
-			if (data.cmd == cmdToFind) {
-				return data;
-			}
-		}
-		return null;
-	}
-
-	// Índice case-insensitive de CosmeticsConfig.cosmeticsMap, reconstruído só quando a REFERÊNCIA
-	// do map muda de verdade (reload/save/sync sempre trocam a referência inteira, nunca mutam o
-	// map existente — ver CosmeticsConfig#loadConfig e o receiver de SyncCosmeticsPayload). Sem
-	// isso, getCosmeticById fazia uma varredura linear com equalsIgnoreCase em TODOS os cosméticos
-	// pra cada chamada — e é chamado uma vez POR COSMÉTICO EQUIPADO, POR JOGADOR, TODO TICK (além
-	// de toda vez que LivingEntity#getArmor() roda) — com muitos jogadores e cosméticos configurados
-	// isso vira uma varredura O(cosméticos) desnecessária centenas de vezes por segundo.
-	private static Map<String, CosmeticData> cosmeticsByIdLower = java.util.Collections.emptyMap();
-	private static Map<String, CosmeticData> cosmeticsByIdLowerSource = null;
-
-	/** CosmeticsConfig.cosmeticsMap.put()/remove() diretos (edição individual pelo Dev Studio, sem
-	 *  passar por um reload completo) MUTAM o map existente em vez de trocar a referência — a
-	 *  detecção "trocou a referência" sozinha em getCosmeticById() nunca pegaria isso, deixando o
-	 *  índice desatualizado até o próximo /gc reload. Chamar isso logo depois de qualquer put()/
-	 *  remove() direto no cosmeticsMap força o rebuild na próxima chamada. */
-	public static void invalidateCosmeticIndex() {
-		cosmeticsByIdLowerSource = null;
-	}
-
-	public static CosmeticData getCosmeticById(String idProcurado) {
-		if (idProcurado == null) return null;
-		Map<String, CosmeticData> currentMap = CosmeticsConfig.cosmeticsMap;
-		if (currentMap != cosmeticsByIdLowerSource) {
-			Map<String, CosmeticData> rebuilt = new HashMap<>();
-			// Indexa pela CHAVE DE VERDADE do mapa (entry.getKey()), não por data.id — data.id é só
-			// um campo transient que o loadConfig()/save reatribui pra bater com a chave, mas se ELE
-			// alguma vez ficar fora de sincronia com a chave real (ex: um bug futuro em algum fluxo
-			// de salvar/duplicar cosmético que reaproveite a mesma instância de CosmeticData pra dois
-			// ids diferentes), indexar por data.id faz esse índice silenciosamente MESCLAR duas
-			// mochilas/cosméticos DIFERENTES num só — getCosmeticById(idA) e getCosmeticById(idB)
-			// passam a devolver o MESMO objeto, cada edição/leitura de um "vaza" pro outro. Indexar
-			// pela chave real do map é imune a esse tipo de bug em qualquer outro lugar do código.
-			for (Map.Entry<String, CosmeticData> entry : currentMap.entrySet()) {
-				if (entry.getKey() != null) rebuilt.put(entry.getKey().toLowerCase(), entry.getValue());
-			}
-			cosmeticsByIdLower = rebuilt;
-			cosmeticsByIdLowerSource = currentMap;
-		}
-		CosmeticData found = cosmeticsByIdLower.get(idProcurado.toLowerCase());
-		if (found != null) return found;
-		// Armadura convertida em cosmético (ver ArmorCosmeticsConfig) — nunca fica no
-		// cosmeticsMap de verdade, é sintetizada sob demanda a partir do armor_cosmetics.json.
-		// Esse método é chamado tanto de código SERVER-side (comandos, LivingEntityMixin) quanto
-		// CLIENT-side (ArmorFeatureRendererMixin, EquippedSlotsWidget) — só UM dos dois mapas
-		// abaixo está de fato populado em cada lado (ArmorCosmeticsConfig.load() só roda no
-		// servidor; ClientArmorCosmeticsCache só é preenchido via SyncArmorCosmeticsPayload no
-		// client). Sem tentar os dois aqui, TODO código client-side que resolvia uma armadura-
-		// cosmético por id (renderização no corpo, EquippedSlotsWidget) sempre recebia null numa
-		// conexão remota de verdade — a armadura "equipava" no banco mas nunca aparecia em lugar
-		// nenhum no client.
-		//
-		// ORDEM IMPORTA no client: em singleplayer/hospedando, o servidor integrado E o client
-		// rodam na mesma JVM, então ArmorCosmeticsConfig (servidor) E ClientArmorCosmeticsCache
-		// (client) ficam OS DOIS populados ao mesmo tempo — como objetos DIFERENTES (o client
-		// sempre recebe o catálogo por rede, mesmo hospedando local, nunca lê o do servidor
-		// direto). Tentar o do servidor primeiro fazia esse método devolver, do lado do client,
-		// um CosmeticData/CosmeticPart que NUNCA era o mesmo objeto que o Dev Studio estava
-		// editando — o Gizmo 3D (GizmoManager, que compara "é essa a part ativa?" por referência
-		// de objeto) nunca reconhecia a part como ativa e nunca desenhava/ficava clicável, mesmo
-		// com tudo certo na tela de edição. No client, sempre prioriza o cache client-side.
-		// FabricLoader.getEnvironmentType(), NUNCA MinecraftClient.getInstance() aqui — esse método
-		// roda no tick do SERVIDOR também (equipar cosmético, etc), e net.minecraft.client.
-		// MinecraftClient nem existe no classpath de um servidor dedicado de verdade. Só a
-		// REFERÊNCIA à classe (mesmo dentro de um "!= null") já derruba o server tick loop inteiro
-		// com NoClassDefFoundError — aconteceu de verdade ao tentar equipar um cosmético.
-		// FabricLoader/EnvType são API comum, sempre presentes nos dois lados, seguros de chamar
-		// daqui sem carregar nada client-only.
-		if (net.fabricmc.loader.api.FabricLoader.getInstance().getEnvironmentType() == net.fabricmc.api.EnvType.CLIENT) {
-			CosmeticData clientArmorData = com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.getSyntheticCosmetic(idProcurado);
-			if (clientArmorData != null) return clientArmorData;
-		}
-		CosmeticData serverArmorData = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getSyntheticCosmetic(idProcurado);
-		if (serverArmorData != null) return serverArmorData;
-		return com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.getSyntheticCosmetic(idProcurado);
-	}
+	// CosmeticsConfig.getCosmeticData(int) / CosmeticsConfig.getCosmeticById(String) / CosmeticsConfig.invalidateCosmeticIndex() moveram pra
+	// CosmeticsConfig (common) no split multiloader — ver CosmeticsConfig. Chamadas antigas
+	// GreatCosmetics.getCosmeticById(...) foram trocadas por CosmeticsConfig.getCosmeticById(...).
 
 	/** Baixa o arquivo de MainConfig#textureUrl e calcula o SHA1 real do conteúdo, atualizando
 	 *  MainConfig#textureSha1 (e salvando) se o hash mudou. Bloqueia a thread que chamar — em
@@ -1695,7 +1586,7 @@ public class GreatCosmetics implements ModInitializer {
 			String cosmeticId = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getCosmeticIdForItem(stack.getItem());
 			if (cosmeticId == null) continue;
 
-			CosmeticData data = getCosmeticById(cosmeticId);
+			CosmeticData data = CosmeticsConfig.getCosmeticById(cosmeticId);
 			String displayName = (data != null && data.DisplayName != null && !data.DisplayName.isBlank()) ? data.getChatSafeDisplayName() : cosmeticId;
 
 			inv.removeItemNoUpdate(i);

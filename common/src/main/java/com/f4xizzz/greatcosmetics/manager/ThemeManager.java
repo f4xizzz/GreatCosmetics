@@ -1,0 +1,31 @@
+package com.f4xizzz.greatcosmetics.manager;
+
+import dev.architectury.platform.Platform;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public class ThemeManager {
+    public static boolean isLightMode = false;
+    private static final Path CONFIG_PATH = Platform.getConfigFolder().resolve("greatcosmetics_theme.txt");
+
+    // Roda quando o jogo abre
+    public static void load() {
+        try {
+            if (Files.exists(CONFIG_PATH)) {
+                String content = Files.readString(CONFIG_PATH).trim();
+                isLightMode = Boolean.parseBoolean(content);
+            }
+        } catch (Exception e) {
+            System.err.println("[GreatCosmetics] Failed to load theme!");
+        }
+    }
+
+    // Roda quando o jogador usa o comando
+    public static void save() {
+        try {
+            Files.writeString(CONFIG_PATH, String.valueOf(isLightMode));
+        } catch (Exception e) {
+            System.err.println("[GreatCosmetics] Failed to save theme!");
+        }
+    }
+}
