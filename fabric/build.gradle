@@ -84,3 +84,6 @@ remapJar {
 jar {
 	archiveClassifier = 'dev'
 }
+
+// Ofuscação (ProGuard) + manifesto de integridade assinado — gera o -release.jar distribuível.
+apply from: "$rootDir/proguard.gradle"

@@ -42,23 +42,45 @@
 | **3** | Cola de loader — networking via `dev.architectury.networking.NetworkManager`, eventos via `dev.architectury.event.events.*`, `DeferredRegister`, `KeyMappingRegistry`, `CommandRegistrationEvent`. Entrypoints Fabric viraram stubs; lógica toda em `common/` (`GreatCosmeticsServer`/`GreatCosmeticsClientInit`). NeoForge `@Mod` → `GreatCosmeticsServer.init()` + guard client. Os 3 subprojetos buildam. | ✅ FEITO (commit `00691c1`) |
 | **4** | `ModelLoadingPlugin` → **mixin comum** `ModelManagerMixin` (`@Inject` no RETURN de `ModelManager#loadBlockModels`, pós-processa o `Map<ResourceLocation, BlockModel>` via `GcModelOverrides.injectInto`). Funciona igual nos 2 loaders; o `ModelLoadingPlugin` do Fabric foi REMOVIDO. | ✅ FEITO |
 | **5a** | JiJ das deps no NeoForge (`include()` = jarJar — adventure, sqlite/mysql) | ✅ FEITO (commit `a27a16d`) |
-| 5b | ProGuard + StrV + manifesto de integridade + assinatura por plataforma (ver `build.gradle.legacy`) | **PRÓXIMA** |
-| 6 | BattleHUB, mesmo playbook | pendente |
+| **5b** | ProGuard + manifesto de integridade assinado por plataforma. `proguard.gradle` (aplicado por `fabric/` e `neoforge/`) registra `proguardJar` (roda depois do `remapJar`, gera `<archivesName>-<version>-release.jar` + assina o `META-INF/greatcosmetics.sig`). `proguard-rules.pro` na raiz (compartilhado). StrV já estava no `common/security/`. | ✅ FEITO |
+| 6 | BattleHUB, mesmo playbook | **PRÓXIMA** |
 
-## Estado (2026-09-06) — GreatCosmetics NeoForge FUNCIONALMENTE COMPLETO (não testado)
+## Phase 5b — feito (2026-09-06)
 
-Depois das fases 2–5a, o jar NeoForge (`greatcosmetics-neoforge-1.1.0.jar`, ~17 MB) tem:
-código comum inteiro, rede/eventos/registros via Architectury, model overrides via mixin comum,
-adventure + JDBC via jarJar, `[[mixins]]` + `[[accessTransformers]]` na `neoforge.mods.toml`.
-O jar Fabric (`greatcosmetics-fabric-1.1.0.jar`, 17 MB) é o mesmo código relocado.
+- **`proguard.gradle`** (raiz, aplicado por `fabric/build.gradle` + `neoforge/build.gradle` via
+  `apply from`): tem o próprio `buildscript` (classpath `com.guardsquare:proguard-gradle:7.4.2`),
+  a closure `gcSignJarManifest` (ex-`signJarManifest` do legado) e o task `proguardJar`
+  (`dependsOn remapJar`, `injars remapJar`, `outjars build/libs/<archivesName>-<version>-release.jar`,
+  `configuration rootProject.file('proguard-rules.pro')`, `libraryjars java.base + runtimeClasspath`,
+  `doLast { gcSignJarManifest(...) }`). `build`/`assemble` dependem dele.
+- **`proguard-rules.pro`** (raiz, compartilhado pelos 2): igual ao legado + adições multiloader —
+  `-keep` `architectury_inject_**`, `neoforge.**`, `GreatCosmeticsCommon`/`Server`/`ClientInit`/
+  `GcServer`/`platform.**`. `-keeppackagenames` cobre `com.f4xizzz.greatcosmetics.**` +
+  `architectury_inject_**` (pro denylist por prefixo do MixinPlugin continuar valendo).
+- `-dontshrink -dontoptimize` (só rename + strip de debug). `security.**`/`database.**`/`util.**`/
+  `manager.**` viram `a`/`b`/`c` no pacote. Verificado: `ActivationManager`→`security/a`,
+  `DatabaseManager`→`database/a`, ZERO plaintext da chave RSA / `greatcosmetics.sig` nos `.class`.
+- **LICENSE** empacotado em cada jar (`tasks.withType(Jar) { from(rootProject.file('LICENSE')) }`
+  no `subprojects` da raiz).
+- **Assinatura:** `../../signing/build-signing-key.pem` (fora dos repos). `StrV.s(1)` bate com
+  `build-signing-pub.b64`; `StrV.s(2)` = `META-INF/greatcosmetics.sig`. 199 classes assinadas por
+  jar. Sem a chave o jar sai sem `.sig` e o `ActivationManager` pula a checagem (build de teste).
 
-**NADA foi testado ao vivo.** Antes da 5b/6, o usuário deve rodar:
-- jar Fabric num servidor de teste (a camada de rede/eventos foi TODA reescrita pra Architectury)
-- jar NeoForge numa instância NeoForge 21.1.133 + Cobblemon 1.7.3
+**Jars distribuíveis:** `greatcosmetics-fabric-1.1.0-release.jar` e
+`greatcosmetics-neoforge-1.1.0-release.jar` (~17 MB cada, ofuscados + assinados). O
+`greatcosmetics-<plataforma>-1.1.0.jar` cru (saída do `remapJar`) NÃO é pra distribuir.
 
-Checklist: entrar no servidor (JOIN sync), equipar cosmético/tag/skin, abrir wardrobe/mochila,
-`/gc reload`, `/gc debug`, keybinds U/Y/P/B, ícone chapado + model 3D GeckoLib renderizando,
-`/lightmode` `/darkmode`.
+## Estado (2026-09-06) — GreatCosmetics NeoForge port COMPLETO até 5b (não testado)
+
+**NADA foi testado ao vivo.** Antes da fase 6 (BattleHUB), o usuário deve rodar:
+- jar Fabric **`-release.jar`** num servidor de teste (rede/eventos TODA reescrita pra Architectury
+  + ProGuard novo)
+- jar NeoForge **`-release.jar`** numa instância NeoForge 21.1.133 + Cobblemon 1.7.3
+
+Checklist: entrar no servidor (JOIN sync + licença), equipar cosmético/tag/skin, wardrobe/mochila,
+`/gc reload`, `/gc debug`, `/gc activation`, keybinds U/Y/P/B, ícone chapado + model 3D GeckoLib
+renderizando, `/lightmode` `/darkmode`. Se o `.sig` do build de teste não bater com a chave da
+API, `/gc activation` falha — nesse caso testar com uma build sem `../../signing/` (sem `.sig`).
 
 ## Phase 2 — o que foi feito (2026-09-06)
 

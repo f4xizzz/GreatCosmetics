@@ -1,0 +1,96 @@
+// Aplicado por fabric/build.gradle e neoforge/build.gradle. Gera o jar de release OFUSCADO
+// (`<archivesName>-<version>-release.jar`) a partir do remapJar + embute o manifesto de
+// integridade assinado (META-INF/greatcosmetics.sig). Ver build.gradle.legacy (versão single-jar).
+buildscript {
+	repositories { mavenCentral() }
+	dependencies { classpath 'com.guardsquare:proguard-gradle:7.4.2' }
+}
+
+import proguard.gradle.ProGuardTask
+
+def signingKeyFile = rootProject.file('../../signing/build-signing-key.pem')
+def SIG_ENTRY_NAME = 'META-INF/greatcosmetics.sig'
+
+// Assina o manifesto de integridade (SHA-256 por .class, ordenado, "caminho\tsha256hex\n") com a
+// chave de build (RSA, fora dos repos) e embute como META-INF/greatcosmetics.sig — TEM que ser
+// byte-a-byte idêntico ao que ActivationManager.computeClassManifest() recomputa no runtime.
+ext.gcSignJarManifest = { File jarFile ->
+	if (!signingKeyFile.exists()) {
+		logger.warn("[integrity] chave ${signingKeyFile} não encontrada — ${jarFile.name} sai SEM manifesto (ActivationManager pula a checagem nesse caso).")
+		return
+	}
+	String pem = signingKeyFile.text
+			.replace('-----BEGIN PRIVATE KEY-----', '')
+			.replace('-----END PRIVATE KEY-----', '')
+			.replaceAll('\\s', '')
+	byte[] der = Base64.decoder.decode(pem)
+	java.security.PrivateKey priv = java.security.KeyFactory.getInstance('RSA')
+			.generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(der))
+
+	def hashes = new TreeMap<String, String>()
+	new java.util.zip.ZipFile(jarFile).withCloseable { zf ->
+		zf.entries().each { e ->
+			if (e.directory || !e.name.endsWith('.class') || e.name == SIG_ENTRY_NAME) return
+			def sha = java.security.MessageDigest.getInstance('SHA-256')
+			zf.getInputStream(e).withCloseable { is ->
+				byte[] buf = new byte[8192]; int r
+				while ((r = is.read(buf)) != -1) sha.update(buf, 0, r)
+			}
+			hashes[e.name] = sha.digest().collect { String.format('%02x', it) }.join()
+		}
+	}
+	def manifestOut = new ByteArrayOutputStream()
+	hashes.each { n, h -> manifestOut.write("${n}\t${h}\n".getBytes('UTF-8')) }
+	byte[] manifest = manifestOut.toByteArray()
+
+	def signer = java.security.Signature.getInstance('SHA256withRSA')
+	signer.initSign(priv)
+	signer.update(manifest)
+	byte[] sig = signer.sign()
+
+	def sigFileOut = new ByteArrayOutputStream()
+	sigFileOut.write(Base64.encoder.encode(sig))
+	sigFileOut.write((int) ('\n' as char))
+	sigFileOut.write(manifest)
+	byte[] sigFileBytes = sigFileOut.toByteArray()
+
+	File tmp = File.createTempFile('signed', '.jar', jarFile.parentFile)
+	new java.util.zip.ZipFile(jarFile).withCloseable { zf ->
+		new java.util.zip.ZipOutputStream(new FileOutputStream(tmp)).withCloseable { zos ->
+			zf.entries().each { e ->
+				if (e.name == SIG_ENTRY_NAME) return
+				zos.putNextEntry(new java.util.zip.ZipEntry(e.name))
+				if (!e.directory) { zf.getInputStream(e).withCloseable { is -> zos << is } }
+				zos.closeEntry()
+			}
+			zos.putNextEntry(new java.util.zip.ZipEntry(SIG_ENTRY_NAME))
+			zos.write(sigFileBytes)
+			zos.closeEntry()
+		}
+	}
+	jarFile.delete()
+	tmp.renameTo(jarFile)
+	logger.lifecycle("[integrity] ${jarFile.name}: manifesto assinado (${hashes.size()} classes).")
+}
+
+def releaseJar = layout.buildDirectory.file("libs/${base.archivesName.get()}-${project.version}-release.jar")
+
+tasks.register('proguardJar', ProGuardTask) {
+	group = 'build'
+	description = 'Jar de release OFUSCADO (o ÚNICO distribuível — servidor E jogadores). Distribua ESTE, não o remapJar cru.'
+	dependsOn tasks.named('remapJar')
+
+	injars tasks.named('remapJar').flatMap { it.archiveFile }
+	outjars releaseJar
+	configuration rootProject.file('proguard-rules.pro')
+
+	def javaHome = System.getProperty('java.home')
+	libraryjars([jarfilter: '!**.jar', filter: '!module-info.class'], "${javaHome}/jmods/java.base.jmod")
+	// Resolvida na execução (não no configure) pra não atropelar o setup do loom.
+	libraryjars configurations.runtimeClasspath
+
+	doLast { gcSignJarManifest(releaseJar.get().asFile) }
+}
+
+tasks.named('build') { dependsOn tasks.named('proguardJar') }
+tasks.named('assemble') { dependsOn tasks.named('proguardJar') }

@@ -54,4 +54,11 @@ subprojects {
 
 	// Segurança: o GreatCosmetics é pago — nunca publicar um sources jar (ver build.gradle.legacy).
 	tasks.withType(GenerateModuleMetadata).configureEach { enabled = false }
+
+	// EULA proprietário empacotado em cada jar (ver LICENSE / plano anti-pirataria).
+	tasks.withType(Jar).configureEach {
+		from(rootProject.file('LICENSE')) {
+			rename { "${it}_${archives_base_name}" }
+		}
+	}
 }
