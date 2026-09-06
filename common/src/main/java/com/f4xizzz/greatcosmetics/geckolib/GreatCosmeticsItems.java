@@ -1,15 +1,24 @@
 package com.f4xizzz.greatcosmetics.geckolib;
 
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.BuiltInRegistries;
+import com.f4xizzz.greatcosmetics.GreatCosmeticsCommon;
+import dev.architectury.registry.registries.DeferredRegister;
+import dev.architectury.registry.registries.RegistrySupplier;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.Item;
 
-/** Registro dos itens próprios do mod (comum aos dois lados — chamado de GreatCosmetics#onInitialize). */
+/** Registro do item próprio do mod, via Architectury DeferredRegister (NeoForge não aceita
+ *  {@code Registry.register} direto — registro congelado). Chamado de {@code GreatCosmeticsServer#init}. */
 public class GreatCosmeticsItems {
 
-    public static final GreatCosmeticsGeoItem GEO_DISPLAY = new GreatCosmeticsGeoItem(new Item.Properties().stacksTo(1));
+    public static final DeferredRegister<Item> ITEMS =
+            DeferredRegister.create(GreatCosmeticsCommon.MOD_ID, Registries.ITEM);
+
+    // ID = sascosmetics:geo_display (namespace legado — não muda sem quebrar resourcepack/dados).
+    public static final RegistrySupplier<Item> GEO_DISPLAY = ITEMS.register(
+            GreatCosmeticsGeoItem.ID,
+            () -> new GreatCosmeticsGeoItem(new Item.Properties().stacksTo(1)));
 
     public static void register() {
-        Registry.register(BuiltInRegistries.ITEM, GreatCosmeticsGeoItem.ID, GEO_DISPLAY);
+        ITEMS.register();
     }
 }

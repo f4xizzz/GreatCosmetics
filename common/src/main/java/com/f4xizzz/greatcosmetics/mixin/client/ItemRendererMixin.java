@@ -71,7 +71,7 @@ public abstract class ItemRendererMixin {
 
                 boolean isGeoModel = com.f4xizzz.greatcosmetics.geckolib.GeoModelRegistry.has(modelToRender);
                 ItemStack partStack = isGeoModel
-                        ? new ItemStack(com.f4xizzz.greatcosmetics.geckolib.GreatCosmeticsItems.GEO_DISPLAY)
+                        ? new ItemStack(com.f4xizzz.greatcosmetics.geckolib.GreatCosmeticsItems.GEO_DISPLAY.get())
                         : stack.copy();
                 partStack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(modelToRender));
                 BakedModel partModel = this.getModel(partStack, null, null, 0);

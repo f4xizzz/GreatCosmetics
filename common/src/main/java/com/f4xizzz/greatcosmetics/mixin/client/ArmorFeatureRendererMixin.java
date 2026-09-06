@@ -292,7 +292,7 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 					// Modelo 3D de verdade via GeckoLib (ver BuiltinGeoModels/GeoModelRegistry) —
 					// tem prioridade sobre o item real E sobre o ícone chapado: é exatamente pra
 					// isso que serve, mostrar a geometria de verdade em vez de aproximação.
-					stackToRender = new ItemStack(com.f4xizzz.greatcosmetics.geckolib.GreatCosmeticsItems.GEO_DISPLAY);
+					stackToRender = new ItemStack(com.f4xizzz.greatcosmetics.geckolib.GreatCosmeticsItems.GEO_DISPLAY.get());
 					stackToRender.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(modelToRender));
 				} else if (realStack != null) {
 					stackToRender = realStack;

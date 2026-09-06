@@ -1,6 +1,5 @@
 package com.f4xizzz.greatcosmetics.command;
 
-import com.f4xizzz.greatcosmetics.GreatCosmetics;
 import com.f4xizzz.greatcosmetics.config.CosmeticData;
 import com.f4xizzz.greatcosmetics.config.CosmeticsConfig;
 import com.f4xizzz.greatcosmetics.config.LangConfig;
@@ -15,8 +14,8 @@ import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.tree.LiteralCommandNode;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import dev.architectury.event.events.common.CommandRegistrationEvent;
+import dev.architectury.networking.NetworkManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -45,7 +44,7 @@ public class CosmeticsCommand {
             // isRealOperator() em vez de source.hasPermissionLevel(2) de propósito — com mods
             // tipo Vanilla Permissions instalados, hasPermissionLevel(2) podia vir true pra
             // qualquer jogador mesmo sem OP e sem permissão nenhuma.
-            return GreatCosmetics.isRealOperator(player) || GreatCosmetics.checkPermission(player, node);
+            return com.f4xizzz.greatcosmetics.GcServer.isRealOperator(player) || com.f4xizzz.greatcosmetics.GcServer.checkPermission(player, node);
         }
         // Console/command block: não tem GameProfile pra checar ops.json, então confia no nível
         // vanilla mesmo (console sempre tem nível 4 de verdade, isso nunca foi o ponto quebrado).
@@ -98,7 +97,7 @@ public class CosmeticsCommand {
     };
 
     public static void register() {
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+        CommandRegistrationEvent.EVENT.register((dispatcher, registryAccess, environment) -> {
 
             LiteralCommandNode<CommandSourceStack> mainNode = dispatcher.register(
                     Commands.literal("greatcosmetics")
@@ -462,7 +461,7 @@ public class CosmeticsCommand {
         }
 
         boolean success = DatabaseManager.unlockCosmetic(target.getUUID(), idProcurado);
-        GreatCosmetics.debugLog("/gc give: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc give: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
 
         if (success) {
             target.displayClientMessage(LangConfig.chat("commands.give.received", regs, "item", data.getChatSafeDisplayName()), false);
@@ -497,7 +496,7 @@ public class CosmeticsCommand {
         DatabaseManager.unlockCosmetic(target.getUUID(), idProcurado);
         DatabaseManager.equipCosmetic(target.getUUID(), idProcurado, data.slot.name(), data.type);
         DatabaseManager.broadcastPlayerCosmetics(target);
-        GreatCosmetics.debugLog("/gc cosmetics equip: '" + idProcurado + "' force-equipped on " + target.getName().getString() + " (executor=" + source.getTextName() + ").");
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc cosmetics equip: '" + idProcurado + "' force-equipped on " + target.getName().getString() + " (executor=" + source.getTextName() + ").");
 
         source.sendSuccess(() -> LangConfig.chat("commands.forceequip.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
         return 1;
@@ -516,7 +515,7 @@ public class CosmeticsCommand {
 
         boolean success = DatabaseManager.unequipCosmetic(target.getUUID(), idProcurado);
         DatabaseManager.broadcastPlayerCosmetics(target);
-        GreatCosmetics.debugLog("/gc cosmetics unequip: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc cosmetics unequip: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
 
         if (success) {
             source.sendSuccess(() -> LangConfig.chat("commands.forceunequip.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
@@ -546,12 +545,12 @@ public class CosmeticsCommand {
         }
 
         boolean success = com.f4xizzz.greatcosmetics.database.DatabaseManager.unlockTag(target.getUUID(), idProcurado);
-        GreatCosmetics.debugLog("/gc tags give: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc tags give: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
 
         if (success) {
             source.sendSuccess(() -> LangConfig.chat("commands.tag.given", regs, "id", idProcurado, "player", target.getName().getString()), false);
             target.displayClientMessage(LangConfig.chat("commands.tag.received", regs, "name", data.displayName), false);
-            com.f4xizzz.greatcosmetics.GreatCosmetics.syncPlayerTags(target);
+            com.f4xizzz.greatcosmetics.GreatCosmeticsServer.syncPlayerTags(target);
         } else {
             source.sendSuccess(() -> LangConfig.chat("commands.tag.already_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
@@ -575,7 +574,7 @@ public class CosmeticsCommand {
         }
 
         boolean success = com.f4xizzz.greatcosmetics.database.DatabaseManager.removeTagOwnership(target.getUUID(), idProcurado);
-        GreatCosmetics.debugLog("/gc tags remove: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc tags remove: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
 
         if (success) {
             String equipped = com.f4xizzz.greatcosmetics.database.DatabaseManager.getEquippedTagId(target.getUUID());
@@ -585,7 +584,7 @@ public class CosmeticsCommand {
             }
 
             source.sendSuccess(() -> LangConfig.chat("commands.tag.removed", regs, "id", idProcurado, "player", target.getName().getString()), false);
-            com.f4xizzz.greatcosmetics.GreatCosmetics.syncPlayerTags(target);
+            com.f4xizzz.greatcosmetics.GreatCosmeticsServer.syncPlayerTags(target);
         } else {
             source.sendSuccess(() -> LangConfig.chat("commands.tag.not_has", regs, "id", idProcurado, "player", target.getName().getString()), false);
         }
@@ -604,7 +603,7 @@ public class CosmeticsCommand {
         }
 
         ItemStack item = buildCosmeticIcon(data, regs);
-        GreatCosmetics.debugLog("/gc giveitem: physical item of '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ").");
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc giveitem: physical item of '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ").");
 
         if (!target.getInventory().add(item)) {
             target.drop(item, false);
@@ -628,7 +627,7 @@ public class CosmeticsCommand {
         }
 
         boolean success = DatabaseManager.removeCosmetic(target.getUUID(), idProcurado);
-        GreatCosmetics.debugLog("/gc remove: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc remove: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
 
         if (success) {
             source.sendSuccess(() -> LangConfig.chat("commands.remove.success", regs, "id", idProcurado, "player", target.getName().getString()), false);
@@ -654,7 +653,7 @@ public class CosmeticsCommand {
         }
 
         boolean success = DatabaseManager.unlockPokemonSkin(target.getUUID(), idProcurado);
-        GreatCosmetics.debugLog("/gc giveskin: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc giveskin: '" + idProcurado + "' -> " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
 
         if (success) {
             syncPlayerSkins(target);
@@ -699,7 +698,7 @@ public class CosmeticsCommand {
         // ArmorFeatureRendererMixin passa a desenhar certinho em ambos.
         NpcCosmeticsConfig.equip(target.getUUID(), idProcurado);
         NpcCosmeticsConfig.broadcast(source.getServer(), target.getUUID());
-        GreatCosmetics.debugLog("/gc npc equip: '" + idProcurado + "' -> NPC/entity " + target.getUUID() + " (executor=" + source.getTextName() + ").");
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc npc equip: '" + idProcurado + "' -> NPC/entity " + target.getUUID() + " (executor=" + source.getTextName() + ").");
 
         source.sendSuccess(() -> LangConfig.chat("commands.npc.equipped", regs), false);
         return 1;
@@ -726,7 +725,7 @@ public class CosmeticsCommand {
         if (removedCount > 0) {
             NpcCosmeticsConfig.broadcast(source.getServer(), target.getUUID());
         }
-        GreatCosmetics.debugLog("/gc npc remove: slot " + virtualSlot.name() + " on " + target.getUUID() + " — " + removedCount + " removed (executor=" + source.getTextName() + ").");
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc npc remove: slot " + virtualSlot.name() + " on " + target.getUUID() + " — " + removedCount + " removed (executor=" + source.getTextName() + ").");
         source.sendSuccess(() -> LangConfig.chat("commands.npc.slot_cleared", regs, "slot", virtualSlot.name()), false);
         return 1;
     }
@@ -773,7 +772,7 @@ public class CosmeticsCommand {
         }
 
         boolean success = DatabaseManager.removePokemonSkin(target.getUUID(), idProcurado);
-        GreatCosmetics.debugLog("/gc removeskin: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
+        com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc removeskin: '" + idProcurado + "' from " + target.getName().getString() + " (executor=" + source.getTextName() + ") success=" + success);
 
         if (success) {
             syncPlayerSkins(target);
@@ -865,13 +864,13 @@ public class CosmeticsCommand {
 
         try {
             source.sendSuccess(() -> LangConfig.chat("general.reload.start", regs), true);
-            GreatCosmetics.debugLog("/gc reload: triggered by " + source.getTextName() + ".");
+            com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc reload: triggered by " + source.getTextName() + ".");
 
             com.f4xizzz.greatcosmetics.config.MainConfig.loadConfig();
             LangConfig.load();
             CosmeticsConfig.loadConfig();
             com.f4xizzz.greatcosmetics.config.EffectConfig.loadEffects();
-            com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastEffectsCatalog(source.getServer());
+            com.f4xizzz.greatcosmetics.GreatCosmeticsServer.broadcastEffectsCatalog(source.getServer());
 
             // --- RECARREGA A LISTA DE SKINS E NPCs ---
             SkinConfigManager.load();
@@ -880,7 +879,7 @@ public class CosmeticsCommand {
             com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.load();
             com.f4xizzz.greatcosmetics.config.LegacyCosmeticMigrationConfig.load();
             com.f4xizzz.greatcosmetics.config.TagsConfig.load();
-            com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastTagsCatalog(source.getServer());
+            com.f4xizzz.greatcosmetics.GreatCosmeticsServer.broadcastTagsCatalog(source.getServer());
 
             // Esse config era carregado só no boot (SERVER_STARTING) e nunca no /gc reload
             // — reload não pegava mudança nenhuma nele até reiniciar o server de verdade.
@@ -891,7 +890,7 @@ public class CosmeticsCommand {
             // ANTES do resend abaixo — assim o resend já usa o hash atualizado se a textura mudou,
             // em vez de mandar o pacote velho agora e um segundo logo depois quando o hash mudasse
             // em background. Bloqueia aqui (comando manual do admin, não o join de ninguém).
-            String textureHashError = com.f4xizzz.greatcosmetics.GreatCosmetics.refreshTextureHashForReload();
+            String textureHashError = com.f4xizzz.greatcosmetics.GreatCosmeticsServer.refreshTextureHashForReload();
             if (textureHashError != null) {
                 source.sendSuccess(() -> LangConfig.chat("general.reload.texture_hash_fail", regs, "error", textureHashError), true);
             }
@@ -904,18 +903,18 @@ public class CosmeticsCommand {
                 // MinecraftClientMixin), mas atualiza o hash do catálogo que o client vai gravar no
                 // cache assim que aplicar os payloads abaixo, pra próxima ENTRADA nesse servidor
                 // já sair silenciosa.
-                com.f4xizzz.greatcosmetics.GreatCosmetics.sendCatalogStateSnapshot(player, false);
+                com.f4xizzz.greatcosmetics.GreatCosmeticsServer.sendCatalogStateSnapshot(player, false);
 
                 // Reenvia o resource pack forçado (MainConfig#forceTexture) — assim trocar a URL/hash
                 // e dar /gc reload já atualiza a textura de quem já está online, sem precisar relogar.
-                com.f4xizzz.greatcosmetics.GreatCosmetics.sendForcedResourcePack(player);
+                com.f4xizzz.greatcosmetics.GreatCosmeticsServer.sendForcedResourcePack(player);
 
                 NpcCosmeticsConfig.syncAllTo(player);
 
                 // Catálogo de skins (PartyPage) — sem isso o /gc reload recarregava o
                 // pokeskins.json só no servidor, e quem já tava conectado nunca via as
                 // skins novas/editadas até relogar.
-                ServerPlayNetworking.send(player, new com.f4xizzz.greatcosmetics.network.SyncSkinCatalogPayload(SkinConfigManager.getAllSkins(), com.f4xizzz.greatcosmetics.config.SkinGroupConfigManager.getAllColors()));
+                NetworkManager.sendToPlayer(player, new com.f4xizzz.greatcosmetics.network.SyncSkinCatalogPayload(SkinConfigManager.getAllSkins(), com.f4xizzz.greatcosmetics.config.SkinGroupConfigManager.getAllColors()));
             }
 
             // ORDEM IMPORTA: SyncCosmeticsPayload precisa chegar (e ser processado) ANTES de
@@ -929,20 +928,20 @@ public class CosmeticsCommand {
             // AutoCMDManager ainda com o estado VELHO/incompleto — exatamente o bug clássico de "todo
             // cosmético colapsa pro último custom_model_data registrado". Mandando cosméticos normais
             // primeiro, o reload real só começa depois do AutoCMDManager já estar 100% atualizado.
-            com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastCosmeticsCatalog(source.getServer(), true);
-            com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastArmorCosmeticsCatalog(source.getServer(), true);
+            com.f4xizzz.greatcosmetics.GreatCosmeticsServer.broadcastCosmeticsCatalog(source.getServer(), true);
+            com.f4xizzz.greatcosmetics.GreatCosmeticsServer.broadcastArmorCosmeticsCatalog(source.getServer(), true);
 
             // mainconfig.conf (slots/types/config geral) também nunca era resincronizado no
             // /gc reload — Dev Studio e EquippedSlotsWidget ficavam com o valor de quando o
             // client entrou até relogar.
-            com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastMainConfig(source.getServer());
+            com.f4xizzz.greatcosmetics.GreatCosmeticsServer.broadcastMainConfig(source.getServer());
 
-            GreatCosmetics.debugLog("/gc reload: completed successfully — " + CosmeticsConfig.cosmeticsMap.size() + " cosmetics, "
+            com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc reload: completed successfully — " + CosmeticsConfig.cosmeticsMap.size() + " cosmetics, "
                     + SkinConfigManager.getAllSkins().size() + " skins, " + com.f4xizzz.greatcosmetics.config.TagsConfig.tagsMap.size() + " tags.");
             source.sendSuccess(() -> LangConfig.chat("general.reload.done", regs, "count", source.getServer().getPlayerList().getPlayerCount()), true);
 
         } catch (Exception e) {
-            GreatCosmetics.debugLog("/gc reload: FAILED — " + e);
+            com.f4xizzz.greatcosmetics.GreatCosmeticsCommon.debugLog("/gc reload: FAILED — " + e);
             source.sendSuccess(() -> LangConfig.chat("general.reload.fail", regs), true);
             e.printStackTrace();
         }
@@ -958,12 +957,12 @@ public class CosmeticsCommand {
             cooldowns.put(skinId, DatabaseManager.getSkinLastApplied(target.getUUID(), skinId));
         }
 
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(target, new com.f4xizzz.greatcosmetics.network.SyncPokemonSkinsPayload(unlocked, cooldowns));
+        NetworkManager.sendToPlayer(target, new com.f4xizzz.greatcosmetics.network.SyncPokemonSkinsPayload(unlocked, cooldowns));
 
         // Catálogo completo de skins (não só as desbloqueadas) — ver SyncSkinCatalogPayload. Sem
         // isso o client só enxergava as skins que já tinha salvas localmente em disco, nunca as
         // que o servidor tem de verdade.
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(target, new com.f4xizzz.greatcosmetics.network.SyncSkinCatalogPayload(SkinConfigManager.getAllSkins(), com.f4xizzz.greatcosmetics.config.SkinGroupConfigManager.getAllColors()));
+        NetworkManager.sendToPlayer(target, new com.f4xizzz.greatcosmetics.network.SyncSkinCatalogPayload(SkinConfigManager.getAllSkins(), com.f4xizzz.greatcosmetics.config.SkinGroupConfigManager.getAllColors()));
     }
 
     private static int executeInspect(CommandSourceStack source) {
@@ -980,7 +979,7 @@ public class CosmeticsCommand {
 
         com.f4xizzz.greatcosmetics.network.DebugModePayload payload = new com.f4xizzz.greatcosmetics.network.DebugModePayload(enabled);
         for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
-            ServerPlayNetworking.send(player, payload);
+            NetworkManager.sendToPlayer(player, payload);
         }
 
         source.sendSuccess(() -> LangConfig.chat(enabled ? "general.debug.enabled" : "general.debug.disabled", regs), true);

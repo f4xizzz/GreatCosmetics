@@ -328,11 +328,11 @@ public class CosmeticsConfig {
         // o Gizmo 3D (GizmoManager, que compara "é essa a part ativa?" por referência de objeto)
         // nunca reconhecia a part como ativa e nunca desenhava/ficava clicável. No client, sempre
         // prioriza o cache client-side.
-        // Platform.getEnv(), NUNCA Minecraft.getInstance() aqui — esse método roda no tick do
-        // SERVIDOR também (equipar cosmético, etc), e net.minecraft.client.Minecraft nem existe no
-        // classpath de um servidor dedicado. Só a REFERÊNCIA à classe (mesmo dentro de um
+        // Platform.getEnvironment(), NUNCA Minecraft.getInstance() aqui — esse método roda no tick
+        // do SERVIDOR também (equipar cosmético, etc), e net.minecraft.client.Minecraft nem existe
+        // no classpath de um servidor dedicado. Só a REFERÊNCIA à classe (mesmo dentro de um
         // "!= null") já derruba o server tick loop inteiro com NoClassDefFoundError.
-        if (dev.architectury.platform.Platform.getEnv() == net.fabricmc.api.EnvType.CLIENT) {
+        if (dev.architectury.platform.Platform.getEnvironment() == dev.architectury.utils.Env.CLIENT) {
             CosmeticData clientArmorData = com.f4xizzz.greatcosmetics.client.ClientArmorCosmeticsCache.getSyntheticCosmetic(idProcurado);
             if (clientArmorData != null) return clientArmorData;
         }
