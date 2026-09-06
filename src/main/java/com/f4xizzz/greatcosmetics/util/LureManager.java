@@ -13,7 +13,6 @@ import com.cobblemon.mod.common.api.item.ability.AbilityChanger;
 import com.cobblemon.mod.common.api.pokeball.catching.CaptureContext;
 import com.cobblemon.mod.common.api.pokemon.stats.Stat;
 import com.cobblemon.mod.common.api.pokemon.stats.Stats;
-import com.cobblemon.mod.common.api.spawning.SpawnBucket;
 import com.cobblemon.mod.common.api.spawning.SpawnCause;
 import com.cobblemon.mod.common.pokemon.IVs;
 import com.cobblemon.mod.common.pokemon.Pokemon;
@@ -93,14 +92,12 @@ public class LureManager {
         double bonus = sumOf(lures, l -> l.lureUltraRAREMultiplier);
         if (bonus <= 0 || RANDOM.nextDouble() >= bonus) return;
 
-        SpawnBucket current = event.getBucket();
-        if (current != null && "ultra-rare".equals(current.getName())) return;
-
-        for (SpawnBucket candidate : event.getBucketWeights().keySet()) {
-            if ("ultra-rare".equals(candidate.getName())) {
-                event.setBucket(candidate);
-                break;
-            }
+        // Cobblemon 1.8 removeu a classe SpawnBucket — os buckets viraram só o nome (String) e
+        // getBucketWeights() é um Map<String, Float>. "ultra-rare" continua sendo o nome do bucket
+        // de raridade mais alta nos spawn pools do Cobblemon.
+        if ("ultra-rare".equals(event.getBucket())) return;
+        if (event.getBucketWeights().containsKey("ultra-rare")) {
+            event.setBucket("ultra-rare");
         }
     }
 
