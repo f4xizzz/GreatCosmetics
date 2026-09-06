@@ -393,7 +393,11 @@ public class PartyPage extends WardrobePage {
             this.previewEntity = entity;
             applyPreviewPose();
             updateCameraToHitbox();
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("PartyPage.rebuildPreviewEntity FAILED for skin '"
+                    + (previewingSkin != null ? previewingSkin.getId() : "?") + "': " + e);
+            if (com.f4xizzz.greatcosmetics.GreatCosmetics.isDebugMode) e.printStackTrace();
+        }
     }
 
     // Lê do ClientPermissionCache (calculado no servidor) em vez de hasPermissionLevel()/
@@ -482,7 +486,11 @@ public class PartyPage extends WardrobePage {
                 // o default que o próprio Cobblemon usa na tela de resumo.
                 ModelWidget widget = new ModelWidget(0, 0, 40, 40, dummy.asRenderablePokemon(), skinsScale, 0f, 0.0, false, false, 13);
                 skinWidgets.put(skin.getId(), widget);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("PartyPage skin icon FAILED for '" + skin.getId()
+                        + "' (species=" + skin.getSpecies() + " aspect=\"" + skin.getAspect() + "\"): " + e);
+                if (com.f4xizzz.greatcosmetics.GreatCosmetics.isDebugMode) e.printStackTrace();
+            }
         }
 
         // Agrupa por PokemonSkin.getGroup() — skins sem grupo (campo vazio) aparecem primeiro,

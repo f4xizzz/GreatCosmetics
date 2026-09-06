@@ -1377,6 +1377,27 @@ public class GreatCosmetics implements ModInitializer {
 						SWIM_SPEED_MODIFIER_ID, swimMult - 1.0,
 						net.minecraft.entity.attribute.EntityAttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
 			}
+
+			// A aceleração de NADO submerso (prone/deitado) do vanilla é fixa (~0.02) e NÃO lê
+			// GENERIC_MOVEMENT_SPEED — só a de "andar dentro d'água" (raso) lê. Pra nado de verdade
+			// o atributo é WATER_MOVEMENT_EFFICIENCY: 1.0 = mantém 100% da velocidade de terra na
+			// água. Aplica o mesmo multiplicador ali também.
+			net.minecraft.entity.attribute.EntityAttributeInstance waterEff =
+					player.getAttributeInstance(net.minecraft.entity.attribute.EntityAttributes.GENERIC_WATER_MOVEMENT_EFFICIENCY);
+			if (waterEff != null) {
+				waterEff.removeModifier(SWIM_SPEED_MODIFIER_ID);
+				if (swimMult != 1.0 && player.isTouchingWater()) {
+					// base 0 -> ADD_VALUE do (mult-1) dá efficiency = mult-1 (ex: 1.5x -> 0.5).
+					// Clampa em 1.0 no vanilla, então mult até 2.0 vira efic. 1.0 (velocidade de terra plena).
+					waterEff.addTemporaryModifier(new net.minecraft.entity.attribute.EntityAttributeModifier(
+							SWIM_SPEED_MODIFIER_ID, swimMult - 1.0,
+							net.minecraft.entity.attribute.EntityAttributeModifier.Operation.ADD_VALUE));
+				}
+			}
+
+			debugLog("handleSpeedLogic: " + player.getName().getString() + " swimMult=" + swimMult
+					+ " inWater=" + player.isTouchingWater() + " groundMult=" + groundMult + " flyMult=" + flyMult
+					+ " speedAttrBase=" + speedAttr.getBaseValue() + " speedAttrValue=" + speedAttr.getValue());
 		}
 	}
 
