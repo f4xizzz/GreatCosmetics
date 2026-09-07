@@ -6,13 +6,10 @@ import com.f4xizzz.greatcosmetics.config.CosmeticData;
 import com.f4xizzz.greatcosmetics.config.CosmeticsConfig;
 import com.f4xizzz.greatcosmetics.config.MainConfig;
 import com.f4xizzz.greatcosmetics.config.SkinConfigManager;
-import com.f4xizzz.greatcosmetics.manager.ThemeManager;
 import com.f4xizzz.greatcosmetics.network.OpenWardrobePayload;
 import com.f4xizzz.greatcosmetics.network.SyncCosmeticsPayload;
 import com.f4xizzz.greatcosmetics.util.AutoCMDManager;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.model.loading.v1.ModelLoadingPlugin;
@@ -63,8 +60,6 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 
-		// Carrega a preferência salva do jogador
-		ThemeManager.load();
 		com.f4xizzz.greatcosmetics.client.ClientFavoriteCosmetics.load();
 
 		// Limpa qualquer arquivo de textura decifrado que tenha sobrado de uma sessão anterior
@@ -83,33 +78,6 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// sincronizado do servidor via SyncMainConfigPayload).
 		HudRenderCallback.EVENT.register((drawContext, tickCounter) ->
 				com.f4xizzz.greatcosmetics.client.gui.LureHudOverlay.render(drawContext));
-
-		// Registra os Comandos Client-Side
-		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-			dispatcher.register(ClientCommandManager.literal("lightmode").executes(context -> {
-				if (!ThemeManager.isLightMode) {
-					ThemeManager.isLightMode = true;
-					ThemeManager.save();
-					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.lightmode.enabled"));
-					MinecraftClient.getInstance().reloadResources();
-				} else {
-					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.lightmode.already"));
-				}
-				return 1;
-			}));
-
-			dispatcher.register(ClientCommandManager.literal("darkmode").executes(context -> {
-				if (ThemeManager.isLightMode) {
-					ThemeManager.isLightMode = false;
-					ThemeManager.save();
-					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.darkmode.enabled"));
-					MinecraftClient.getInstance().reloadResources();
-				} else {
-					context.getSource().sendFeedback(com.f4xizzz.greatcosmetics.config.LangConfig.text("commands.darkmode.already"));
-				}
-				return 1;
-			}));
-		});
 
 		MainConfig.loadConfig();
 		com.f4xizzz.greatcosmetics.config.LangConfig.load();

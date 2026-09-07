@@ -19,7 +19,6 @@
 		"client.EntityPreviewMixin",
 		"client.EntitySneakMixin",
 		"client.MinecraftClientMixin",
-		"client.ResourceManagerMixin",
 		"client.MobEntityInvoker",
 		"client.EntityRenderDispatcherMixin",
 		"client.PlayerEntityGetEquippedStackMixin",

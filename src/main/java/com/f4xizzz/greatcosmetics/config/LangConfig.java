@@ -239,10 +239,6 @@ public class LangConfig {
         commands.put("commands.npc.invalid_slot", "<red>Invalid slot! Use: head, face, neck, chest, back, waist, legs, feet or hand.");
         commands.put("commands.npc.equipped", "<green>Cosmetic successfully equipped on the target!");
         commands.put("commands.npc.slot_cleared", "<green>The target's {slot} slot was cleared!");
-        commands.put("commands.lightmode.enabled", "<yellow>[Theme] Light Mode enabled! Reloading textures...");
-        commands.put("commands.lightmode.already", "<red>Light Mode is already enabled.");
-        commands.put("commands.darkmode.enabled", "<dark_gray>[Theme] Dark Mode enabled! Reloading textures...");
-        commands.put("commands.darkmode.already", "<red>Dark Mode is already enabled.");
         commands.put("commands.wardrobe.background_set", "<green>Background '{name}' set and saved to disk!");
         commands.put("commands.wardrobe.dimension_not_found", "<red>[ERROR] The studio dimension '{dimension}' was not found!");
         files.put("commands", commands);
