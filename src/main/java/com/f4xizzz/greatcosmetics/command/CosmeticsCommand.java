@@ -335,6 +335,24 @@ public class CosmeticsCommand {
                                             )
                                     )
                             )
+                            // --- COMANDO: DISPLAY (armor stand invisível "vestindo" o cosmético, na posição do player) ---
+                            .then(CommandManager.literal("display")
+                                    .requires(source -> hasCmdPermission(source, "gc.command.display"))
+                                    .then(CommandManager.literal("remove")
+                                            .executes(context -> executeDisplayRemove(
+                                                    context.getSource(), context.getSource().getPlayerOrThrow()))
+                                    )
+                                    .then(CommandManager.literal("clear")
+                                            .executes(context -> executeDisplayClear(context.getSource()))
+                                    )
+                                    .then(CommandManager.argument("cosmetic_id", StringArgumentType.word())
+                                            .suggests(SUGGEST_COSMETICS)
+                                            .executes(context -> executeDisplaySpawn(
+                                                    context.getSource(),
+                                                    StringArgumentType.getString(context, "cosmetic_id"),
+                                                    context.getSource().getPlayerOrThrow()))
+                                    )
+                            )
             );
 
             dispatcher.register(
@@ -730,6 +748,95 @@ public class CosmeticsCommand {
         GreatCosmetics.debugLog("/gc npc remove: slot " + virtualSlot.name() + " on " + target.getUuid() + " — " + removedCount + " removed (executor=" + source.getName() + ").");
         source.sendFeedback(() -> LangConfig.chat("commands.npc.slot_cleared", regs, "slot", virtualSlot.name()), false);
         return 1;
+    }
+
+    // ==========================================
+    // COMANDO: DISPLAY (armor stand invisível vestindo o cosmético)
+    // ==========================================
+    private static final String DISPLAY_TAG = "gc_display";
+
+    private static int executeDisplaySpawn(ServerCommandSource source, String idProcurado, ServerPlayerEntity executor) {
+        if (isBlockedByLicense(source, "display")) return 0;
+        RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
+        CosmeticData data = getCosmeticById(idProcurado);
+
+        if (data == null) {
+            source.sendFeedback(() -> LangConfig.chat("commands.display.not_found", regs, "id", idProcurado), false);
+            return 0;
+        }
+
+        // MESMO caminho do /gc npc equip: o cosmético NUNCA vem do slot de equipamento real —
+        // é 100% renderizado pelo ArmorFeatureRendererMixin lendo o ClientCosmeticCache (por UUID
+        // da entidade). Um armor stand invisível com braços aparece renderizando só as "features"
+        // (equip/cosmético) — ou seja, só a model 3D do cosmético fica flutuando, como se um
+        // corpo invisível estivesse usando a peça.
+        net.minecraft.server.world.ServerWorld world = source.getWorld();
+        float yaw = executor.getYaw() + 180.0f; // encara o player
+        net.minecraft.entity.decoration.ArmorStandEntity stand =
+                new net.minecraft.entity.decoration.ArmorStandEntity(world, executor.getX(), executor.getY(), executor.getZ());
+        stand.refreshPositionAndAngles(executor.getX(), executor.getY(), executor.getZ(), yaw, 0.0f);
+        stand.setYaw(yaw);
+        stand.setBodyYaw(yaw);
+        stand.setHeadYaw(yaw);
+        stand.setInvisible(true);
+        stand.setNoGravity(true);
+        stand.setInvulnerable(true);
+        stand.setShowArms(true);
+        stand.setHideBasePlate(true);
+        stand.addCommandTag(DISPLAY_TAG);
+
+        if (!world.spawnEntity(stand)) {
+            source.sendFeedback(() -> LangConfig.chat("commands.display.spawn_failed", regs), false);
+            return 0;
+        }
+
+        NpcCosmeticsConfig.equip(stand.getUuid(), idProcurado);
+        NpcCosmeticsConfig.broadcast(source.getServer(), stand.getUuid());
+        GreatCosmetics.debugLog("/gc display: '" + idProcurado + "' -> stand " + stand.getUuid() + " (executor=" + source.getName() + ").");
+
+        source.sendFeedback(() -> LangConfig.chat("commands.display.spawned", regs, "id", idProcurado), false);
+        return 1;
+    }
+
+    private static int executeDisplayRemove(ServerCommandSource source, ServerPlayerEntity executor) {
+        if (isBlockedByLicense(source, "display")) return 0;
+        RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
+
+        net.minecraft.entity.LivingEntity target = getTargetEntity(executor);
+        if (!(target instanceof net.minecraft.entity.decoration.ArmorStandEntity stand)
+                || !stand.getCommandTags().contains(DISPLAY_TAG)) {
+            source.sendFeedback(() -> LangConfig.chat("commands.display.remove_no_target", regs), false);
+            return 0;
+        }
+
+        NpcCosmeticsConfig.removeAll(stand.getUuid());
+        NpcCosmeticsConfig.broadcast(source.getServer(), stand.getUuid());
+        stand.discard();
+        GreatCosmetics.debugLog("/gc display remove: stand " + stand.getUuid() + " (executor=" + source.getName() + ").");
+        source.sendFeedback(() -> LangConfig.chat("commands.display.removed", regs), false);
+        return 1;
+    }
+
+    private static int executeDisplayClear(ServerCommandSource source) {
+        if (isBlockedByLicense(source, "display")) return 0;
+        RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
+
+        int removed = 0;
+        for (net.minecraft.server.world.ServerWorld world : source.getServer().getWorlds()) {
+            for (net.minecraft.entity.decoration.ArmorStandEntity stand : world.getEntitiesByType(
+                    net.minecraft.entity.EntityType.ARMOR_STAND,
+                    e -> e.getCommandTags().contains(DISPLAY_TAG))) {
+                NpcCosmeticsConfig.removeAll(stand.getUuid());
+                NpcCosmeticsConfig.broadcast(source.getServer(), stand.getUuid());
+                stand.discard();
+                removed++;
+            }
+        }
+
+        final int total = removed;
+        GreatCosmetics.debugLog("/gc display clear: " + total + " display(s) removed (executor=" + source.getName() + ").");
+        source.sendFeedback(() -> LangConfig.chat("commands.display.cleared", regs, "count", String.valueOf(total)), false);
+        return total;
     }
 
     // Dispara um "laser" invisível da câmera do jogador para pegar a entidade mais próxima que ele está olhando

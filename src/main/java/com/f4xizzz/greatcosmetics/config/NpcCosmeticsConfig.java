@@ -120,6 +120,13 @@ public class NpcCosmeticsConfig {
         return removed;
     }
 
+    /** Remove TODOS os cosméticos de uma entidade (usado pra apagar um /gc display). Retorna true se havia algo. */
+    public static boolean removeAll(UUID targetUuid) {
+        boolean had = EQUIPPED.remove(targetUuid) != null;
+        if (had) scheduleSave();
+        return had;
+    }
+
     /** Remove todos os cosméticos equipados que ocupam o slot virtual informado. Retorna quantos foram removidos. */
     public static int unequipSlot(UUID targetUuid, CosmeticData.VirtualSlot slot) {
         Set<String> set = EQUIPPED.get(targetUuid);

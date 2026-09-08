@@ -239,6 +239,12 @@ public class LangConfig {
         commands.put("commands.npc.invalid_slot", "<red>Invalid slot! Use: head, face, neck, chest, back, waist, legs, feet or hand.");
         commands.put("commands.npc.equipped", "<green>Cosmetic successfully equipped on the target!");
         commands.put("commands.npc.slot_cleared", "<green>The target's {slot} slot was cleared!");
+        commands.put("commands.display.not_found", "<red>Cosmetic '{id}' not found!");
+        commands.put("commands.display.spawned", "<green>Display spawned wearing '{id}'. Aim at it and use <white>/gc display remove</white> to delete it.");
+        commands.put("commands.display.spawn_failed", "<red>Couldn't spawn the display here.");
+        commands.put("commands.display.removed", "<green>Display removed.");
+        commands.put("commands.display.remove_no_target", "<red>Look at a display (max 5 blocks) to remove it.");
+        commands.put("commands.display.cleared", "<green>{count} display(s) removed.");
         commands.put("commands.wardrobe.background_set", "<green>Background '{name}' set and saved to disk!");
         commands.put("commands.wardrobe.dimension_not_found", "<red>[ERROR] The studio dimension '{dimension}' was not found!");
         files.put("commands", commands);
