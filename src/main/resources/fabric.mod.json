@@ -1,14 +1,15 @@
 {
 	"schemaVersion": 1,
-	"id": "great-cosmetics",
-	"version": "1.1.0",
-	"name": "great-cosmetics",
-	"description": "Cosmetics mod for servers.",
+	"id": "greatcosmetics",
+	"version": "${version}",
+	"name": "GreatCosmetics",
+	"description": "Server-side cosmetics for Cobblemon: hats, accessories, armor skins, particle effects, backpacks, NPC cosmetics, Pokémon skins and a Lure bonus system.",
 	"authors": [
 		"f4xizzz"
 	],
 	"contact": {
-		"homepage": "<CANAL OFICIAL DE VENDA>"
+		"homepage": "https://discord.gg/YgM4Ng4QGu",
+		"email": "f4xizzzdev@gmail.com"
 	},
 	"license": "All Rights Reserved",
 	"icon": "assets/greatcosmetics/icon.png",

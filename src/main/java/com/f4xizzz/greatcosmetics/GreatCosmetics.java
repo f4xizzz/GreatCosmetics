@@ -38,7 +38,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class GreatCosmetics implements ModInitializer {
-	public static final String MOD_ID = "great-cosmetics";
+	public static final String MOD_ID = "greatcosmetics";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
 	public static boolean isDebugMode = false;
