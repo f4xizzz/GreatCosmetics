@@ -80,11 +80,9 @@ public final class LureHudOverlay {
             a.lureAmizadeMultiplier += l.lureAmizadeMultiplier;
             a.lureChanceDeCaptura += l.lureChanceDeCaptura;
             a.lurePescaShiny += l.lurePescaShiny;
-            a.lurePescaUltraRare += l.lurePescaUltraRare;
             a.lurePescaIv += l.lurePescaIv;
             a.lurePescaIvChance += l.lurePescaIvChance;
             a.lurePescaVelocidade += l.lurePescaVelocidade;
-            a.lureDePesca += l.lureDePesca;
             if ((a.lureTYPE == null || a.lureTYPE.isEmpty()) && l.lureTYPE != null && !l.lureTYPE.isEmpty()) {
                 a.lureTYPE = l.lureTYPE;
             }
@@ -146,16 +144,14 @@ public final class LureHudOverlay {
         if (l.lureAmizadeMultiplier > 0) lines.add(LangConfig.text("hud.lure.friendship", "value", fmt(l.lureAmizadeMultiplier)));
         if (l.lureChanceDeCaptura > 0) lines.add(LangConfig.text("hud.lure.capture", "value", fmt(l.lureChanceDeCaptura)));
 
-        boolean fishing = l.lurePescaShiny > 0 || l.lurePescaUltraRare > 0 || l.lurePescaIv > 0
-                || l.lurePescaIvChance > 0 || l.lurePescaVelocidade > 0 || l.lureDePesca > 0;
+        boolean fishing = l.lurePescaShiny > 0 || l.lurePescaIv > 0
+                || l.lurePescaIvChance > 0 || l.lurePescaVelocidade > 0;
         if (fishing) {
             lines.add(LangConfig.text("hud.lure.fishing_header"));
             if (l.lurePescaShiny > 0) lines.add(LangConfig.text("hud.lure.fishing_shiny", "value", fmt(l.lurePescaShiny)));
-            if (l.lurePescaUltraRare > 0) lines.add(LangConfig.text("hud.lure.fishing_ultrarare", "value", fmt(l.lurePescaUltraRare)));
             if (l.lurePescaIv > 0) lines.add(LangConfig.text("hud.lure.fishing_iv", "value", l.lurePescaIv));
             if (l.lurePescaIvChance > 0) lines.add(LangConfig.text("hud.lure.fishing_iv_chance", "value", pctNum(l.lurePescaIvChance)));
             if (l.lurePescaVelocidade > 0) lines.add(LangConfig.text("hud.lure.fishing_speed", "value", pctNum(l.lurePescaVelocidade)));
-            if (l.lureDePesca > 0) lines.add(LangConfig.text("hud.lure.fishing_power", "value", fmt(l.lureDePesca)));
         }
 
         if (lines.size() == 1) lines.clear(); // só o header, nenhum bônus numérico > 0

@@ -1,19 +1,25 @@
 package com.f4xizzz.greatcosmetics.util;
 
+import com.cobblemon.mod.common.Cobblemon;
 import com.cobblemon.mod.common.api.events.CobblemonEvents;
 import com.cobblemon.mod.common.api.events.entity.SpawnBucketChosenEvent;
+import com.cobblemon.mod.common.api.events.entity.SpawnEvent;
 import com.cobblemon.mod.common.api.events.fishing.BobberSpawnPokemonEvent;
 import com.cobblemon.mod.common.api.events.fishing.PokerodCastEvent;
 import com.cobblemon.mod.common.entity.fishing.PokeRodFishingBobberEntity;
+import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
 import com.cobblemon.mod.common.api.events.pokeball.PokeBallCaptureCalculatedEvent;
 import com.cobblemon.mod.common.api.events.pokemon.ExperienceGainedEvent;
 import com.cobblemon.mod.common.api.events.pokemon.FriendshipUpdatedEvent;
 import com.cobblemon.mod.common.api.events.pokemon.PokemonCapturedEvent;
 import com.cobblemon.mod.common.api.item.ability.AbilityChanger;
 import com.cobblemon.mod.common.api.pokeball.catching.CaptureContext;
+import com.cobblemon.mod.common.api.pokemon.experience.CandyExperienceSource;
 import com.cobblemon.mod.common.api.pokemon.stats.Stat;
 import com.cobblemon.mod.common.api.pokemon.stats.Stats;
 import com.cobblemon.mod.common.api.spawning.SpawnCause;
+import com.cobblemon.mod.common.api.storage.party.PlayerPartyStore;
+import com.cobblemon.mod.common.api.types.ElementalType;
 import com.cobblemon.mod.common.pokemon.IVs;
 import com.cobblemon.mod.common.pokemon.Pokemon;
 import com.f4xizzz.greatcosmetics.GreatCosmetics;
@@ -42,35 +48,37 @@ import java.util.function.ToDoubleFunction;
  * conversa que motivou isso: "coloquei o lure no item e ele não está funcionando").
  *
  * Hooks usados (shiny/IV são SEMPRE decididos na CAPTURA, nunca no spawn — decisão explícita do
- * dev: só "o que Pokémon vai spawnar" — ultra raro, tipo — deve mexer no spawn):
- *   - SPAWN_BUCKET_CHOSEN: só o bônus de ultra raro (qual BUCKET de raridade é escolhido). Dá pra
- *     amarrar a um player porque SpawnCause.getEntity(), pra spawn natural via PlayerSpawner, É o
- *     player dono daquele spawner.
- *   - POKEMON_CAPTURED: shiny (reroll se ainda não é), IV garantido/chance, hidden ability — tudo
- *     no momento da captura.
+ * dev):
+ *   - SPAWN_BUCKET_CHOSEN: bônus de ultra raro (qual BUCKET de raridade é escolhido) em spawn de
+ *     terra. Dá pra amarrar a um player porque SpawnCause.getEntity(), pra spawn natural via
+ *     PlayerSpawner, É o player dono daquele spawner.
+ *   - POKEMON_ENTITY_SPAWN: filtro de TIPO (lureTYPE). Cancela o spawn de qualquer Pokémon
+ *     SELVAGEM em volta do player cujo tipo não bata com o(s) tipo(s) do(s) lure(s) ativo(s).
+ *   - POKEMON_CAPTURED: shiny (reroll se ainda não é), IV garantido + chance POR IV, hidden
+ *     ability — tudo no momento da captura.
  *   - BOBBER_SPAWN_POKEMON_POST: mesma coisa (shiny/IV), só que os campos *Pesca*, quando o
  *     Pokémon veio de vara — bônus somado, independente do de POKEMON_CAPTURED que roda depois.
  *   - POKEROD_CAST_PRE: velocidade de pesca (lurePescaVelocidade).
  *   - POKE_BALL_CAPTURE_CALCULATED: chance de captura (reroll uma captura que falhou).
- *   - EXPERIENCE_GAINED_EVENT_PRE / FRIENDSHIP_UPDATED: multiplicadores de exp/amizade.
+ *   - EXPERIENCE_GAINED_EVENT_PRE: multiplicador de exp (lureEXP) + "Exp Share" (lureExpAllMultiplier
+ *     > 0 = liga; o valor é a fração que CADA outro Pokémon da party recebe do total que o ativo
+ *     ganhou, 1.0 = igual). NÃO compartilha quando a fonte é doce (CandyExperienceSource).
+ *   - FRIENDSHIP_UPDATED: multiplicador de amizade.
  *
- * NÃO implementados ainda:
- *   - lureTYPE ("Tipo Afetado") — sem uso nenhum por enquanto. Pelo pedido do dev, isso e outros
- *     campos que decidem QUAL Pokémon spawna precisam mexer no SPAWN, não na captura — mas isso
- *     exige reponderar a escolha de ESPÉCIE dentro do spawn pool (não só o bucket de raridade),
- *     e ainda não ficou claro se é "só Pokémon desse tipo têm chance de vir com os outros bônus"
- *     ou "aumenta a chance de spawnar Pokémon desse tipo" — não implementado até isso ficar claro.
- *   - lurePescaUltraRare (a pesca não passa pelo SpawnBucketChosenEvent — não achei equivalente
- *     de "bucket"/raridade exposto nos eventos de vara).
- *   - lureDePesca (campo ambíguo — sem um objetivo mecânico claro, ver conversa).
+ * NÃO implementados (sem hook público viável):
  *   - lureEV (ganho de EV acontece dentro da lógica de batalha, sem evento público pra isso).
  */
 public class LureManager {
 
     private static final Random RANDOM = new Random();
 
+    /** Enquanto true, estamos redistribuindo XP pra party (Exp Share) — o handler de XP ignora
+     *  esses eventos re-disparados pra não recursionar nem re-multiplicar. */
+    private static final ThreadLocal<Boolean> SHARING_XP = ThreadLocal.withInitial(() -> false);
+
     public static void register() {
         CobblemonEvents.SPAWN_BUCKET_CHOSEN.subscribe(LureManager::onSpawnBucketChosen);
+        CobblemonEvents.POKEMON_ENTITY_SPAWN.subscribe(LureManager::onPokemonEntitySpawn);
         CobblemonEvents.POKEMON_CAPTURED.subscribe(LureManager::onPokemonCaptured);
         CobblemonEvents.BOBBER_SPAWN_POKEMON_POST.subscribe(LureManager::onFishCaught);
         CobblemonEvents.POKEROD_CAST_PRE.subscribe(LureManager::onPokerodCast);
@@ -99,6 +107,38 @@ public class LureManager {
         if (event.getBucketWeights().containsKey("ultra-rare")) {
             event.setBucket("ultra-rare");
         }
+    }
+
+    // === Spawn: filtro de TIPO (lureTYPE). Um lure com "Tipo Afetado" faz os Pokémon SELVAGENS
+    // que tentam spawnar em volta do dono do spawner virem SÓ desse(s) tipo(s) — cancela o spawn
+    // de qualquer espécie que não bata. Nunca toca em Pokémon com dono (party do próprio player,
+    // NPC, etc.) nem em spawn sem causa de player. ===
+    private static void onPokemonEntitySpawn(SpawnEvent<PokemonEntity> event) {
+        if (event.isCanceled()) return;
+
+        SpawnCause cause = event.getCause();
+        Entity causeEntity = cause != null ? cause.getEntity() : null;
+        if (!(causeEntity instanceof ServerPlayerEntity player)) return;
+
+        Pokemon pokemon = event.getEntity().getPokemon();
+        if (!pokemon.isWild()) return;
+
+        List<CosmeticData.LureStats> lures = collectActiveLureStats(player);
+        if (lures.isEmpty()) return;
+
+        Set<String> wanted = new HashSet<>();
+        for (CosmeticData.LureStats l : lures) {
+            if (l.lureTYPE != null && !l.lureTYPE.isBlank()) wanted.add(l.lureTYPE.trim().toLowerCase());
+        }
+        if (wanted.isEmpty()) return;
+
+        for (ElementalType t : pokemon.getTypes()) {
+            if (t == null) continue;
+            if (wanted.contains(t.getName().toLowerCase()) || wanted.contains(t.getShowdownId().toLowerCase())) {
+                return; // bate — deixa spawnar
+            }
+        }
+        event.cancel();
     }
 
     // === Captura: shiny (reroll), IV garantido/chance, hidden ability — por pedido explícito do
@@ -197,18 +237,43 @@ public class LureManager {
         }
     }
 
-    // === Exp: multiplica o ganho de experiência do Pokémon do dono ===
+    // === Exp: multiplica o ganho do Pokémon que lutou (lureEXP) e, se Exp Share estiver ligado
+    // (lureExpAllMultiplier > 0), passa uma fração desse total pra cada outro Pokémon vivo da
+    // party. Doce (Candy) não é afetado. ===
     private static void onExperienceGained(ExperienceGainedEvent.Pre event) {
+        if (SHARING_XP.get()) return; // é XP que a gente mesmo redistribuiu — não reprocessa
+
         Pokemon pokemon = event.getPokemon();
         ServerPlayerEntity owner = pokemon.getOwnerPlayer();
         if (owner == null) return;
+        if (event.getSource() instanceof CandyExperienceSource) return; // lure não mexe em doce
 
         List<CosmeticData.LureStats> lures = collectActiveLureStats(owner);
         if (lures.isEmpty()) return;
 
-        double bonus = sumOf(lures, l -> l.lureExpAllMultiplier) + sumOf(lures, l -> l.lureEXP);
-        if (bonus > 0) {
-            event.setExperience((int) Math.round(event.getExperience() * (1.0 + bonus)));
+        // 1) multiplicador de XP do Pokémon que ganhou
+        double mult = 1.0 + sumOf(lures, l -> l.lureEXP);
+        int finalXp = (int) Math.round(event.getExperience() * mult);
+        if (finalXp != event.getExperience()) event.setExperience(finalXp);
+
+        // 2) Exp Share: cada outro Pokémon vivo da party recebe (finalXp * fração)
+        double shareFrac = sumOf(lures, l -> l.lureExpAllMultiplier);
+        if (shareFrac <= 0) return;
+        int shareXp = (int) Math.round(finalXp * Math.min(shareFrac, 1.0));
+        if (shareXp <= 0) return;
+
+        PlayerPartyStore party = Cobblemon.INSTANCE.getStorage().getParty(owner);
+        if (party == null) return;
+
+        java.util.UUID gainerId = pokemon.getUuid();
+        SHARING_XP.set(true);
+        try {
+            for (Pokemon p : party) {
+                if (p == null || p.getUuid().equals(gainerId) || p.isFainted()) continue;
+                p.addExperienceWithPlayer(owner, event.getSource(), shareXp);
+            }
+        } finally {
+            SHARING_XP.set(false);
         }
     }
 
@@ -228,21 +293,18 @@ public class LureManager {
         }
     }
 
-    /** Sorteia IVs perfeitas (31) em stats aleatórios: {@code guaranteed} garantidas + 1 extra
-     *  com chance {@code bonusChance} (0.0-1.0), sem repetir stat nem passar de 6 (todas). */
-    private static void grantPerfectIvs(Pokemon pokemon, int guaranteed, double bonusChance) {
-        if (guaranteed <= 0 && bonusChance <= 0) return;
+    /** Perfeição de IVs: {@code guaranteed} stats aleatórios sempre viram 31, e CADA um dos stats
+     *  restantes tem chance {@code perIvChance} (0.0-1.0) de também virar 31 (rolagem por IV). */
+    private static void grantPerfectIvs(Pokemon pokemon, int guaranteed, double perIvChance) {
+        if (guaranteed <= 0 && perIvChance <= 0) return;
 
         List<Stat> stats = new ArrayList<>(Stats.Companion.getPERMANENT());
         Collections.shuffle(stats, RANDOM);
 
-        int toPerfect = Math.min(Math.max(guaranteed, 0), stats.size());
-        if (bonusChance > 0 && toPerfect < stats.size() && RANDOM.nextDouble() < bonusChance) {
-            toPerfect++;
-        }
-
-        for (int i = 0; i < toPerfect; i++) {
-            pokemon.getIvs().set(stats.get(i), IVs.MAX_VALUE);
+        int g = Math.min(Math.max(guaranteed, 0), stats.size());
+        for (int i = 0; i < stats.size(); i++) {
+            boolean perfect = i < g || (perIvChance > 0 && RANDOM.nextDouble() < perIvChance);
+            if (perfect) pokemon.getIvs().set(stats.get(i), IVs.MAX_VALUE);
         }
     }
 

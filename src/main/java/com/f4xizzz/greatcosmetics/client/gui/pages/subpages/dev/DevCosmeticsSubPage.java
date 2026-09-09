@@ -847,14 +847,12 @@ public class DevCosmeticsSubPage extends DevSubPage {
         activePopup.addInt(L("devstudio.lure.field.iv"), editingData.lure.lureIV, v -> editingData.lure.lureIV = v);
         activePopup.addDouble(L("devstudio.lure.field.iv_chance"), editingData.lure.lureChanceIV, v -> editingData.lure.lureChanceIV = v);
         activePopup.addDouble(L("devstudio.lure.field.fishing_shiny"), editingData.lure.lurePescaShiny, v -> editingData.lure.lurePescaShiny = v);
-        activePopup.addDouble(L("devstudio.lure.field.fishing_ultrarare"), editingData.lure.lurePescaUltraRare, v -> editingData.lure.lurePescaUltraRare = v);
         activePopup.addDouble(L("devstudio.lure.field.fishing_iv_chance"), editingData.lure.lurePescaIvChance, v -> editingData.lure.lurePescaIvChance = v);
         activePopup.addInt(L("devstudio.lure.field.fishing_iv"), editingData.lure.lurePescaIv, v -> editingData.lure.lurePescaIv = v);
         activePopup.addDouble(L("devstudio.lure.field.fishing_speed"), editingData.lure.lurePescaVelocidade, v -> editingData.lure.lurePescaVelocidade = v);
         activePopup.addDouble(L("devstudio.lure.field.exp_mult"), editingData.lure.lureEXP, v -> editingData.lure.lureEXP = v);
         activePopup.addDouble(L("devstudio.lure.field.ev_mult"), editingData.lure.lureEV, v -> editingData.lure.lureEV = v);
         activePopup.addDouble(L("devstudio.lure.field.capture_chance"), editingData.lure.lureChanceDeCaptura, v -> editingData.lure.lureChanceDeCaptura = v);
-        activePopup.addDouble(L("devstudio.lure.field.fishing_lure"), editingData.lure.lureDePesca, v -> editingData.lure.lureDePesca = v);
 
         this.hasUnsavedChanges = wasUnsaved;
     }

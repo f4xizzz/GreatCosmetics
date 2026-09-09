@@ -304,17 +304,17 @@ public class LangConfig {
         items.put("items.lure.divider", "<dark_gray><st>                                        </st>");
         items.put("items.lure.type", "<gray> ▪ Affected Type: <white>{type}");
         items.put("items.lure.shiny", "<yellow>✨ Shiny Rate: <green>+{value}x");
-        items.put("items.lure.expall", "<aqua>📉 Exp.All: <green>+{value}x");
+        items.put("items.lure.expall", "<aqua>📉 Exp Share to Party: <green>{value}x");
         items.put("items.lure.friendship", "<light_purple>❤ Friendship: <green>+{value}x");
         items.put("items.lure.ev", "<green>🐍 Battle EV: <green>+{value}x");
         items.put("items.lure.capture", "<red>🎯 Capture Chance: <green>+{value}x");
         items.put("items.lure.iv", "<gold>⭐ Guaranteed Perfect IVs: <green>+{value}");
-        items.put("items.lure.iv_chance", "<blue>🎲 IV Chance: <green>+{value}%");
+        items.put("items.lure.iv_chance", "<blue>🎲 Per-IV Perfect Chance: <green>+{value}%");
         items.put("items.lure.ultrarare", "<light_purple>🔮 Ultra Rare Chance: <green>+{value}x");
         items.put("items.lure.hidden_ability", "<dark_aqua>👁 Hidden Ability: <green>+{value}x");
         items.put("items.lure.fishing_header", "<aqua>🎣 <b>Fishing Bonus</b>");
         items.put("items.lure.fishing_shiny", "<gray>  ▪ <yellow>Shiny: <green>+{value}x");
-        items.put("items.lure.fishing_iv_chance", "<gray>  ▪ <green>IV Chance: <green>+{value}%");
+        items.put("items.lure.fishing_iv_chance", "<gray>  ▪ <green>Per-IV Perfect Chance: <green>+{value}%");
         items.put("items.lure.fishing_speed", "<gray>  ▪ <aqua>Speed: <green>+{value}%");
         // ---------------- HUD de Lure (LureHudOverlay — coluna à direita da hotbar) ----------------
         items.put("hud.lure.header", "<light_purple>✦ Lure Bonus");
@@ -323,19 +323,17 @@ public class LangConfig {
         items.put("hud.lure.ultrarare", "<dark_purple>🔮 Ultra Rare <green>+{value}x");
         items.put("hud.lure.hidden_ability", "<dark_aqua>👁 Hidden Ability <green>+{value}x");
         items.put("hud.lure.iv", "<gold>⭐ Perfect IVs <green>+{value}");
-        items.put("hud.lure.iv_chance", "<blue>🎲 IV Chance <green>+{value}%");
-        items.put("hud.lure.expall", "<aqua>⚡ Exp (Team) <green>+{value}x");
+        items.put("hud.lure.iv_chance", "<blue>🎲 Per-IV Perfect <green>+{value}%");
+        items.put("hud.lure.expall", "<aqua>⚡ Exp Share <green>{value}x");
         items.put("hud.lure.exp", "<aqua>📘 Exp (Main) <green>+{value}x");
         items.put("hud.lure.ev", "<green>🐍 Battle EV <green>+{value}x");
         items.put("hud.lure.friendship", "<light_purple>❤ Friendship <green>+{value}x");
         items.put("hud.lure.capture", "<red>🎯 Capture <green>+{value}x");
         items.put("hud.lure.fishing_header", "<aqua>🎣 Fishing");
         items.put("hud.lure.fishing_shiny", "<gray> <yellow>✨ Shiny <green>+{value}x");
-        items.put("hud.lure.fishing_ultrarare", "<gray> <dark_purple>🔮 Ultra Rare <green>+{value}x");
         items.put("hud.lure.fishing_iv", "<gray> <gold>⭐ Perfect IVs <green>+{value}");
-        items.put("hud.lure.fishing_iv_chance", "<gray> <blue>🎲 IV Chance <green>+{value}%");
+        items.put("hud.lure.fishing_iv_chance", "<gray> <blue>🎲 Per-IV Perfect <green>+{value}%");
         items.put("hud.lure.fishing_speed", "<gray> <aqua>💨 Speed <green>+{value}%");
-        items.put("hud.lure.fishing_power", "<gray> <aqua>🐟 Fishing Power <green>+{value}x");
 
         items.put("items.scanner.divider", "&8&m                                     ");
         items.put("items.scanner.line", "&e[Scanner] &fCurrent ID: &c{cmd}");
@@ -404,19 +402,17 @@ public class LangConfig {
         a.put("accessories.tooltip.lure_ultrarare", " <dark_purple>🔮 <white>Ultra Rare: <green>+{value}x");
         a.put("accessories.tooltip.lure_hidden_ability", " <dark_aqua>👁 <white>Hidden Ability: <green>+{value}x");
         a.put("accessories.tooltip.lure_iv", " <gold>⭐ <white>Guaranteed Perfect IVs: <green>+{value}");
-        a.put("accessories.tooltip.lure_iv_chance", " <blue>🎲 <white>IV Chance: <green>+{value}");
-        a.put("accessories.tooltip.lure_expall", " <aqua>⚡ <white>Exp (Whole Team): <green>+{value}x");
+        a.put("accessories.tooltip.lure_iv_chance", " <blue>🎲 <white>Per-IV Perfect Chance: <green>+{value}%");
+        a.put("accessories.tooltip.lure_expall", " <aqua>⚡ <white>Exp Share to Party: <green>{value}x");
         a.put("accessories.tooltip.lure_exp", " <aqua>📘 <white>Exp (Main): <green>+{value}x");
         a.put("accessories.tooltip.lure_ev", " <green>🐍 <white>Battle EV: <green>+{value}x");
         a.put("accessories.tooltip.lure_friendship", " <light_purple>❤ <white>Friendship: <green>+{value}x");
         a.put("accessories.tooltip.lure_capture", " <red>🎯 <white>Capture Chance: <green>+{value}x");
         a.put("accessories.tooltip.lure_fishing_header", " <aqua><bold>🎣 Fishing Bonus:");
         a.put("accessories.tooltip.lure_fishing_shiny", "   <yellow>✨ <white>Shiny: <green>+{value}x");
-        a.put("accessories.tooltip.lure_fishing_ultrarare", "   <dark_purple>🔮 <white>Ultra Rare: <green>+{value}x");
         a.put("accessories.tooltip.lure_fishing_iv", "   <gold>⭐ <white>Guaranteed IVs: <green>+{value}");
-        a.put("accessories.tooltip.lure_fishing_iv_chance", "   <blue>🎲 <white>IV Chance: <green>+{value}");
+        a.put("accessories.tooltip.lure_fishing_iv_chance", "   <blue>🎲 <white>Per-IV Perfect Chance: <green>+{value}%");
         a.put("accessories.tooltip.lure_fishing_speed", "   <dark_aqua>💨 <white>Speed: <green>+{value}");
-        a.put("accessories.tooltip.lure_fishing_power", "   <aqua>🐟 <white>Fishing Power: <green>+{value}x");
         files.put("accessories", a);
 
         // ---------------- party.json ----------------
@@ -583,19 +579,17 @@ public class LangConfig {
         d.put("devstudio.lure.field.shiny_mult", "Shiny Multiplier");
         d.put("devstudio.lure.field.ultrarare_mult", "Ultra Rare Multiplier");
         d.put("devstudio.lure.field.hidden_ability_mult", "Hidden Ability Multiplier");
-        d.put("devstudio.lure.field.expall_mult", "Exp All Multiplier");
+        d.put("devstudio.lure.field.expall_mult", "Exp Share to Party (0=off, 1=full)");
         d.put("devstudio.lure.field.friendship_mult", "Friendship Multiplier");
-        d.put("devstudio.lure.field.iv", "Lure IV");
-        d.put("devstudio.lure.field.iv_chance", "IV Chance");
+        d.put("devstudio.lure.field.iv", "Lure IV (guaranteed 31s)");
+        d.put("devstudio.lure.field.iv_chance", "Per-IV Perfect Chance (0.0-1.0)");
         d.put("devstudio.lure.field.fishing_shiny", "Fishing Shiny");
-        d.put("devstudio.lure.field.fishing_ultrarare", "Fishing Ultra Rare");
-        d.put("devstudio.lure.field.fishing_iv_chance", "Fishing IV Chance");
+        d.put("devstudio.lure.field.fishing_iv_chance", "Fishing Per-IV Perfect Chance");
         d.put("devstudio.lure.field.fishing_iv", "Fishing IV");
         d.put("devstudio.lure.field.fishing_speed", "Fishing Speed");
         d.put("devstudio.lure.field.exp_mult", "EXP Multiplier");
         d.put("devstudio.lure.field.ev_mult", "EV Multiplier");
         d.put("devstudio.lure.field.capture_chance", "Capture Chance");
-        d.put("devstudio.lure.field.fishing_lure", "Fishing Lure");
         // --- Effects popup ---
         d.put("devstudio.effects.title", "Potion Effects");
         d.put("devstudio.effects.divider", "CLICK TO CYCLE THE LEVEL (OFF -> V)");

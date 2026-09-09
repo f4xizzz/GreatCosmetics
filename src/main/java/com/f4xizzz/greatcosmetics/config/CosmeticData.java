@@ -57,14 +57,12 @@ public class CosmeticData {
         public double lureExpAllMultiplier = 0.0;
         public double lureAmizadeMultiplier = 0.0;
         public double lurePescaShiny = 0.0;
-        public double lurePescaUltraRare = 0.0;
         public double lurePescaIvChance = 0.0;
         public int lurePescaIv = 0;
         public double lurePescaVelocidade = 0.0;
         public double lureEXP = 0.0;
         public double lureEV = 0.0;
         public double lureChanceDeCaptura = 0.0;
-        public double lureDePesca = 0.0;
     }
 
     // ==========================================

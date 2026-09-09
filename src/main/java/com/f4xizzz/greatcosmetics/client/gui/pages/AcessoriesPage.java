@@ -468,23 +468,19 @@ public class AcessoriesPage extends WardrobePage {
                     if (data.lure.lureChanceDeCaptura > 0)
                         activeTooltip.add(LangConfig.text("accessories.tooltip.lure_capture", "value", formatLureNumber(data.lure.lureChanceDeCaptura)));
 
-                    boolean hasFishingBonus = data.lure.lurePescaShiny > 0 || data.lure.lurePescaUltraRare > 0
+                    boolean hasFishingBonus = data.lure.lurePescaShiny > 0
                             || data.lure.lurePescaIvChance > 0 || data.lure.lurePescaIv > 0
-                            || data.lure.lurePescaVelocidade > 0 || data.lure.lureDePesca > 0;
+                            || data.lure.lurePescaVelocidade > 0;
                     if (hasFishingBonus) {
                         activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_header"));
                         if (data.lure.lurePescaShiny > 0)
                             activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_shiny", "value", formatLureNumber(data.lure.lurePescaShiny)));
-                        if (data.lure.lurePescaUltraRare > 0)
-                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_ultrarare", "value", formatLureNumber(data.lure.lurePescaUltraRare)));
                         if (data.lure.lurePescaIv > 0)
                             activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_iv", "value", data.lure.lurePescaIv));
                         if (data.lure.lurePescaIvChance > 0)
                             activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_iv_chance", "value", formatLurePercent(data.lure.lurePescaIvChance)));
                         if (data.lure.lurePescaVelocidade > 0)
                             activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_speed", "value", formatLurePercent(data.lure.lurePescaVelocidade)));
-                        if (data.lure.lureDePesca > 0)
-                            activeTooltip.add(LangConfig.text("accessories.tooltip.lure_fishing_power", "value", formatLureNumber(data.lure.lureDePesca)));
                     }
                 }
             }

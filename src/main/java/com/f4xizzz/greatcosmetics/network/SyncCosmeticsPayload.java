@@ -104,14 +104,12 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
                 data.lure.lureIV = buf.readInt();
                 data.lure.lureChanceIV = buf.readDouble();
                 data.lure.lurePescaShiny = buf.readDouble();
-                data.lure.lurePescaUltraRare = buf.readDouble();
                 data.lure.lurePescaIvChance = buf.readDouble();
                 data.lure.lurePescaIv = buf.readInt();
                 data.lure.lurePescaVelocidade = buf.readDouble();
                 data.lure.lureEXP = buf.readDouble();
                 data.lure.lureEV = buf.readDouble();
                 data.lure.lureChanceDeCaptura = buf.readDouble();
-                data.lure.lureDePesca = buf.readDouble();
             }
 
             // Desempacotando Partes 3D
@@ -213,14 +211,12 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
                 buf.writeInt(data.lure.lureIV);
                 buf.writeDouble(data.lure.lureChanceIV);
                 buf.writeDouble(data.lure.lurePescaShiny);
-                buf.writeDouble(data.lure.lurePescaUltraRare);
                 buf.writeDouble(data.lure.lurePescaIvChance);
                 buf.writeInt(data.lure.lurePescaIv);
                 buf.writeDouble(data.lure.lurePescaVelocidade);
                 buf.writeDouble(data.lure.lureEXP);
                 buf.writeDouble(data.lure.lureEV);
                 buf.writeDouble(data.lure.lureChanceDeCaptura);
-                buf.writeDouble(data.lure.lureDePesca);
             } else {
                 buf.writeBoolean(false);
             }
