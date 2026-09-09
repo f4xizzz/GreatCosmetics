@@ -842,7 +842,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
         activePopup.addDouble(L("devstudio.lure.field.shiny_mult"), editingData.lure.lureShinyMultiplier, v -> editingData.lure.lureShinyMultiplier = v);
         activePopup.addDouble(L("devstudio.lure.field.ultrarare_mult"), editingData.lure.lureUltraRAREMultiplier, v -> editingData.lure.lureUltraRAREMultiplier = v);
         activePopup.addDouble(L("devstudio.lure.field.hidden_ability_mult"), editingData.lure.lureHiddenAbilityMultiplier, v -> editingData.lure.lureHiddenAbilityMultiplier = v);
-        activePopup.addDouble(L("devstudio.lure.field.expall_mult"), editingData.lure.lureExpAllMultiplier, v -> editingData.lure.lureExpAllMultiplier = v);
+        activePopup.addToggle(L("devstudio.lure.field.expall_mult"), editingData.lure.lureExpAllMultiplier > 0, v -> editingData.lure.lureExpAllMultiplier = v ? 1.0 : 0.0);
         activePopup.addDouble(L("devstudio.lure.field.friendship_mult"), editingData.lure.lureAmizadeMultiplier, v -> editingData.lure.lureAmizadeMultiplier = v);
         activePopup.addInt(L("devstudio.lure.field.iv"), editingData.lure.lureIV, v -> editingData.lure.lureIV = v);
         activePopup.addDouble(L("devstudio.lure.field.iv_chance"), editingData.lure.lureChanceIV, v -> editingData.lure.lureChanceIV = v);

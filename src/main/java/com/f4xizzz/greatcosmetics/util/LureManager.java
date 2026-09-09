@@ -18,10 +18,15 @@ import com.cobblemon.mod.common.api.pokemon.experience.CandyExperienceSource;
 import com.cobblemon.mod.common.api.pokemon.stats.Stat;
 import com.cobblemon.mod.common.api.pokemon.stats.Stats;
 import com.cobblemon.mod.common.api.spawning.SpawnCause;
+import com.cobblemon.mod.common.api.spawning.detail.SpawnDetail;
+import com.cobblemon.mod.common.api.spawning.influence.SpawningInfluence;
+import com.cobblemon.mod.common.api.spawning.position.SpawnablePosition;
+import com.cobblemon.mod.common.api.spawning.spawner.PlayerSpawnerFactory;
 import com.cobblemon.mod.common.api.storage.party.PlayerPartyStore;
 import com.cobblemon.mod.common.api.types.ElementalType;
 import com.cobblemon.mod.common.pokemon.IVs;
 import com.cobblemon.mod.common.pokemon.Pokemon;
+import kotlin.jvm.functions.Function1;
 import com.f4xizzz.greatcosmetics.GreatCosmetics;
 import com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig;
 import com.f4xizzz.greatcosmetics.config.CosmeticData;
@@ -52,8 +57,11 @@ import java.util.function.ToDoubleFunction;
  *   - SPAWN_BUCKET_CHOSEN: bônus de ultra raro (qual BUCKET de raridade é escolhido) em spawn de
  *     terra. Dá pra amarrar a um player porque SpawnCause.getEntity(), pra spawn natural via
  *     PlayerSpawner, É o player dono daquele spawner.
- *   - POKEMON_ENTITY_SPAWN: filtro de TIPO (lureTYPE). Cancela o spawn de qualquer Pokémon
- *     SELVAGEM em volta do player cujo tipo não bata com o(s) tipo(s) do(s) lure(s) ativo(s).
+ *   - lureTYPE ("Tipo Afetado"): influência de spawn POR JOGADOR no PlayerSpawner do Cobblemon
+ *     (registerTypeLureSpawnInfluence) — com lure de tipo ativo, só espécies desse tipo entram
+ *     na seleção do Cobblemon, que spawna normalmente entre elas; bioma sem nenhuma espécie do
+ *     tipo → nada spawna. POKEMON_ENTITY_SPAWN fica como rede de segurança: cancela um Pokémon
+ *     SELVAGEM de tipo errado que tenha escapado da influência (spawn de outra fonte).
  *   - POKEMON_CAPTURED: shiny (reroll se ainda não é), IV garantido + chance POR IV, hidden
  *     ability — tudo no momento da captura.
  *   - BOBBER_SPAWN_POKEMON_POST: mesma coisa (shiny/IV), só que os campos *Pesca*, quando o
@@ -85,6 +93,69 @@ public class LureManager {
         CobblemonEvents.POKE_BALL_CAPTURE_CALCULATED.subscribe(LureManager::onCaptureCalculated);
         CobblemonEvents.EXPERIENCE_GAINED_EVENT_PRE.subscribe(LureManager::onExperienceGained);
         CobblemonEvents.FRIENDSHIP_UPDATED.subscribe(LureManager::onFriendshipUpdated);
+        registerTypeLureSpawnInfluence();
+    }
+
+    /** Injeta uma influência de spawn POR JOGADOR no PlayerSpawner do Cobblemon: com um lure de
+     *  tipo ativo, só os SpawnDetail cujas labels de tipo (auto-geradas pelo Cobblemon a partir
+     *  dos tipos da espécie — ex "fire") batem com o(s) tipo(s) do lure ficam elegíveis. O
+     *  Cobblemon então escolhe/spawna normalmente entre esses; se NENHUM detail de tipo estiver
+     *  disponível naquele bioma/posição, nada spawna (comportamento pedido pelo dev). A influência
+     *  lê os lures ao vivo (cache de 2s), então equipar/desequipar não precisa de relog. */
+    private static void registerTypeLureSpawnInfluence() {
+        try {
+            PlayerSpawnerFactory factory = PlayerSpawnerFactory.INSTANCE;
+            List<Function1<net.minecraft.server.network.ServerPlayerEntity, SpawningInfluence>> builders =
+                    new ArrayList<>(factory.getInfluenceBuilders());
+            builders.add(new Function1<>() {
+                @Override
+                public SpawningInfluence invoke(net.minecraft.server.network.ServerPlayerEntity p) {
+                    return new TypeLureInfluence(p);
+                }
+            });
+            factory.setInfluenceBuilders(builders);
+        } catch (Throwable t) {
+            GreatCosmetics.debugLog("LureManager: falhou ao registrar a influência de spawn de tipo — " + t);
+        }
+    }
+
+    /** Filtro de spawn do lure de tipo, um por jogador. Vetar via {@code affectSpawnable} tira o
+     *  SpawnDetail da seleção do Cobblemon por completo. */
+    private static final class TypeLureInfluence implements SpawningInfluence {
+        private final net.minecraft.server.network.ServerPlayerEntity player;
+        private long cachedAtMs = 0L;
+        private Set<String> cachedTypes = Collections.emptySet();
+
+        TypeLureInfluence(net.minecraft.server.network.ServerPlayerEntity player) {
+            this.player = player;
+        }
+
+        private Set<String> wantedTypes() {
+            long now = System.currentTimeMillis();
+            if (now - cachedAtMs < 2000L) return cachedTypes;
+            cachedAtMs = now;
+            Set<String> w = new HashSet<>();
+            for (CosmeticData.LureStats l : collectActiveLureStats(player)) {
+                if (l.lureTYPE != null && !l.lureTYPE.isBlank()) w.add(l.lureTYPE.trim().toLowerCase(java.util.Locale.ROOT));
+            }
+            cachedTypes = w;
+            return w;
+        }
+
+        @Override
+        public boolean affectSpawnable(SpawnDetail detail, SpawnablePosition position) {
+            Set<String> wanted = wantedTypes();
+            if (wanted.isEmpty()) return true; // sem lure de tipo → não filtra nada
+            for (String label : detail.getLabels()) {
+                if (label != null && wanted.contains(label.toLowerCase(java.util.Locale.ROOT))) return true;
+            }
+            return false; // não é do tipo do lure → veta o detail
+        }
+
+        @Override
+        public boolean isExpired() {
+            return player.isRemoved();
+        }
     }
 
     // === Spawn: bônus de ultra raro (por pedido explícito, shiny/IV NÃO mexem aqui — só na

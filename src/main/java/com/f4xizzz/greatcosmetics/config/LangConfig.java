@@ -579,7 +579,7 @@ public class LangConfig {
         d.put("devstudio.lure.field.shiny_mult", "Shiny Multiplier");
         d.put("devstudio.lure.field.ultrarare_mult", "Ultra Rare Multiplier");
         d.put("devstudio.lure.field.hidden_ability_mult", "Hidden Ability Multiplier");
-        d.put("devstudio.lure.field.expall_mult", "Exp Share to Party (0=off, 1=full)");
+        d.put("devstudio.lure.field.expall_mult", "Exp Share to Party (on/off)");
         d.put("devstudio.lure.field.friendship_mult", "Friendship Multiplier");
         d.put("devstudio.lure.field.iv", "Lure IV (guaranteed 31s)");
         d.put("devstudio.lure.field.iv_chance", "Per-IV Perfect Chance (0.0-1.0)");
