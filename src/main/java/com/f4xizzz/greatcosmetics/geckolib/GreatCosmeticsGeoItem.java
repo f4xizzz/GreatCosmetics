@@ -24,7 +24,7 @@ import java.util.function.Consumer;
  */
 public class GreatCosmeticsGeoItem extends Item implements GeoItem {
 
-    public static final Identifier ID = Identifier.of("sascosmetics", "geo_display");
+    public static final Identifier ID = Identifier.of("greatcosmetics", "geo_display");
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 

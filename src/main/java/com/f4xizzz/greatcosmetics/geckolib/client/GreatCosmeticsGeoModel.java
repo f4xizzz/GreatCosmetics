@@ -25,9 +25,9 @@ import software.bernie.geckolib.renderer.GeoItemRenderer;
  */
 public class GreatCosmeticsGeoModel extends GeoModel<GreatCosmeticsGeoItem> {
 
-    private static final Identifier FALLBACK_MODEL = Identifier.of("sascosmetics", "geo/item/fallback.geo.json");
-    private static final Identifier FALLBACK_TEXTURE = Identifier.of("sascosmetics", "textures/item/fallback.png");
-    private static final Identifier FALLBACK_ANIMATION = Identifier.of("sascosmetics", "animations/item/fallback.animation.json");
+    private static final Identifier FALLBACK_MODEL = Identifier.of("greatcosmetics", "geo/item/fallback.geo.json");
+    private static final Identifier FALLBACK_TEXTURE = Identifier.of("greatcosmetics", "textures/item/fallback.png");
+    private static final Identifier FALLBACK_ANIMATION = Identifier.of("greatcosmetics", "animations/item/fallback.animation.json");
 
     @Override
     public Identifier getModelResource(GreatCosmeticsGeoItem animatable, GeoRenderer<GreatCosmeticsGeoItem> renderer) {

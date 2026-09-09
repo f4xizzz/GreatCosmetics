@@ -17,7 +17,7 @@ public class EffectConfig {
     public static void loadEffects() {
         File file = CONFIG_FILE.toFile();
 
-        // Cria a pasta sascosmetics se ela não existir
+        // Cria a pasta de config se ela não existir
         if (!file.getParentFile().exists()) {
             file.getParentFile().mkdirs();
         }

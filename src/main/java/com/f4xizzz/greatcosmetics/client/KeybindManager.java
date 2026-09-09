@@ -35,26 +35,26 @@ public class KeybindManager {
     public static void registerKeybinds() {
         // 1. Tecla U -> Alternar /ui on e /ui off
         uiKeybind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.sascosmetics.ui",
+                "key.greatcosmetics.ui",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_U,
-                "category.sascosmetics.keys"
+                "category.greatcosmetics.keys"
         ));
 
         // 2. Tecla Y -> /warps
         warpsKeybind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.sascosmetics.warps",
+                "key.greatcosmetics.warps",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_Y,
-                "category.sascosmetics.keys"
+                "category.greatcosmetics.keys"
         ));
 
         // 3. Tecla P -> /pc
         pcKeybind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.sascosmetics.pc",
+                "key.greatcosmetics.pc",
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_P,
-                "category.sascosmetics.keys"
+                "category.greatcosmetics.keys"
         ));
 
         // 4. Tecla B -> Abrir Mochila

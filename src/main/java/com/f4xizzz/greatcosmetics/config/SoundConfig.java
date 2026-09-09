@@ -83,7 +83,7 @@ public class SoundConfig {
     }
 
     public static void saveSounds() {
-        // Cria a pasta sascosmetics se ela não existir
+        // Cria a pasta de config se ela não existir
         if (!FILE.getParentFile().exists()) {
             FILE.getParentFile().mkdirs();
         }

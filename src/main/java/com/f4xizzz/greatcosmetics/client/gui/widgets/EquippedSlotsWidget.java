@@ -28,15 +28,15 @@ public class EquippedSlotsWidget {
     // da gaveta no lugar do nome abreviado (ex: "HEA", "CHE"). Slot custom (nome que não bate com
     // nenhum dos 9) continua caindo no fallback de texto abaixo.
     private static final Map<String, Identifier> SLOT_ICONS = Map.of(
-            "HEAD", Identifier.of("sascosmetics", "textures/gui/slots/head.png"),
-            "FACE", Identifier.of("sascosmetics", "textures/gui/slots/face.png"),
-            "NECK", Identifier.of("sascosmetics", "textures/gui/slots/neck.png"),
-            "CHEST", Identifier.of("sascosmetics", "textures/gui/slots/chest.png"),
-            "BACK", Identifier.of("sascosmetics", "textures/gui/slots/back.png"),
-            "WAIST", Identifier.of("sascosmetics", "textures/gui/slots/waist.png"),
-            "LEGS", Identifier.of("sascosmetics", "textures/gui/slots/legs.png"),
-            "FEET", Identifier.of("sascosmetics", "textures/gui/slots/feet.png"),
-            "HAND", Identifier.of("sascosmetics", "textures/gui/slots/hand.png")
+            "HEAD", Identifier.of("greatcosmetics", "textures/gui/slots/head.png"),
+            "FACE", Identifier.of("greatcosmetics", "textures/gui/slots/face.png"),
+            "NECK", Identifier.of("greatcosmetics", "textures/gui/slots/neck.png"),
+            "CHEST", Identifier.of("greatcosmetics", "textures/gui/slots/chest.png"),
+            "BACK", Identifier.of("greatcosmetics", "textures/gui/slots/back.png"),
+            "WAIST", Identifier.of("greatcosmetics", "textures/gui/slots/waist.png"),
+            "LEGS", Identifier.of("greatcosmetics", "textures/gui/slots/legs.png"),
+            "FEET", Identifier.of("greatcosmetics", "textures/gui/slots/feet.png"),
+            "HAND", Identifier.of("greatcosmetics", "textures/gui/slots/hand.png")
     );
 
     private final Wardrobe3DScreen parent;
