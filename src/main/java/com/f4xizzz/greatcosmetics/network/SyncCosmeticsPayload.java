@@ -61,6 +61,8 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             data.backpackRows = buf.readInt();
             data.backpackDisplayName = buf.readString();
             data.EnableFly = buf.readBoolean();
+            data.AutoFeed = buf.readBoolean();
+            data.ivScanner = buf.readBoolean();
             data.flySpeedMultiplier = buf.readDouble();
             data.groundSpeedMultiplier = buf.readDouble();
             data.swimSpeedMultiplier = buf.readDouble();
@@ -114,29 +116,19 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
 
             // Desempacotando Partes 3D
             int partsSize = buf.readVarInt();
-            for (int j = 0; j < partsSize; j++) {
-                CosmeticData.CosmeticPart part = new CosmeticData.CosmeticPart(CosmeticData.Anchor.valueOf(buf.readString()));
-                part.customModelData_or_ID = buf.readString();
-                part.geoModelId = buf.readString();
-                part.useExactPath = buf.readBoolean();
-                part.resolvedCmd = buf.readInt();
+            for (int j = 0; j < partsSize; j++) data.parts.add(readPart(buf));
 
-                part.offsetX = buf.readFloat();
-                part.offsetY = buf.readFloat();
-                part.offsetZ = buf.readFloat();
-                part.rotationX = buf.readFloat();
-                part.rotationY = buf.readFloat();
-                part.rotationZ = buf.readFloat();
-                part.shiftOffsetX = buf.readFloat();
-                part.shiftOffsetY = buf.readFloat();
-                part.shiftOffsetZ = buf.readFloat();
-                part.shiftRotationX = buf.readFloat();
-                part.shiftRotationY = buf.readFloat();
-                part.shiftRotationZ = buf.readFloat();
-                part.scaleX = buf.readFloat();
-                part.scaleY = buf.readFloat();
-                part.scaleZ = buf.readFloat();
-                data.parts.add(part);
+            // Desempacotando Variantes (bloco posicional novo — logo depois das parts base)
+            int variantsSize = buf.readVarInt();
+            for (int v = 0; v < variantsSize; v++) {
+                CosmeticData.CosmeticVariant variant = new CosmeticData.CosmeticVariant();
+                variant.variantId = buf.readString();
+                variant.displayName = buf.readString();
+                String vs = buf.readString();
+                variant.slot = vs.isEmpty() ? null : CosmeticData.VirtualSlot.valueOf(vs);
+                int vp = buf.readVarInt();
+                for (int j = 0; j < vp; j++) variant.parts.add(readPart(buf));
+                data.variants.add(variant);
             }
             map.put(id, data);
         }
@@ -169,6 +161,8 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             buf.writeInt(data.backpackRows);
             buf.writeString(data.backpackDisplayName != null ? data.backpackDisplayName : "");
             buf.writeBoolean(data.EnableFly);
+            buf.writeBoolean(data.AutoFeed);
+            buf.writeBoolean(data.ivScanner);
             buf.writeDouble(data.flySpeedMultiplier);
             buf.writeDouble(data.groundSpeedMultiplier);
             buf.writeDouble(data.swimSpeedMultiplier);
@@ -223,31 +217,48 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
 
             // Empacotando as Partes 3D
             buf.writeVarInt(data.parts.size());
-            for (CosmeticData.CosmeticPart part : data.parts) {
-                buf.writeString(part.anchor != null ? part.anchor.name() : "HEAD");
-                buf.writeString(part.customModelData_or_ID != null ? part.customModelData_or_ID : "");
-                buf.writeString(part.geoModelId != null ? part.geoModelId : "");
-                buf.writeBoolean(part.useExactPath);
-                buf.writeInt(part.resolvedCmd);
+            for (CosmeticData.CosmeticPart part : data.parts) writePart(buf, part);
 
-                buf.writeFloat(part.offsetX);
-                buf.writeFloat(part.offsetY);
-                buf.writeFloat(part.offsetZ);
-                buf.writeFloat(part.rotationX);
-                buf.writeFloat(part.rotationY);
-                buf.writeFloat(part.rotationZ);
-                buf.writeFloat(part.shiftOffsetX);
-                buf.writeFloat(part.shiftOffsetY);
-                buf.writeFloat(part.shiftOffsetZ);
-                buf.writeFloat(part.shiftRotationX);
-                buf.writeFloat(part.shiftRotationY);
-                buf.writeFloat(part.shiftRotationZ);
-                buf.writeFloat(part.scaleX);
-                buf.writeFloat(part.scaleY);
-                buf.writeFloat(part.scaleZ);
+            // Empacotando Variantes (bloco posicional novo — logo depois das parts base)
+            List<CosmeticData.CosmeticVariant> variants = data.variants != null ? data.variants : java.util.List.of();
+            buf.writeVarInt(variants.size());
+            for (CosmeticData.CosmeticVariant variant : variants) {
+                buf.writeString(variant.variantId != null ? variant.variantId : "");
+                buf.writeString(variant.displayName != null ? variant.displayName : "");
+                buf.writeString(variant.slot != null ? variant.slot.name() : "");
+                List<CosmeticData.CosmeticPart> vp = variant.parts != null ? variant.parts : java.util.List.of();
+                buf.writeVarInt(vp.size());
+                for (CosmeticData.CosmeticPart part : vp) writePart(buf, part);
             }
         }
         buf.writeBoolean(allowResourceReload);
+    }
+
+    private static void writePart(PacketByteBuf buf, CosmeticData.CosmeticPart part) {
+        buf.writeString(part.anchor != null ? part.anchor.name() : "HEAD");
+        buf.writeString(part.customModelData_or_ID != null ? part.customModelData_or_ID : "");
+        buf.writeString(part.geoModelId != null ? part.geoModelId : "");
+        buf.writeBoolean(part.useExactPath);
+        buf.writeInt(part.resolvedCmd);
+        buf.writeFloat(part.offsetX); buf.writeFloat(part.offsetY); buf.writeFloat(part.offsetZ);
+        buf.writeFloat(part.rotationX); buf.writeFloat(part.rotationY); buf.writeFloat(part.rotationZ);
+        buf.writeFloat(part.shiftOffsetX); buf.writeFloat(part.shiftOffsetY); buf.writeFloat(part.shiftOffsetZ);
+        buf.writeFloat(part.shiftRotationX); buf.writeFloat(part.shiftRotationY); buf.writeFloat(part.shiftRotationZ);
+        buf.writeFloat(part.scaleX); buf.writeFloat(part.scaleY); buf.writeFloat(part.scaleZ);
+    }
+
+    private static CosmeticData.CosmeticPart readPart(PacketByteBuf buf) {
+        CosmeticData.CosmeticPart part = new CosmeticData.CosmeticPart(CosmeticData.Anchor.valueOf(buf.readString()));
+        part.customModelData_or_ID = buf.readString();
+        part.geoModelId = buf.readString();
+        part.useExactPath = buf.readBoolean();
+        part.resolvedCmd = buf.readInt();
+        part.offsetX = buf.readFloat(); part.offsetY = buf.readFloat(); part.offsetZ = buf.readFloat();
+        part.rotationX = buf.readFloat(); part.rotationY = buf.readFloat(); part.rotationZ = buf.readFloat();
+        part.shiftOffsetX = buf.readFloat(); part.shiftOffsetY = buf.readFloat(); part.shiftOffsetZ = buf.readFloat();
+        part.shiftRotationX = buf.readFloat(); part.shiftRotationY = buf.readFloat(); part.shiftRotationZ = buf.readFloat();
+        part.scaleX = buf.readFloat(); part.scaleY = buf.readFloat(); part.scaleZ = buf.readFloat();
+        return part;
     }
 
     private static List<String> readStringList(PacketByteBuf buf) {

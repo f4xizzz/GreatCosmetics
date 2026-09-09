@@ -117,33 +117,37 @@ public class CosmeticsConfig {
             data.cmd = com.f4xizzz.greatcosmetics.util.AutoCMDManager.getOrCreateCmd(data.id);
             String iconKey = (data.iconId != null && !data.iconId.isBlank()) ? data.iconId : data.id;
             data.resolvedIconCmd = com.f4xizzz.greatcosmetics.util.AutoCMDManager.getOrCreateIconCmd(iconKey);
+        }
 
-            for (CosmeticData.CosmeticPart part : data.parts) {
+        resolvePartList(data.parts);
+        if (data.variants != null) {
+            for (CosmeticData.CosmeticVariant v : data.variants) {
+                if (v != null && v.parts != null) resolvePartList(v.parts);
+            }
+        }
+    }
+
+    /** Resolve o {@code resolvedCmd} transient de cada part. Keys do AutoCMDManager são SÓ pelo
+     *  model referenciado (nome / {@code exact:} / {@code geo:}) — nunca por variante — pra o
+     *  client conseguir mapear a key de volta pra um path do resourcepack. Duas parts (base ou de
+     *  variantes) que apontam pro mesmo model corretamente compartilham o mesmo CMD. */
+    private static void resolvePartList(java.util.List<CosmeticData.CosmeticPart> parts) {
+        if (parts == null) return;
+        boolean auto = MainConfig.config.autoDetectModels;
+        for (CosmeticData.CosmeticPart part : parts) {
+            if (auto) {
                 String partName = part.customModelData_or_ID;
                 if (partName == null || partName.isEmpty()) {
                     part.resolvedCmd = 0;
                 } else {
-                    // Prefixo "exact:" é só uma chave interna pro AutoCMDManager/GreatCosmeticsClient
-                    // saberem (na hora de montar os overrides) que esse valor é um CAMINHO EXATO
-                    // (ver CosmeticPart#useExactPath), não um nome pra procurar por toda parte.
                     String key = part.useExactPath ? "exact:" + partName : partName;
                     part.resolvedCmd = com.f4xizzz.greatcosmetics.util.AutoCMDManager.getOrCreateCmd(key);
                 }
+            } else {
+                try { part.resolvedCmd = Integer.parseInt(part.customModelData_or_ID); }
+                catch (NumberFormatException e) { part.resolvedCmd = 0; }
             }
-        } else {
-            for (CosmeticData.CosmeticPart part : data.parts) {
-                try {
-                    part.resolvedCmd = Integer.parseInt(part.customModelData_or_ID);
-                } catch (NumberFormatException e) {
-                    part.resolvedCmd = 0;
-                }
-            }
-        }
-
-        // Modelo 3D GeckoLib (geo/textura no resourcepack, mesma convenção de sempre — ver
-        // GreatCosmeticsClient) — sempre tem prioridade sobre o ícone chapado acima, seja qual for
-        // o modo de auto-detect.
-        for (CosmeticData.CosmeticPart part : data.parts) {
+            // GeckoLib sempre tem prioridade sobre o ícone chapado.
             if (part.geoModelId != null && !part.geoModelId.isBlank()) {
                 part.resolvedCmd = com.f4xizzz.greatcosmetics.util.AutoCMDManager.getOrCreateCmd("geo:" + part.geoModelId);
             }

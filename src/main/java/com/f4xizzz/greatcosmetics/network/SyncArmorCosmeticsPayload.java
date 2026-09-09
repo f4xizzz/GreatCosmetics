@@ -54,6 +54,7 @@ public record SyncArmorCosmeticsPayload(Map<String, CosmeticData> armorCosmetics
             data.backpackDisplayName = buf.readString();
             data.EnableFly = buf.readBoolean();
             data.AutoFeed = buf.readBoolean();
+            data.ivScanner = buf.readBoolean();
             data.flySpeedMultiplier = buf.readDouble();
             data.groundSpeedMultiplier = buf.readDouble();
             data.swimSpeedMultiplier = buf.readDouble();
@@ -160,6 +161,7 @@ public record SyncArmorCosmeticsPayload(Map<String, CosmeticData> armorCosmetics
             buf.writeString(data.backpackDisplayName != null ? data.backpackDisplayName : "");
             buf.writeBoolean(data.EnableFly);
             buf.writeBoolean(data.AutoFeed);
+            buf.writeBoolean(data.ivScanner);
             buf.writeDouble(data.flySpeedMultiplier);
             buf.writeDouble(data.groundSpeedMultiplier);
             buf.writeDouble(data.swimSpeedMultiplier);

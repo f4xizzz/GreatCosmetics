@@ -175,6 +175,7 @@ public class GreatCosmetics implements ModInitializer {
 		PayloadTypeRegistry.playC2S().register(SaveTagPayload.ID, SaveTagPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(DeleteTagPayload.ID, DeleteTagPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload.ID, com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload.ID, com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload.CODEC);
 
 		// --- SISTEMA DE EFEITOS (Dev Studio > Effects) ---
 		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncEffectsPayload.ID, com.f4xizzz.greatcosmetics.network.SyncEffectsPayload.CODEC);
@@ -704,27 +705,49 @@ public class GreatCosmetics implements ModInitializer {
 			context.server().execute(() -> {
 				var player = context.player();
 				if (licenseBlocked(player)) return;
-				String cosmeticId = payload.cosmeticId();
+				String baseId = com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(payload.cosmeticId());
+				String variantId = payload.variantId() != null ? payload.variantId() : "";
 				boolean requestedDevMode = payload.isDevMode();
 
-				debugLog("EquipCosmeticPayload from " + player.getName().getString() + ": cosmeticId='" + cosmeticId + "' devMode=" + requestedDevMode);
+				debugLog("EquipCosmeticPayload from " + player.getName().getString() + ": base='" + baseId + "' variant='" + variantId + "' devMode=" + requestedDevMode);
 
-				CosmeticData data = getCosmeticById(cosmeticId);
+				CosmeticData data = getCosmeticById(baseId);
 				if (data == null) {
-					debugLog("EquipCosmeticPayload: cosmetic '" + cosmeticId + "' not found — ignored.");
+					debugLog("EquipCosmeticPayload: cosmetic '" + baseId + "' not found — ignored.");
 					return;
 				}
 
+				CosmeticData.CosmeticVariant variant = null;
+				if (!variantId.isBlank()) {
+					variant = data.findVariant(variantId).orElse(null);
+					if (variant == null) {
+						player.sendMessage(LangConfig.chat("messages.cosmetic.variant_unknown", context.server().getRegistryManager()), true);
+						playCustomSound(player, "error_action");
+						return;
+					}
+				}
+
+				String requestedEntry = com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.compose(baseId, variantId);
 				java.util.List<String> equipped = com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerEquippedCosmetics(player.getUuid());
-				if (equipped.contains(cosmeticId)) {
-					debugLog("EquipCosmeticPayload: '" + cosmeticId + "' was already equipped — unequipping.");
-					com.f4xizzz.greatcosmetics.database.DatabaseManager.unequipCosmetic(player.getUuid(), cosmeticId);
+
+				if (equipped.contains(requestedEntry)) {
+					debugLog("EquipCosmeticPayload: '" + requestedEntry + "' was already equipped — unequipping.");
+					com.f4xizzz.greatcosmetics.database.DatabaseManager.unequipCosmetic(player.getUuid(), requestedEntry);
 					player.sendMessage(LangConfig.chat("messages.cosmetic.unequipped", context.server().getRegistryManager()), true);
 					com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(player);
 					return;
 				}
 
-				String slotVirtual = data.slot.name();
+				// Já tem OUTRA variante (ou o Padrão) deste mesmo cosmético equipada → rejeita.
+				for (String e : equipped) {
+					if (com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(e).equalsIgnoreCase(baseId)) {
+						player.sendMessage(LangConfig.chat("messages.cosmetic.variant_conflict", context.server().getRegistryManager()), true);
+						playCustomSound(player, "error_action");
+						return;
+					}
+				}
+
+				String slotVirtual = (variant != null && variant.slot != null) ? variant.slot.name() : data.slot.name();
 				String type = data.type;
 
 				boolean canUseDevMode = isRealOperator(player) || checkPermission(player, MainConfig.config.devModePermission);
@@ -736,8 +759,8 @@ public class GreatCosmetics implements ModInitializer {
 				// (player_equipped_cosmetics) mesmo sem o player nunca ter desbloqueado ele de
 				// verdade, e ficava "grudado" pra sempre depois que ele perdia o OP/permissão
 				// (ver validateEquippedCosmeticOwnership, que só limpa DEPOIS do fato).
-				if (!canUseDevMode && !com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), cosmeticId)) {
-					debugLog("EquipCosmeticPayload: " + player.getName().getString() + " does NOT own '" + cosmeticId + "' and has no bypass — blocked.");
+				if (!canUseDevMode && !com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), baseId)) {
+					debugLog("EquipCosmeticPayload: " + player.getName().getString() + " does NOT own '" + baseId + "' and has no bypass — blocked.");
 					player.sendMessage(LangConfig.chat("messages.cosmetic.not_owned", context.server().getRegistryManager()), true);
 					playCustomSound(player, "error_action");
 					return;
@@ -809,8 +832,8 @@ public class GreatCosmetics implements ModInitializer {
 					}
 				}
 
-				com.f4xizzz.greatcosmetics.database.DatabaseManager.equipCosmetic(player.getUuid(), cosmeticId, slotVirtual, type);
-				debugLog("EquipCosmeticPayload: '" + cosmeticId + "' equipped successfully on " + player.getName().getString() + " (slot=" + slotVirtual + " type=" + type + " bypass=" + isBypassing + ").");
+				com.f4xizzz.greatcosmetics.database.DatabaseManager.equipCosmetic(player.getUuid(), requestedEntry, slotVirtual, type);
+				debugLog("EquipCosmeticPayload: '" + requestedEntry + "' equipped successfully on " + player.getName().getString() + " (slot=" + slotVirtual + " type=" + type + " bypass=" + isBypassing + ").");
 				player.sendMessage(LangConfig.chat("messages.cosmetic.equipped", context.server().getRegistryManager()), true);
 				playCustomSound(player, "equip_item");
 
@@ -1104,6 +1127,7 @@ public class GreatCosmetics implements ModInitializer {
 				boolean isFlying = player.getAbilities().flying;
 
 				double flySpeedMult = 1.0, groundSpeedMult = 1.0, swimSpeedMult = 1.0;
+				boolean wantsIvScan = false;
 				Map<Identifier, Integer> desiredStatusEffects = isMajorTick ? new HashMap<>() : null;
 
 				java.util.List<String> equippedIds = com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerEquippedCosmetics(player.getUuid());
@@ -1130,7 +1154,7 @@ public class GreatCosmetics implements ModInitializer {
 							}
 						}
 
-						if (!hiddenIds.contains(id)) {
+						if (!hiddenIds.contains(com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(id))) {
 							for (String effectId : data.effectVisual) {
 								EffectData effect = EffectConfig.effectsMap.get(effectId);
 								if (effect != null && server.getTicks() % effect.tickInterval == 0) spawnCosmeticParticle(player, effect);
@@ -1146,6 +1170,7 @@ public class GreatCosmetics implements ModInitializer {
 
 						if (isMajorTick) {
 							if (data.EnableFly) shouldFly = true;
+							if (data.ivScanner) wantsIvScan = true;
 							collectPotionEffects(data, desiredStatusEffects);
 							// Math.max (não mais *=) — dois cosméticos de +50% de velocidade
 							// multiplicando entre si virava +125% (1.5*1.5), empilhando bônus que
@@ -1162,6 +1187,10 @@ public class GreatCosmetics implements ModInitializer {
 					handleFlyLogic(player, shouldFly);
 					handleSpeedLogic(player, flySpeedMult, groundSpeedMult, swimSpeedMult);
 					syncCosmeticStatusEffects(player, desiredStatusEffects);
+
+					// IVs Scanner: cosmético virtual (acima) OU armadura-cosmético vestida
+					if (!wantsIvScan) wantsIvScan = wearsIvScannerArmorCosmetic(player);
+					if (wantsIvScan) pushNearbyPokemonIvs(player);
 				}
 			}
 		});
@@ -1297,6 +1326,55 @@ public class GreatCosmetics implements ModInitializer {
 				player.addStatusEffect(new StatusEffectInstance(effectEntry.get(), PERMANENT_EFFECT_DURATION_TICKS, entry.getValue(), true, false, true));
 				previous.add(entry.getKey());
 			}
+		}
+	}
+
+	// ── IVs Scanner ─────────────────────────────────────────────────────────────────────
+	private static final double IV_SCAN_RANGE = 48.0;
+
+	/** Armadura real convertida em cosmético (ver ArmorCosmeticsConfig) que o jogador veste e
+	 *  tem {@code ivScanner}. Cosmético virtual já é checado no loop de tick. */
+	private boolean wearsIvScannerArmorCosmetic(ServerPlayerEntity player) {
+		if (com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics.isEmpty()) return false;
+		for (net.minecraft.entity.EquipmentSlot slot : new net.minecraft.entity.EquipmentSlot[]{
+				net.minecraft.entity.EquipmentSlot.HEAD, net.minecraft.entity.EquipmentSlot.CHEST,
+				net.minecraft.entity.EquipmentSlot.LEGS, net.minecraft.entity.EquipmentSlot.FEET}) {
+			net.minecraft.item.ItemStack stack = player.getEquippedStack(slot);
+			if (stack.isEmpty()) continue;
+			String id = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getCosmeticIdForItem(stack.getItem());
+			if (id == null) continue;
+			CosmeticData d = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getSyntheticCosmetic(id);
+			if (d != null && d.ivScanner
+					&& (d.permission == null || d.permission.isEmpty() || checkPermission(player, d.permission))) return true;
+		}
+		return false;
+	}
+
+	private void pushNearbyPokemonIvs(ServerPlayerEntity player) {
+		try {
+			ServerWorld world = player.getServerWorld();
+			net.minecraft.util.math.Box box = player.getBoundingBox().expand(IV_SCAN_RANGE);
+			java.util.List<com.cobblemon.mod.common.entity.pokemon.PokemonEntity> mons =
+					world.getEntitiesByClass(com.cobblemon.mod.common.entity.pokemon.PokemonEntity.class, box, e -> true);
+			com.cobblemon.mod.common.api.pokemon.stats.Stat[] stats = {
+					com.cobblemon.mod.common.api.pokemon.stats.Stats.HP,
+					com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK,
+					com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE,
+					com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK,
+					com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE,
+					com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED };
+			java.util.Map<Integer, int[]> out = new java.util.HashMap<>();
+			for (com.cobblemon.mod.common.entity.pokemon.PokemonEntity pe : mons) {
+				com.cobblemon.mod.common.pokemon.Pokemon pk = pe.getPokemon();
+				if (pk == null) continue;
+				int[] iv = new int[6];
+				for (int i = 0; i < 6; i++) iv[i] = pk.getIvs().getOrDefault(stats[i]);
+				out.put(pe.getId(), iv);
+			}
+			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player,
+					new com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload(out));
+		} catch (Throwable t) {
+			debugLog("pushNearbyPokemonIvs falhou: " + t);
 		}
 	}
 
@@ -1451,6 +1529,8 @@ public class GreatCosmetics implements ModInitializer {
 
 	public static CosmeticData getCosmeticById(String idProcurado) {
 		if (idProcurado == null) return null;
+		// Aceita "baseId#variantId" (ver EquippedCosmeticId) — resolve sempre o cosmético base.
+		idProcurado = com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(idProcurado);
 		Map<String, CosmeticData> currentMap = CosmeticsConfig.cosmeticsMap;
 		if (currentMap != cosmeticsByIdLowerSource) {
 			Map<String, CosmeticData> rebuilt = new HashMap<>();
@@ -1870,7 +1950,8 @@ public class GreatCosmetics implements ModInitializer {
 		java.util.List<String> equippedIds = com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerEquippedCosmetics(player.getUuid());
 		boolean changed = false;
 		for (String id : equippedIds) {
-			if (!com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), id)) {
+			if (!com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(),
+					com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(id))) {
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.unequipCosmetic(player.getUuid(), id);
 				changed = true;
 				debugLog("Cosmetic '" + id + "' automatically unequipped from " + player.getName().getString() + " (equipped via OP/Dev Mode bypass, no real ownership, and the bypass is no longer active).");

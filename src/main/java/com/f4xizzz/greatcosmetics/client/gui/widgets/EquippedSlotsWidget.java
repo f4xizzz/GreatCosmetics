@@ -8,6 +8,7 @@ import com.f4xizzz.greatcosmetics.config.CosmeticData;
 import com.f4xizzz.greatcosmetics.config.MainConfig;
 import com.f4xizzz.greatcosmetics.network.EquipCosmeticPayload;
 import com.f4xizzz.greatcosmetics.network.ToggleVisibilityPayload;
+import com.f4xizzz.greatcosmetics.util.EquippedCosmeticId;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
@@ -64,6 +65,18 @@ public class EquippedSlotsWidget {
                 || com.f4xizzz.greatcosmetics.client.ClientPermissionCache.hasGcPermDevmode;
     }
 
+    /** Slot efetivo de um id equipado ("baseId#variantId"): o slot da variante se ela tiver um, senão o do base. */
+    private static boolean slotIs(String rawId, CosmeticData d, String slotName) {
+        if (d == null) return false;
+        CosmeticData.VirtualSlot es = d.slot;
+        String vid = com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.variant(rawId);
+        if (!vid.isEmpty()) {
+            CosmeticData.CosmeticVariant v = d.findVariant(vid).orElse(null);
+            if (v != null && v.slot != null) es = v.slot;
+        }
+        return es != null && es.name().equals(slotName);
+    }
+
     private List<String> getActiveSlots(Set<String> equippedIds) {
         List<String> order = List.of("HEAD", "FACE", "NECK", "CHEST", "BACK", "WAIST", "LEGS", "FEET", "HAND");
         List<String> allSlots = new ArrayList<>(ClientMainConfigCache.config.slots.keySet());
@@ -82,8 +95,7 @@ public class EquippedSlotsWidget {
             int eqCount = 0;
             if (equippedIds != null) {
                 for (String id : equippedIds) {
-                    CosmeticData d = GreatCosmetics.getCosmeticById(id);
-                    if (d != null && d.slot != null && d.slot.name().equals(s)) eqCount++;
+                    if (slotIs(id, GreatCosmetics.getCosmeticById(id), s)) eqCount++;
                 }
             }
             if (ClientCosmeticCache.isDevModeActive || Math.max(sl.defaultLimit, eqCount) > 0) active.add(s);
@@ -99,8 +111,7 @@ public class EquippedSlotsWidget {
             int eqCount = 0;
             if (equippedIds != null) {
                 for (String id : equippedIds) {
-                    CosmeticData d = GreatCosmetics.getCosmeticById(id);
-                    if (d != null && d.slot != null && d.slot.name().equals(slotName)) eqCount++;
+                    if (slotIs(id, GreatCosmetics.getCosmeticById(id), slotName)) eqCount++;
                 }
             }
             int boxes = ClientCosmeticCache.isDevModeActive ? eqCount + 1 : Math.max(sl.defaultLimit, eqCount);
@@ -165,10 +176,11 @@ public class EquippedSlotsWidget {
             MainConfig.SlotLimit sl = ClientMainConfigCache.config.slots.get(slotName);
 
             List<CosmeticData> eqInSlot = new ArrayList<>();
+            List<String> eqRawInSlot = new ArrayList<>();
             if (equippedIds != null) {
                 for (String id : equippedIds) {
                     CosmeticData d = GreatCosmetics.getCosmeticById(id);
-                    if (d != null && d.slot != null && d.slot.name().equals(slotName)) eqInSlot.add(d);
+                    if (slotIs(id, d, slotName)) { eqInSlot.add(d); eqRawInSlot.add(id); }
                 }
             }
 
@@ -183,7 +195,7 @@ public class EquippedSlotsWidget {
 
                     if (j < eqInSlot.size()) {
                         CosmeticData equippedData = eqInSlot.get(j);
-                        boolean isHidden = getVisibility(equippedData.id, settings);
+                        boolean isHidden = getVisibility(EquippedCosmeticId.base(eqRawInSlot.get(j)), settings);
 
                         ItemStack renderStack;
                         if (equippedData.realItemId != null) {
@@ -326,10 +338,11 @@ public class EquippedSlotsWidget {
                 MainConfig.SlotLimit sl = ClientMainConfigCache.config.slots.get(slotName);
 
                 List<CosmeticData> eqInSlot = new ArrayList<>();
+                List<String> eqRawInSlot = new ArrayList<>();
                 if (equippedIds != null) {
                     for (String id : equippedIds) {
                         CosmeticData d = GreatCosmetics.getCosmeticById(id);
-                        if (d != null && d.slot != null && d.slot.name().equals(slotName)) eqInSlot.add(d);
+                        if (slotIs(id, d, slotName)) { eqInSlot.add(d); eqRawInSlot.add(id); }
                     }
                 }
 
@@ -341,11 +354,12 @@ public class EquippedSlotsWidget {
 
                     if (over(vMouseX, vMouseY, boxX, rowY, boxSize, boxSize)) {
                         if (j < eqInSlot.size()) {
-                            CosmeticData equippedData = eqInSlot.get(j);
+                            String raw = eqRawInSlot.get(j);
                             if (over(vMouseX, vMouseY, boxX, rowY + boxSize - 8, boxSize, 8)) {
-                                toggleAccessoryVisibility(equippedData.id, settings, uuid);
+                                toggleAccessoryVisibility(EquippedCosmeticId.base(raw), settings, uuid);
                             } else {
-                                ClientPlayNetworking.send(new EquipCosmeticPayload(equippedData.id, ClientCosmeticCache.isDevModeActive));
+                                ClientPlayNetworking.send(new EquipCosmeticPayload(
+                                        EquippedCosmeticId.base(raw), EquippedCosmeticId.variant(raw), ClientCosmeticCache.isDevModeActive));
                             }
                             playClick();
                         }

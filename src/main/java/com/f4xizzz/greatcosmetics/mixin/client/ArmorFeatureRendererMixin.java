@@ -197,6 +197,7 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 		M contextModel = this.getContextModel();
 
 		for (String id : equippedIds) {
+			String greatcosmetics$variantId = com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.variant(id);
 			CosmeticData data = GreatCosmetics.getCosmeticById(id);
 			if (data == null) {
 				// getCosmeticById() roda TODO FRAME por cosmético equipado — sem o "log só uma vez",
@@ -207,7 +208,14 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 				}
 				continue;
 			}
-			if (data.parts == null || data.parts.isEmpty()) {
+			// Variante equipada ("baseId#variantId") → desenha as parts DELA, não as base.
+			java.util.List<CosmeticData.CosmeticPart> greatcosmetics$partsToDraw = data.parts;
+			if (!greatcosmetics$variantId.isEmpty()) {
+				CosmeticData.CosmeticVariant greatcosmetics$v = data.findVariant(greatcosmetics$variantId).orElse(null);
+				if (greatcosmetics$v != null && greatcosmetics$v.parts != null && !greatcosmetics$v.parts.isEmpty())
+					greatcosmetics$partsToDraw = greatcosmetics$v.parts;
+			}
+			if (greatcosmetics$partsToDraw == null || greatcosmetics$partsToDraw.isEmpty()) {
 				if (greatcosmetics$loggedMissingIds.add(id + "#noparts")) {
 					com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog("ArmorFeatureRendererMixin: cosmetic '" + id + "' has no configured Part — nothing to draw.");
 				}
@@ -236,7 +244,7 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 				realStack = new ItemStack(realItem);
 			}
 
-			for (CosmeticData.CosmeticPart part : data.parts) {
+			for (CosmeticData.CosmeticPart part : greatcosmetics$partsToDraw) {
 				matrices.push();
 
 				// Resolvido bem no início (antes só vinha depois) — o bloco de prévia do gizmo (mais

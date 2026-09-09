@@ -284,6 +284,10 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		// ARMADURAS CONVERTIDAS EM COSMÉTICO (ver ArmorCosmeticsConfig)
 		// ==========================================
+		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload.ID, (payload, context) -> {
+			context.client().execute(() -> com.f4xizzz.greatcosmetics.client.ClientPokemonIvCache.put(payload.ivsByEntityId()));
+		});
+
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
 				debugLog("SyncArmorCosmeticsPayload received: " + payload.armorCosmetics().size() + " converted armor pieces, allowResourceReload=" + payload.allowResourceReload());
@@ -401,7 +405,9 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 					// nenhum item de verdade — exatamente por isso o ícone nunca resolvia: o mapa
 					// ficava com {teste=resolvedIconCmd} em vez de {teste=data.cmd}.
 
-					for (CosmeticData.CosmeticPart part : data.parts) {
+					java.util.List<CosmeticData.CosmeticPart> allParts = new java.util.ArrayList<>(data.parts);
+					if (data.variants != null) for (CosmeticData.CosmeticVariant vv : data.variants) if (vv != null && vv.parts != null) allParts.addAll(vv.parts);
+					for (CosmeticData.CosmeticPart part : allParts) {
 						// !isEmpty() (não só != null): Part que SÓ tem geoModelId (customModelData_or_ID
 						// vazio) mesmo assim recebe part.resolvedCmd > 0 do servidor (getOrCreateCmd
 						// "geo:<id>", ver CosmeticsConfig#resolveModelIds) — mas essa Part é 100%
@@ -501,7 +507,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 						if (equipped != null && !equipped.isEmpty()) {
 							for (String id : equipped) {
-								CosmeticData data = CosmeticsConfig.cosmeticsMap.get(id);
+								CosmeticData data = GreatCosmetics.getCosmeticById(id);
 								if (data != null && data.sounds != null && data.sounds.idleSound != null && !data.sounds.idleSound.isEmpty()) {
 									try {
 										Identifier soundId = Identifier.of(data.sounds.idleSound);
@@ -786,7 +792,9 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 
 		for (CosmeticData data : configMap.values()) {
 			if (data.parts == null) continue;
-			for (CosmeticData.CosmeticPart part : data.parts) {
+			java.util.List<CosmeticData.CosmeticPart> geoParts = new java.util.ArrayList<>(data.parts);
+			if (data.variants != null) for (CosmeticData.CosmeticVariant vv : data.variants) if (vv != null && vv.parts != null) geoParts.addAll(vv.parts);
+			for (CosmeticData.CosmeticPart part : geoParts) {
 				if (part.geoModelId == null || part.geoModelId.isBlank() || part.resolvedCmd <= 0) continue;
 
 				String key = part.geoModelId;

@@ -254,6 +254,8 @@ public class LangConfig {
         m.put("messages.cosmetic.equipped", "<green>Accessory equipped!");
         m.put("messages.cosmetic.unequipped", "<red>Accessory unequipped!");
         m.put("messages.cosmetic.not_owned", "<red>[!] You don't own this cosmetic!");
+        m.put("messages.cosmetic.variant_conflict", "<red>Unequip the current variant of this cosmetic first.");
+        m.put("messages.cosmetic.variant_unknown", "<red>That variant no longer exists.");
         m.put("messages.cosmetic.slot_limit", "<red>[!] You've reached the item limit for the {slot} slot (Limit: {limit}).");
         m.put("messages.cosmetic.type_limit", "<red>[!] You've reached the limit for the accessory type: {type} (Limit: {limit}).");
         m.put("messages.cosmetic.all_removed", "<green>All accessories were removed!");
@@ -316,9 +318,24 @@ public class LangConfig {
         items.put("items.lure.fishing_shiny", "<gray>  ▪ <yellow>Shiny: <green>+{value}x");
         items.put("items.lure.fishing_iv_chance", "<gray>  ▪ <green>Per-IV Perfect Chance: <green>+{value}%");
         items.put("items.lure.fishing_speed", "<gray>  ▪ <aqua>Speed: <green>+{value}%");
-        // ---------------- HUD de Lure (LureHudOverlay — coluna à direita da hotbar) ----------------
-        items.put("hud.lure.header", "<light_purple>✦ Lure Bonus");
-        items.put("hud.lure.type", "<white>▪ Type: <aqua>{value}");
+        // ---------------- HUD de cosméticos (LureHudOverlay — canto inferior esquerdo) ----------------
+        items.put("hud.cos.section.abilities", "<gold>Abilities");
+        items.put("hud.cos.section.attributes", "<gold>Attributes");
+        items.put("hud.cos.section.effects", "<gold>Effects");
+        items.put("hud.cos.section.lure", "<gold>Lure");
+        items.put("hud.cos.section.fishing", "<gold>Fishing");
+        items.put("hud.cos.section.scanner", "<gold>Scanner");
+        items.put("hud.cos.flight", "<aqua>Flight");
+        items.put("hud.cos.backpack", "<yellow>Backpack — {rows} rows");
+        items.put("hud.cos.autofeed", "<green>Auto Feed");
+        items.put("hud.cos.armor", "<white>+{value} Armor");
+        items.put("hud.cos.toughness", "<white>+{value} Toughness");
+        items.put("hud.cos.ground_speed", "<white>Ground Speed x{value}");
+        items.put("hud.cos.fly_speed", "<white>Fly Speed x{value}");
+        items.put("hud.cos.swim_speed", "<white>Swim Speed x{value}");
+        items.put("hud.cos.particle_trail", "<light_purple>Particle Trail");
+        items.put("hud.cos.ivs_scanner", "<aqua>IVs Scanner");
+        items.put("hud.lure.type", "<white>Type: <aqua>{value}");
         items.put("hud.lure.shiny", "<yellow>✨ Shiny <green>+{value}x");
         items.put("hud.lure.ultrarare", "<dark_purple>🔮 Ultra Rare <green>+{value}x");
         items.put("hud.lure.hidden_ability", "<dark_aqua>👁 Hidden Ability <green>+{value}x");
@@ -329,11 +346,10 @@ public class LangConfig {
         items.put("hud.lure.ev", "<green>🐍 Battle EV <green>+{value}x");
         items.put("hud.lure.friendship", "<light_purple>❤ Friendship <green>+{value}x");
         items.put("hud.lure.capture", "<red>🎯 Capture <green>+{value}x");
-        items.put("hud.lure.fishing_header", "<aqua>🎣 Fishing");
-        items.put("hud.lure.fishing_shiny", "<gray> <yellow>✨ Shiny <green>+{value}x");
-        items.put("hud.lure.fishing_iv", "<gray> <gold>⭐ Perfect IVs <green>+{value}");
-        items.put("hud.lure.fishing_iv_chance", "<gray> <blue>🎲 Per-IV Perfect <green>+{value}%");
-        items.put("hud.lure.fishing_speed", "<gray> <aqua>💨 Speed <green>+{value}%");
+        items.put("hud.lure.fishing_shiny", "<yellow>✨ Shiny <green>+{value}x");
+        items.put("hud.lure.fishing_iv", "<gold>⭐ Perfect IVs <green>+{value}");
+        items.put("hud.lure.fishing_iv_chance", "<blue>🎲 Per-IV Perfect <green>+{value}%");
+        items.put("hud.lure.fishing_speed", "<aqua>💨 Speed <green>+{value}%");
 
         items.put("items.scanner.divider", "&8&m                                     ");
         items.put("items.scanner.line", "&e[Scanner] &fCurrent ID: &c{cmd}");
@@ -396,6 +412,7 @@ public class LangConfig {
         a.put("accessories.tooltip.autofeed", " <green>🍖 <white>Auto Feed");
         a.put("accessories.tooltip.passive_effects", "<light_purple>Passive Effects:");
         a.put("accessories.tooltip.effect_line", " <dark_purple>- <white>");
+        a.put("accessories.variant_picker.default", "Default");
         a.put("accessories.tooltip.lure_header", "<light_purple><bold>✦ <light_purple><bold>Attraction Power (Lure):");
         a.put("accessories.tooltip.lure_type", " <gray>▪ <white>Affected Type: <aqua>{value}");
         a.put("accessories.tooltip.lure_shiny", " <yellow>✨ <white>Shiny: <green>+{value}x");
@@ -496,7 +513,7 @@ public class LangConfig {
         d.put("devstudio.cosmetic.divider.status_combat", "=== STATUS & COMBAT ===");
         d.put("devstudio.cosmetic.divider.backpack", "=== BACKPACK ===");
         d.put("devstudio.cosmetic.divider.special_effects", "=== SPECIAL EFFECTS ===");
-        d.put("devstudio.cosmetic.divider.lure", "=== LURE SYSTEM ===");
+        d.put("devstudio.cosmetic.divider.lure", "=== COBBLEMON COSMETICS ===");
         d.put("devstudio.cosmetic.divider.sounds", "=== SOUNDS ===");
         d.put("devstudio.cosmetic.field.real_item", "Real Item");
         d.put("devstudio.cosmetic.tooltip.real_item", "<gray>The real Minecraft item this armor cosmetic\n<gray>represents (players actually wear this item,\n<gray>the mod just changes how it looks in-game).\n<gray>Type the item's ID, e.g. minecraft:diamond_helmet.");
@@ -559,7 +576,8 @@ public class LangConfig {
         d.put("devstudio.cosmetic.tooltip.effect_visual", "<gray>Comma-separated list of particle effect ids that\n<gray>constantly play around the player while this\n<gray>cosmetic is equipped (e.g. minecraft:heart).");
         d.put("devstudio.cosmetic.field.fly_particle", "Fly Particle");
         d.put("devstudio.cosmetic.tooltip.fly_particle", "<gray>Comma-separated list of particle effect ids shown\n<gray>only while the player is flying with this\n<gray>cosmetic equipped (needs \"Allows Flight?\" ON).");
-        d.put("devstudio.cosmetic.btn.config_lure", ">> Configure LURE");
+        d.put("devstudio.cosmetic.btn.config_lure", ">> Cobblemon Cosmetics");
+        d.put("devstudio.cosmetic.tooltip.config_lure", "<gray>Cobblemon-specific perks this cosmetic grants:\n<gray>Lure bonuses (shiny/IV/spawn/xp/fishing) and the\n<gray>IVs Scanner. Hover each field inside for details.");
         // --- Part popup ---
         d.put("devstudio.part.new", "New");
         d.put("devstudio.part.popup_title", "Part {i}: {name}");
@@ -568,12 +586,52 @@ public class LangConfig {
         d.put("devstudio.part.divider.scale", "SCALE");
         d.put("devstudio.part.divider.normal_values", "NORMAL VALUES");
         d.put("devstudio.part.divider.sneak_values", "SNEAK VALUES");
+        // --- Variants ---
+        d.put("devstudio.variant.divider", "=== VARIANTS ===");
+        d.put("devstudio.variant.field.id", "Variant {i} ID");
+        d.put("devstudio.variant.hint.id", "e.g. shoulder");
+        d.put("devstudio.variant.tooltip.id", "<gray>Internal id (letters/numbers/underscore).\n<gray>Unique within this cosmetic. Players pick the\n<gray>variant by its display name; this id is what's stored.");
+        d.put("devstudio.variant.btn.config", ">> Config Variant {i}");
+        d.put("devstudio.variant.tooltip.config", "<gray>Edit this variant's display name, slot, and the\n<gray>anchor / offset / rotation / scale of its model.\n<gray>The model itself is reused from the base cosmetic.");
+        d.put("devstudio.variant.btn.remove", "X Remove Variant {i}");
+        d.put("devstudio.variant.btn.add", "+ Add Variant");
+        d.put("devstudio.variant.tooltip.add", "<gray>A variant reuses this cosmetic's model but with its\n<gray>own slot and placement. When a cosmetic has variants,\n<gray>players get a picker: 'Default' + each variant.\n<gray>Only one variant (or Default) can be worn at a time.");
+        d.put("devstudio.variant.confirm.title", "Remove variant?");
+        d.put("devstudio.variant.confirm.body", "Deletes variant {i} permanently.");
+        d.put("devstudio.variant.popup_title", "Variant {i}");
+        d.put("devstudio.variant.field.name", "Display Name");
+        d.put("devstudio.variant.tooltip.name", "<gray>Shown in the player's variant picker. MiniMessage ok.");
+        d.put("devstudio.variant.field.slot", "Slot (blank = inherit)");
+        d.put("devstudio.variant.tooltip.slot", "<gray>Which virtual slot this variant occupies (for slot\n<gray>limits). Blank = same slot as the base cosmetic.");
+        d.put("devstudio.variant.field.anchor", "Anchor");
+        d.put("devstudio.variant.tooltip.anchor", "<gray>Body part the variant's model attaches to:\n<gray>HEAD / BODY / RIGHT_ARM / LEFT_ARM / RIGHT_LEG / LEFT_LEG.");
         d.put("devstudio.part.gizmo_hint", "<yellow>3D Tool (Hold X, Y or Z and drag outside):");
         d.put("devstudio.part.gizmo_move", "Move");
         d.put("devstudio.part.gizmo_rotate", "Rotate");
         d.put("devstudio.part.gizmo_scale", "Scale");
-        // --- Lure popup ---
-        d.put("devstudio.lure.title", "Lure Config");
+        // --- Cobblemon Cosmetics popup (ex-Lure) ---
+        d.put("devstudio.lure.title", "Cobblemon Cosmetics");
+        d.put("devstudio.cobcos.divider.lures", "LURES");
+        d.put("devstudio.cobcos.divider.fishing", "FISHING");
+        d.put("devstudio.cobcos.divider.scanner", "SCANNER");
+        d.put("devstudio.cobcos.field.ivs_scanner", "IVs Scanner");
+        d.put("devstudio.cobcos.tooltip.enabled", "Master switch. Off = none of the bonuses below do anything.\nThe IVs Scanner has its own switch and is NOT gated by this.");
+        d.put("devstudio.cobcos.tooltip.type", "Type name or id (e.g. fire). While worn, only WILD Pokemon of this type spawn around you — Cobblemon still spawns at the normal rate from what's left. If no species of the type can spawn in the biome, nothing spawns. Your party / NPCs are never affected. Blank = off.");
+        d.put("devstudio.cobcos.tooltip.shiny_mult", "Chance (0.0-1.0) to re-roll a non-shiny catch into shiny, checked on capture. Stacks additively across all worn Lure cosmetics.");
+        d.put("devstudio.cobcos.tooltip.ultrarare_mult", "Chance (0.0-1.0) to upgrade a land spawn to the 'ultra-rare' rarity bucket. Fishing does not use rarity buckets, so this has no effect on fished Pokemon.");
+        d.put("devstudio.cobcos.tooltip.hidden_ability_mult", "Chance (0.0-1.0) that a caught Pokemon gets its hidden ability.");
+        d.put("devstudio.cobcos.tooltip.iv", "Number of IVs forced to 31 on capture (random stats). 0-6.");
+        d.put("devstudio.cobcos.tooltip.iv_chance", "Chance PER IV (0.0-1.0) for each of the 6 IVs to roll 31 on capture, on top of the ones guaranteed by Lure IV. 0.25 = 25% on each stat.");
+        d.put("devstudio.cobcos.tooltip.capture_chance", "Chance (0.0-1.0) to turn a FAILED capture into a success on the ball throw.");
+        d.put("devstudio.cobcos.tooltip.exp_mult", "Extra experience for the Pokemon that battled. 0.5 = +50%. Applies to the active Pokemon only (unless Exp Share is on).");
+        d.put("devstudio.cobcos.tooltip.expall", "On = every other ALIVE party Pokemon also gets the full XP the active Pokemon gained (EXP Multiplier included). Does NOT apply to candy XP.");
+        d.put("devstudio.cobcos.tooltip.friendship_mult", "Multiplies positive friendship gains. 0.5 = +50%.");
+        d.put("devstudio.cobcos.tooltip.ev_mult", "Not implemented — Cobblemon's battle EV logic exposes no hook. Leave 0.");
+        d.put("devstudio.cobcos.tooltip.fishing_shiny", "Extra shiny chance (0.0-1.0), fishing only. Stacks with Shiny Multiplier.");
+        d.put("devstudio.cobcos.tooltip.fishing_iv", "Guaranteed perfect IVs on a fished Pokemon (random stats). 0-6.");
+        d.put("devstudio.cobcos.tooltip.fishing_iv_chance", "Per-IV chance (0.0-1.0) for each IV to roll 31 on a fished Pokemon.");
+        d.put("devstudio.cobcos.tooltip.fishing_speed", "0.0-1.0. Adds Cobblemon 'Lure' enchant levels to the rod for faster bites (~+1 level per 33%, capped at +10).");
+        d.put("devstudio.cobcos.tooltip.ivs_scanner", "While worn, shows the IVs of every Pokemon within ~48 blocks above its name (HP/Atk/Def/SpA/SpD/Spe, colored). Independent from the Lure master switch. The server computes this — no client-side wild IV data exists otherwise.");
         d.put("devstudio.lure.field.enabled", "Lure Enabled");
         d.put("devstudio.lure.field.type", "Lure TYPE");
         d.put("devstudio.lure.field.shiny_mult", "Shiny Multiplier");

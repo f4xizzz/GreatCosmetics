@@ -135,8 +135,14 @@ public class NpcCosmeticsConfig {
         int removedCount = 0;
         for (java.util.Iterator<String> it = set.iterator(); it.hasNext(); ) {
             String id = it.next();
-            CosmeticData data = CosmeticsConfig.cosmeticsMap.get(id);
-            if (data != null && data.slot == slot) {
+            CosmeticData data = com.f4xizzz.greatcosmetics.GreatCosmetics.getCosmeticById(id);
+            String variantId = com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.variant(id);
+            CosmeticData.VirtualSlot effSlot = data == null ? null : data.slot;
+            if (data != null && !variantId.isEmpty()) {
+                var v = data.findVariant(variantId).orElse(null);
+                if (v != null && v.slot != null) effSlot = v.slot;
+            }
+            if (data != null && effSlot == slot) {
                 it.remove();
                 removedCount++;
             }

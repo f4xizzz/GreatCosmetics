@@ -34,6 +34,15 @@ public class AcessoriesPage extends WardrobePage {
 
     private boolean isDropdownOpen = false;
     private int currentCatIndex = 0;
+    private VariantPicker variantPicker = null;
+
+    /** true se QUALQUER variante (ou o Padrão) desse cosmético está equipada. */
+    private static boolean isCosmeticEquipped(java.util.Set<String> equipped, String baseId) {
+        for (String e : equipped) {
+            if (com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(e).equalsIgnoreCase(baseId)) return true;
+        }
+        return false;
+    }
 
     // Última posição/tamanho REAL com que render() foi chamado — panelX/panelY/width no
     // Wardrobe3DScreen são animados (currentPanelW/H fazem lerp ao trocar de aba, ex: vindo da
@@ -197,7 +206,7 @@ public class AcessoriesPage extends WardrobePage {
         // comparar.
         java.util.Set<String> equippedIds = ClientCosmeticCache.getEquipped(MinecraftClient.getInstance().player.getUuid());
         filtered.sort(java.util.Comparator
-                .comparing((CosmeticData d) -> !equippedIds.contains(d.id))
+                .comparing((CosmeticData d) -> !isCosmeticEquipped(equippedIds, d.id))
                 .thenComparing(d -> !com.f4xizzz.greatcosmetics.client.ClientFavoriteCosmetics.isFavorite(d.id))
                 .thenComparing(d -> d.getFormattedName().replaceAll("§.", ""), String.CASE_INSENSITIVE_ORDER)
         );
@@ -341,7 +350,7 @@ public class AcessoriesPage extends WardrobePage {
                 continue;
             }
 
-            boolean isEquipped = equippedIds.contains(data.id);
+            boolean isEquipped = isCosmeticEquipped(equippedIds, data.id);
 
             if (isEquipped) {
                 c.fill(itemX, itemY, itemX + iconRealSize, itemY + iconRealSize, 0x4400FF00);
@@ -488,6 +497,8 @@ public class AcessoriesPage extends WardrobePage {
         }
         RenderSystem.disableScissor();
 
+        if (variantPicker != null) variantPicker.render(c, mouseX, mouseY);
+
         if (activeTooltip != null) {
             c.drawTooltip(getTextRenderer(), activeTooltip, mouseX, mouseY);
         }
@@ -496,6 +507,12 @@ public class AcessoriesPage extends WardrobePage {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button != 0) return false;
+
+        if (variantPicker != null) {
+            boolean handled = variantPicker.click(mouseX, mouseY);
+            variantPicker = null;
+            if (handled) return true;
+        }
 
         int panelX = lastX;
         int panelY = lastY;
@@ -612,8 +629,13 @@ public class AcessoriesPage extends WardrobePage {
             }
 
             if (over(mouseX, mouseY, itemX, itemY, iconRealSize, iconRealSize)) {
-                ClientPlayNetworking.send(new EquipCosmeticPayload(data.id, ClientCosmeticCache.isDevModeActive));
-                playEquipSound();
+                if (data.variants != null && !data.variants.isEmpty()) {
+                    playClick();
+                    this.variantPicker = new VariantPicker(data, (int) mouseX, (int) mouseY);
+                } else {
+                    ClientPlayNetworking.send(new EquipCosmeticPayload(data.id, "", ClientCosmeticCache.isDevModeActive));
+                    playEquipSound();
+                }
                 return true;
             }
             index++;
@@ -674,6 +696,58 @@ public class AcessoriesPage extends WardrobePage {
             try {
                 MinecraftClient.getInstance().getSoundManager().play(PositionedSoundInstance.master(SoundEvents.ITEM_ARMOR_EQUIP_LEATHER, 1.0F));
             } catch (Exception ignored) {}
+        }
+    }
+
+    /** Menuzinho de escolha de variante — aberto ao clicar num cosmético que TEM variantes.
+     *  "Padrão" (variantId "") + cada variante. Desenhado/roteado pela própria AcessoriesPage. */
+    private class VariantPicker {
+        private static final int W = 130, RH = 14;
+        final CosmeticData cos;
+        final java.util.List<String> ids = new java.util.ArrayList<>();
+        final java.util.List<String> labels = new java.util.ArrayList<>();
+        final int reqX, reqY;
+
+        VariantPicker(CosmeticData c, int mx, int my) {
+            this.cos = c; this.reqX = mx; this.reqY = my;
+            ids.add(""); labels.add(com.f4xizzz.greatcosmetics.config.LangConfig.legacy("accessories.variant_picker.default"));
+            for (CosmeticData.CosmeticVariant v : c.variants) {
+                if (v == null || v.variantId == null || v.variantId.isBlank()) continue;
+                ids.add(v.variantId);
+                labels.add((v.displayName != null && !v.displayName.isBlank()) ? v.displayName : v.variantId);
+            }
+        }
+
+        private int px() { return Math.max(lastX + 2, Math.min(reqX, lastX + lastWidth - W - 2)); }
+        private int py() { return Math.max(lastY + 2, Math.min(reqY, lastY + lastHeight - (ids.size() * RH + 4) - 2)); }
+
+        void render(DrawContext ctx, int mx, int my) {
+            int px = px(), py = py(), h = ids.size() * RH + 4;
+            ctx.fill(px, py, px + W, py + h, 0xF0111111);
+            ctx.drawBorder(px, py, W, h, 0xFFFFAA00);
+            java.util.Set<String> eq = ClientCosmeticCache.getEquipped(MinecraftClient.getInstance().player.getUuid());
+            boolean otherEquipped = isCosmeticEquipped(eq, cos.id);
+            for (int i = 0; i < ids.size(); i++) {
+                int ry = py + 2 + i * RH;
+                boolean hov = mx >= px && mx <= px + W && my >= ry && my <= ry + RH;
+                boolean isThis = eq.contains(com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.compose(cos.id, ids.get(i)));
+                int col = isThis ? 0xFF55FF55 : (otherEquipped ? 0xFF888888 : (hov ? 0xFFFFFF55 : 0xFFFFFFFF));
+                ctx.drawTextWithShadow(getTextRenderer(), net.minecraft.text.Text.literal(labels.get(i)), px + 6, ry + 3, col);
+            }
+        }
+
+        /** true = consumido (clicou numa opção); false = clicou fora → o caller fecha. */
+        boolean click(double mx, double my) {
+            int px = px(), py = py();
+            for (int i = 0; i < ids.size(); i++) {
+                int ry = py + 2 + i * RH;
+                if (mx >= px && mx <= px + W && my >= ry && my <= ry + RH) {
+                    ClientPlayNetworking.send(new EquipCosmeticPayload(cos.id, ids.get(i), ClientCosmeticCache.isDevModeActive));
+                    playEquipSound();
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

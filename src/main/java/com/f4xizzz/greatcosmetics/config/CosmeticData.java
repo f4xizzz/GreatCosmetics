@@ -31,6 +31,11 @@ public class CosmeticData {
 
     public List<CosmeticPart> parts = new ArrayList<>();
 
+    /** Variantes: cada uma reusa os models deste cosmético, mas com slot + posicionamento
+     *  (anchor/offset/rotação/escala das parts) próprios. "Padrão" = variante vazia = as parts
+     *  base acima. Um jogador só pode ter UMA variante (ou o Padrão) deste cosmético equipada. */
+    public List<CosmeticVariant> variants = new ArrayList<>();
+
     public int maxDurability = 0;
 
     // --- STATUS DE COMBATE ---
@@ -101,6 +106,11 @@ public class CosmeticData {
     public boolean AutoFeed = false;
     public List<String> effects = new ArrayList<>();
 
+    /** Editado no popup "Cobblemon Cosmetics". Com o cosmético equipado, o jogador vê os IVs de
+     *  todo Pokémon num raio ~48 blocos, renderizados acima do nome (ver PokemonNameTagMixin +
+     *  SyncPokemonIvsPayload). Servidor calcula e empurra; IV de selvagem não existe no cliente. */
+    public boolean ivScanner = false;
+
     // --- VELOCIDADE (1.0 = normal, valores >1 aceleram, <1 desaceleram) ---
     public double flySpeedMultiplier = 1.0;
     public double groundSpeedMultiplier = 1.0;
@@ -109,6 +119,28 @@ public class CosmeticData {
     public enum Anchor { HEAD, BODY, RIGHT_ARM, LEFT_ARM, RIGHT_LEG, LEFT_LEG }
     public enum RenderSlot { HEAD, CHEST, LEGS, FEET }
     public enum VirtualSlot { HEAD, NECK, CHEST, BACK, WAIST, LEGS, FEET, FACE, HAND }
+
+    /** Uma variante de posicionamento do cosmético. */
+    public static class CosmeticVariant {
+        /** [a-z0-9_], único dentro do cosmético. Vazio = inválido (o "Padrão" não é uma variante). */
+        public String variantId = "";
+        /** Nome mostrado no menu de escolha e no tooltip. MiniMessage ok. */
+        public String displayName = "";
+        /** null = herda o slot do cosmético base (usado só pra limites de slot no equipar). */
+        public VirtualSlot slot = null;
+        /** Parts próprias desta variante (mesmos models do base, posição/anchor/escala diferentes). */
+        public List<CosmeticPart> parts = new ArrayList<>();
+        public CosmeticVariant() {}
+    }
+
+    /** Variante por id (case-insensitive). {@code null}/vazio → empty (= Padrão). */
+    public java.util.Optional<CosmeticVariant> findVariant(String variantId) {
+        if (variantId == null || variantId.isBlank() || variants == null) return java.util.Optional.empty();
+        for (CosmeticVariant v : variants) {
+            if (v != null && v.variantId != null && v.variantId.equalsIgnoreCase(variantId)) return java.util.Optional.of(v);
+        }
+        return java.util.Optional.empty();
+    }
 
     public CosmeticData() {}
 

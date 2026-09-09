@@ -235,12 +235,16 @@ public class DevCosmeticsSubPage extends DevSubPage {
             this.title = title; this.x = x; this.y = y; this.width = width; this.height = height;
         }
 
-        void addDivider(String label) {
-            this.rows.add(new EditorRow(label, RowType.DIVIDER, null));
+        EditorRow addDivider(String label) {
+            EditorRow r = new EditorRow(label, RowType.DIVIDER, null);
+            this.rows.add(r);
+            return r;
         }
 
-        void addGizmoControls() {
-            this.rows.add(new EditorRow("Modo Gizmo", RowType.GIZMO_MODE, null));
+        EditorRow addGizmoControls() {
+            EditorRow r = new EditorRow("Modo Gizmo", RowType.GIZMO_MODE, null);
+            this.rows.add(r);
+            return r;
         }
 
         void syncGizmoToFields() {
@@ -283,44 +287,50 @@ public class DevCosmeticsSubPage extends DevSubPage {
             hasUnsavedChanges = wasUnsavedBeforeSync;
         }
 
-        void addFloat(String label, float startVal, java.util.function.Consumer<Float> action) {
+        EditorRow addFloat(String label, float startVal, java.util.function.Consumer<Float> action) {
             TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, width - 30, 16, Text.literal(""));
             field.setMaxLength(15); field.setText(String.valueOf(startVal));
             field.setChangedListener(text -> {
                 hasUnsavedChanges = true;
                 try { if (!text.isEmpty() && !text.equals("-") && !text.equals(".")) action.accept(Float.parseFloat(text)); } catch (Exception ignored) {}
             });
-            this.rows.add(new EditorRow(label, RowType.DOUBLE, field));
+            EditorRow r = new EditorRow(label, RowType.DOUBLE, field);
+            this.rows.add(r);
+            return r;
         }
 
-        void addDouble(String label, double startVal, java.util.function.Consumer<Double> action) {
+        EditorRow addDouble(String label, double startVal, java.util.function.Consumer<Double> action) {
             TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, width - 30, 16, Text.literal(""));
             field.setMaxLength(20); field.setText(String.valueOf(startVal));
             field.setChangedListener(text -> {
                 hasUnsavedChanges = true;
                 try { if (!text.isEmpty() && !text.equals("-") && !text.equals(".")) action.accept(Double.parseDouble(text)); } catch (Exception ignored) {}
             });
-            this.rows.add(new EditorRow(label, RowType.DOUBLE, field));
+            EditorRow r = new EditorRow(label, RowType.DOUBLE, field);
+            this.rows.add(r);
+            return r;
         }
 
-        void addInt(String label, int startVal, java.util.function.Consumer<Integer> action) {
+        EditorRow addInt(String label, int startVal, java.util.function.Consumer<Integer> action) {
             TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, width - 30, 16, Text.literal(""));
             field.setMaxLength(10); field.setText(String.valueOf(startVal));
             field.setChangedListener(text -> {
                 hasUnsavedChanges = true;
                 try { if (!text.isEmpty() && !text.equals("-")) action.accept(Integer.parseInt(text)); } catch (Exception ignored) {}
             });
-            this.rows.add(new EditorRow(label, RowType.INT, field));
+            EditorRow r = new EditorRow(label, RowType.INT, field);
+            this.rows.add(r);
+            return r;
         }
 
-        void addString(String label, String startVal, java.util.function.Consumer<String> action) {
-            addString(label, startVal, null, action);
+        EditorRow addString(String label, String startVal, java.util.function.Consumer<String> action) {
+            return addString(label, startVal, null, action);
         }
 
         /** Igual addString, com autocomplete (ver EditorRow#suggestions/renderAutocompleteDropdown
          *  — o dropdown é compartilhado com o editor de fora, essa classe só precisa alimentar as
          *  mesmas variáveis openDropdown* quando UMA DAS SUAS PRÓPRIAS rows está focada). */
-        void addString(String label, String startVal, java.util.function.Supplier<java.util.List<String>> suggestions, java.util.function.Consumer<String> action) {
+        EditorRow addString(String label, String startVal, java.util.function.Supplier<java.util.List<String>> suggestions, java.util.function.Consumer<String> action) {
             TextFieldWidget field = new TextFieldWidget(parent.getTextRenderer(), 0, 0, width - 30, 16, Text.literal(""));
             field.setMaxLength(128); field.setText(startVal != null ? startVal : "");
             field.setChangedListener(text -> {
@@ -330,14 +340,19 @@ public class DevCosmeticsSubPage extends DevSubPage {
             EditorRow row = new EditorRow(label, RowType.STRING, field);
             row.suggestions = suggestions;
             this.rows.add(row);
+            return row;
         }
 
-        void addToggle(String label, boolean startVal, java.util.function.Consumer<Boolean> action) {
-            this.rows.add(new EditorRow(label, startVal, action));
+        EditorRow addToggle(String label, boolean startVal, java.util.function.Consumer<Boolean> action) {
+            EditorRow r = new EditorRow(label, startVal, action);
+            this.rows.add(r);
+            return r;
         }
 
-        void addEffect(String label, String effectRegistryId, int startLevel, java.util.function.BiConsumer<String, Integer> onChange) {
-            this.rows.add(new EditorRow(label, effectRegistryId, startLevel, onChange));
+        EditorRow addEffect(String label, String effectRegistryId, int startLevel, java.util.function.BiConsumer<String, Integer> onChange) {
+            EditorRow r = new EditorRow(label, effectRegistryId, startLevel, onChange);
+            this.rows.add(r);
+            return r;
         }
 
         void drawBtn(DrawContext c, String label, int bx, int by, int bw, int bh, int mx, int my, int activeColor) {
@@ -639,6 +654,35 @@ public class DevCosmeticsSubPage extends DevSubPage {
             loadEditor(this.editingId);
         }).withId("btn_add_part").withTooltip(L("devstudio.cosmetic.tooltip.add_part")));
 
+        // --- VARIANTES (só cosmético virtual) ---
+        if (!this.editingIsArmorCosmetic) {
+            if (this.editingData.variants == null) this.editingData.variants = new ArrayList<>();
+            addDivider(L("devstudio.variant.divider"));
+            for (int i = 0; i < this.editingData.variants.size(); i++) {
+                CosmeticData.CosmeticVariant v = this.editingData.variants.get(i);
+                int vi = i;
+                addStringField(L("devstudio.variant.field.id", "i", i), v.variantId, L("devstudio.variant.hint.id"),
+                        t -> v.variantId = t == null ? "" : t.toLowerCase().replaceAll("[^a-z0-9_]", ""))
+                        .withTooltip(L("devstudio.variant.tooltip.id"));
+                this.rows.add(new EditorRow(L("devstudio.variant.btn.config", "i", i), () -> openVariantPopup(v, vi))
+                        .withId("btn_config_variant_" + i)
+                        .withTooltip(L("devstudio.variant.tooltip.config")));
+                this.rows.add(new EditorRow(L("devstudio.variant.btn.remove", "i", i), () ->
+                        openConfirmPopup(L("devstudio.variant.confirm.title"), L("devstudio.variant.confirm.body", "i", vi), () -> {
+                            hasUnsavedChanges = true;
+                            this.editingData.variants.remove(v);
+                            loadEditor(this.editingId);
+                        })).withId("btn_remove_variant_" + i));
+            }
+            this.rows.add(new EditorRow(L("devstudio.variant.btn.add"), () -> {
+                hasUnsavedChanges = true;
+                CosmeticData.CosmeticVariant nv = new CosmeticData.CosmeticVariant();
+                nv.variantId = "variant" + (this.editingData.variants.size() + 1);
+                this.editingData.variants.add(nv);
+                loadEditor(this.editingId);
+            }).withId("btn_add_variant").withTooltip(L("devstudio.variant.tooltip.add")));
+        }
+
         // --- STATUS DE COMBATE ---
         addDivider(L("devstudio.cosmetic.divider.status_combat"));
         addIntField(L("devstudio.cosmetic.field.armor"), this.editingData.armor, val -> this.editingData.armor = val)
@@ -678,7 +722,8 @@ public class DevCosmeticsSubPage extends DevSubPage {
 
         // --- LURE ---
         addDivider(L("devstudio.cosmetic.divider.lure"));
-        this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.config_lure"), this::openLurePopup).withId("btn_config_lure"));
+        this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.config_lure"), this::openCobblemonCosmeticsPopup).withId("btn_config_lure")
+                .withTooltip(L("devstudio.cosmetic.tooltip.config_lure")));
 
         this.hasUnsavedChanges = false;
 
@@ -833,26 +878,109 @@ public class DevCosmeticsSubPage extends DevSubPage {
         this.hasUnsavedChanges = wasUnsaved;
     }
 
-    private void openLurePopup() {
+    /** Editor de uma variante: nome, slot, e o posicionamento (anchor + offset/rotação/escala) de
+     *  uma part. A variante reusa os models do cosmético base — os campos de model NÃO aparecem
+     *  aqui de propósito ("só posicionamento", decisão do usuário). */
+    private void openVariantPopup(CosmeticData.CosmeticVariant v, int index) {
         boolean wasUnsaved = this.hasUnsavedChanges;
 
-        activePopup = new FloatingPopup(L("devstudio.lure.title"), 50, 50, 220, 220);
-        activePopup.addToggle(L("devstudio.lure.field.enabled"), editingData.lure.enabled, v -> editingData.lure.enabled = v);
-        activePopup.addString(L("devstudio.lure.field.type"), editingData.lure.lureTYPE, t -> editingData.lure.lureTYPE = t);
-        activePopup.addDouble(L("devstudio.lure.field.shiny_mult"), editingData.lure.lureShinyMultiplier, v -> editingData.lure.lureShinyMultiplier = v);
-        activePopup.addDouble(L("devstudio.lure.field.ultrarare_mult"), editingData.lure.lureUltraRAREMultiplier, v -> editingData.lure.lureUltraRAREMultiplier = v);
-        activePopup.addDouble(L("devstudio.lure.field.hidden_ability_mult"), editingData.lure.lureHiddenAbilityMultiplier, v -> editingData.lure.lureHiddenAbilityMultiplier = v);
-        activePopup.addToggle(L("devstudio.lure.field.expall_mult"), editingData.lure.lureExpAllMultiplier > 0, v -> editingData.lure.lureExpAllMultiplier = v ? 1.0 : 0.0);
-        activePopup.addDouble(L("devstudio.lure.field.friendship_mult"), editingData.lure.lureAmizadeMultiplier, v -> editingData.lure.lureAmizadeMultiplier = v);
-        activePopup.addInt(L("devstudio.lure.field.iv"), editingData.lure.lureIV, v -> editingData.lure.lureIV = v);
-        activePopup.addDouble(L("devstudio.lure.field.iv_chance"), editingData.lure.lureChanceIV, v -> editingData.lure.lureChanceIV = v);
-        activePopup.addDouble(L("devstudio.lure.field.fishing_shiny"), editingData.lure.lurePescaShiny, v -> editingData.lure.lurePescaShiny = v);
-        activePopup.addDouble(L("devstudio.lure.field.fishing_iv_chance"), editingData.lure.lurePescaIvChance, v -> editingData.lure.lurePescaIvChance = v);
-        activePopup.addInt(L("devstudio.lure.field.fishing_iv"), editingData.lure.lurePescaIv, v -> editingData.lure.lurePescaIv = v);
-        activePopup.addDouble(L("devstudio.lure.field.fishing_speed"), editingData.lure.lurePescaVelocidade, v -> editingData.lure.lurePescaVelocidade = v);
-        activePopup.addDouble(L("devstudio.lure.field.exp_mult"), editingData.lure.lureEXP, v -> editingData.lure.lureEXP = v);
-        activePopup.addDouble(L("devstudio.lure.field.ev_mult"), editingData.lure.lureEV, v -> editingData.lure.lureEV = v);
-        activePopup.addDouble(L("devstudio.lure.field.capture_chance"), editingData.lure.lureChanceDeCaptura, v -> editingData.lure.lureChanceDeCaptura = v);
+        // Garante 1 part, herdando os model refs da 1a part do cosmético base.
+        if (v.parts == null) v.parts = new ArrayList<>();
+        if (v.parts.isEmpty()) {
+            CosmeticData.CosmeticPart p = new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD);
+            if (editingData.parts != null && !editingData.parts.isEmpty()) {
+                CosmeticData.CosmeticPart base0 = editingData.parts.get(0);
+                p.customModelData_or_ID = base0.customModelData_or_ID;
+                p.geoModelId = base0.geoModelId;
+                p.useExactPath = base0.useExactPath;
+                p.anchor = base0.anchor != null ? base0.anchor : CosmeticData.Anchor.HEAD;
+            }
+            v.parts.add(p);
+        }
+        CosmeticData.CosmeticPart part = v.parts.get(0);
+
+        activePopup = new FloatingPopup(L("devstudio.variant.popup_title", "i", index), 80, 40, 240, 300);
+
+        activePopup.addString(L("devstudio.variant.field.name"), v.displayName, t -> v.displayName = t)
+                .withTooltip(L("devstudio.variant.tooltip.name"));
+        activePopup.addString(L("devstudio.variant.field.slot"), v.slot != null ? v.slot.name() : "",
+                () -> {
+                    java.util.List<String> o = new java.util.ArrayList<>();
+                    o.add("");
+                    for (CosmeticData.VirtualSlot s : CosmeticData.VirtualSlot.values()) o.add(s.name());
+                    return o;
+                },
+                text -> {
+                    String t = text.toUpperCase().trim();
+                    if (t.isEmpty()) { v.slot = null; return; }
+                    try { v.slot = CosmeticData.VirtualSlot.valueOf(t); } catch (Exception ignored) {}
+                }).withTooltip(L("devstudio.variant.tooltip.slot"));
+        activePopup.addString(L("devstudio.variant.field.anchor"), part.anchor != null ? part.anchor.name() : "HEAD",
+                () -> java.util.Arrays.stream(CosmeticData.Anchor.values()).map(Enum::name).collect(java.util.stream.Collectors.toList()),
+                text -> { try { part.anchor = CosmeticData.Anchor.valueOf(text.toUpperCase().trim()); } catch (Exception ignored) {} })
+                .withTooltip(L("devstudio.variant.tooltip.anchor"));
+
+        activePopup.addDivider(L("devstudio.part.divider.normal_values"));
+        activePopup.addFloat("Offset X", part.offsetX, val -> part.offsetX = val);
+        activePopup.addFloat("Offset Y", part.offsetY, val -> part.offsetY = val);
+        activePopup.addFloat("Offset Z", part.offsetZ, val -> part.offsetZ = val);
+        activePopup.addFloat("Rotation X", part.rotationX, val -> part.rotationX = val);
+        activePopup.addFloat("Rotation Y", part.rotationY, val -> part.rotationY = val);
+        activePopup.addFloat("Rotation Z", part.rotationZ, val -> part.rotationZ = val);
+
+        activePopup.addDivider(L("devstudio.part.divider.scale"));
+        activePopup.addFloat("Scale X", part.scaleX, val -> part.scaleX = val);
+        activePopup.addFloat("Scale Y", part.scaleY, val -> part.scaleY = val);
+        activePopup.addFloat("Scale Z", part.scaleZ, val -> part.scaleZ = val);
+
+        this.hasUnsavedChanges = wasUnsaved;
+    }
+
+    private void openCobblemonCosmeticsPopup() {
+        boolean wasUnsaved = this.hasUnsavedChanges;
+
+        activePopup = new FloatingPopup(L("devstudio.lure.title"), 50, 40, 230, 300);
+
+        activePopup.addToggle(L("devstudio.lure.field.enabled"), editingData.lure.enabled, v -> editingData.lure.enabled = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.enabled"));
+
+        activePopup.addDivider(L("devstudio.cobcos.divider.lures"));
+        activePopup.addString(L("devstudio.lure.field.type"), editingData.lure.lureTYPE, t -> editingData.lure.lureTYPE = t)
+                .withTooltip(L("devstudio.cobcos.tooltip.type"));
+        activePopup.addDouble(L("devstudio.lure.field.shiny_mult"), editingData.lure.lureShinyMultiplier, v -> editingData.lure.lureShinyMultiplier = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.shiny_mult"));
+        activePopup.addDouble(L("devstudio.lure.field.ultrarare_mult"), editingData.lure.lureUltraRAREMultiplier, v -> editingData.lure.lureUltraRAREMultiplier = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.ultrarare_mult"));
+        activePopup.addDouble(L("devstudio.lure.field.hidden_ability_mult"), editingData.lure.lureHiddenAbilityMultiplier, v -> editingData.lure.lureHiddenAbilityMultiplier = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.hidden_ability_mult"));
+        activePopup.addInt(L("devstudio.lure.field.iv"), editingData.lure.lureIV, v -> editingData.lure.lureIV = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.iv"));
+        activePopup.addDouble(L("devstudio.lure.field.iv_chance"), editingData.lure.lureChanceIV, v -> editingData.lure.lureChanceIV = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.iv_chance"));
+        activePopup.addDouble(L("devstudio.lure.field.capture_chance"), editingData.lure.lureChanceDeCaptura, v -> editingData.lure.lureChanceDeCaptura = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.capture_chance"));
+        activePopup.addDouble(L("devstudio.lure.field.exp_mult"), editingData.lure.lureEXP, v -> editingData.lure.lureEXP = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.exp_mult"));
+        activePopup.addToggle(L("devstudio.lure.field.expall_mult"), editingData.lure.lureExpAllMultiplier > 0, v -> editingData.lure.lureExpAllMultiplier = v ? 1.0 : 0.0)
+                .withTooltip(L("devstudio.cobcos.tooltip.expall"));
+        activePopup.addDouble(L("devstudio.lure.field.friendship_mult"), editingData.lure.lureAmizadeMultiplier, v -> editingData.lure.lureAmizadeMultiplier = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.friendship_mult"));
+        activePopup.addDouble(L("devstudio.lure.field.ev_mult"), editingData.lure.lureEV, v -> editingData.lure.lureEV = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.ev_mult"));
+
+        activePopup.addDivider(L("devstudio.cobcos.divider.fishing"));
+        activePopup.addDouble(L("devstudio.lure.field.fishing_shiny"), editingData.lure.lurePescaShiny, v -> editingData.lure.lurePescaShiny = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.fishing_shiny"));
+        activePopup.addInt(L("devstudio.lure.field.fishing_iv"), editingData.lure.lurePescaIv, v -> editingData.lure.lurePescaIv = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.fishing_iv"));
+        activePopup.addDouble(L("devstudio.lure.field.fishing_iv_chance"), editingData.lure.lurePescaIvChance, v -> editingData.lure.lurePescaIvChance = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.fishing_iv_chance"));
+        activePopup.addDouble(L("devstudio.lure.field.fishing_speed"), editingData.lure.lurePescaVelocidade, v -> editingData.lure.lurePescaVelocidade = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.fishing_speed"));
+
+        activePopup.addDivider(L("devstudio.cobcos.divider.scanner"));
+        activePopup.addToggle(L("devstudio.cobcos.field.ivs_scanner"), editingData.ivScanner, v -> editingData.ivScanner = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.ivs_scanner"));
 
         this.hasUnsavedChanges = wasUnsaved;
     }

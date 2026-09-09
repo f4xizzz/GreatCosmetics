@@ -98,11 +98,17 @@ public class DatabaseManager {
 
             String sqlEquipped = "CREATE TABLE IF NOT EXISTS player_equipped_cosmetics (" +
                     "uuid VARCHAR(36) NOT NULL, " +
-                    "cosmetic_id VARCHAR(64) NOT NULL, " +
+                    "cosmetic_id VARCHAR(96) NOT NULL, " +   // cabe "baseId#variantId" (ver EquippedCosmeticId)
                     "virtual_slot VARCHAR(32) NOT NULL, " +
                     "cosmetic_type VARCHAR(64) NOT NULL, " +
                     "PRIMARY KEY (uuid, cosmetic_id))";
             try (PreparedStatement stmt = connection.prepareStatement(sqlEquipped)) { stmt.execute(); }
+            // Alarga a coluna em DBs MySQL já criados (SQLite ignora VARCHAR(n), MySQL não re-roda o CREATE).
+            try {
+                boolean sqlite = connection.getMetaData().getURL().toLowerCase().startsWith("jdbc:sqlite");
+                if (!sqlite) try (PreparedStatement s = connection.prepareStatement(
+                        "ALTER TABLE player_equipped_cosmetics MODIFY COLUMN cosmetic_id VARCHAR(96) NOT NULL")) { s.execute(); }
+            } catch (Exception ignored) { /* já alargado, ou driver sem suporte */ }
 
             String sqlSettings = "CREATE TABLE IF NOT EXISTS player_cosmetic_settings (" +
                     "uuid VARCHAR(36) PRIMARY KEY, " +

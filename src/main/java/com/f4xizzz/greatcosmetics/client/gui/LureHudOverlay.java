@@ -6,6 +6,7 @@ import com.f4xizzz.greatcosmetics.client.ClientCosmeticCache;
 import com.f4xizzz.greatcosmetics.client.ClientMainConfigCache;
 import com.f4xizzz.greatcosmetics.config.CosmeticData;
 import com.f4xizzz.greatcosmetics.config.LangConfig;
+import com.f4xizzz.greatcosmetics.util.EquippedCosmeticId;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.EquipmentSlot;
@@ -16,92 +17,83 @@ import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * HUD dos bônus de Lure — uma coluna à direita da hotbar com os bônus AGREGADOS (soma de todos os
- * cosméticos/armaduras-cosmético equipados que dão Lure com {@code enabled=true}, igual o
- * {@code LureManager} aplica de verdade no servidor). Some quando não há nenhum Lure ativo.
+ * HUD dos bônus dos cosméticos equipados — canto INFERIOR ESQUERDO, fundo transparente. Lista
+ * TUDO que os cosméticos/armaduras-cosmético equipados dão (habilidades, atributos, efeitos de
+ * poção, Lure, pesca, IVs Scanner), agrupado em bullets aninhados. Encolhe sozinho quando fica
+ * alto demais. Some quando não há nada pra mostrar.
  *
- * <p>100% client-side: o client já tem o catálogo de cosméticos com os {@code LureStats}
- * (SyncCosmeticsPayload/SyncArmorCosmeticsPayload) e sabe o que o próprio jogador tem equipado
- * (ClientCosmeticCache + os slots de armadura reais). Ligado por
- * {@code mainconfig.conf → lureHud} (default true, sincronizado via SyncMainConfigPayload).
+ * <p>100% client-side: o client já tem o catálogo (SyncCosmeticsPayload/SyncArmorCosmeticsPayload)
+ * e o que o próprio jogador tem equipado (ClientCosmeticCache + slots de armadura reais). Ligado
+ * por {@code mainconfig.conf → lureHud} (default true).
  */
 public final class LureHudOverlay {
 
     private LureHudOverlay() {}
+
+    private record Line(int indent, Text text, boolean header) {}
 
     public static void render(DrawContext ctx) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.options.hudHidden || mc.currentScreen != null) return;
         if (ClientMainConfigCache.config == null || !ClientMainConfigCache.config.lureHud) return;
 
-        CosmeticData.LureStats agg = aggregate(mc.player.getUuid());
-        if (agg == null) return;
+        List<CosmeticData> active = collectActive(mc.player.getUuid());
+        if (active.isEmpty()) return;
 
-        List<Text> lines = buildLines(agg);
+        List<Line> lines = buildLines(active);
         if (lines.isEmpty()) return;
 
         int lineH = mc.textRenderer.fontHeight + 1;
-        int hotbarRight = mc.getWindow().getScaledWidth() / 2 + 91;
-        int x = hotbarRight + 5;
-        int bottom = mc.getWindow().getScaledHeight() - 3;
-        int y = bottom - lines.size() * lineH;
-        if (y < 3) y = 3;
+        int screenH = mc.getWindow().getScaledHeight();
+        int total = lines.size() * lineH;
 
-        int maxW = 0;
-        for (Text line : lines) maxW = Math.max(maxW, mc.textRenderer.getWidth(line));
-        ctx.fill(x - 3, y - 2, x + maxW + 3, bottom + 1, 0x66000000);
+        // Auto-shrink: nunca passa de ~55% da altura da tela; piso 0.5.
+        float scale = 1.0f;
+        float maxH = screenH * 0.55f;
+        if (total > maxH) scale = Math.max(0.5f, maxH / total);
 
-        for (Text line : lines) {
-            ctx.drawTextWithShadow(mc.textRenderer, line, x, y, 0xFFFFFFFF);
+        int x = 4;
+        int bottom = screenH - 4;
+
+        ctx.getMatrices().push();
+        ctx.getMatrices().translate(x, bottom, 0);
+        ctx.getMatrices().scale(scale, scale, 1f);
+
+        int y = -total; // desenha de cima pra baixo dentro do bloco, ancorado no rodapé
+        for (Line l : lines) {
+            if (l.text != null) {
+                String prefix = l.header ? "* " : "  * ";
+                Text render = Text.literal("§7" + " ".repeat(l.indent * 2) + prefix)
+                        .append(l.header ? Text.literal("§6§l").append(l.text) : Text.literal("§f").append(l.text));
+                ctx.drawTextWithShadow(mc.textRenderer, render, 0, y, 0xFFFFFFFF);
+            }
             y += lineH;
         }
+
+        ctx.getMatrices().pop();
     }
 
-    private static CosmeticData.LureStats aggregate(UUID selfUuid) {
-        List<CosmeticData.LureStats> lures = collectActive(selfUuid);
-        if (lures.isEmpty()) return null;
+    // ── coleta ──────────────────────────────────────────────────────────────────────────────
 
-        CosmeticData.LureStats a = new CosmeticData.LureStats();
-        a.enabled = true;
-        for (CosmeticData.LureStats l : lures) {
-            a.lureShinyMultiplier += l.lureShinyMultiplier;
-            a.lureUltraRAREMultiplier += l.lureUltraRAREMultiplier;
-            a.lureHiddenAbilityMultiplier += l.lureHiddenAbilityMultiplier;
-            a.lureIV += l.lureIV;
-            a.lureChanceIV += l.lureChanceIV;
-            a.lureExpAllMultiplier += l.lureExpAllMultiplier;
-            a.lureEXP += l.lureEXP;
-            a.lureEV += l.lureEV;
-            a.lureAmizadeMultiplier += l.lureAmizadeMultiplier;
-            a.lureChanceDeCaptura += l.lureChanceDeCaptura;
-            a.lurePescaShiny += l.lurePescaShiny;
-            a.lurePescaIv += l.lurePescaIv;
-            a.lurePescaIvChance += l.lurePescaIvChance;
-            a.lurePescaVelocidade += l.lurePescaVelocidade;
-            if ((a.lureTYPE == null || a.lureTYPE.isEmpty()) && l.lureTYPE != null && !l.lureTYPE.isEmpty()) {
-                a.lureTYPE = l.lureTYPE;
-            }
-        }
-        return a;
-    }
-
-    /** Espelho client-side de {@code LureManager.collectActiveLureStats}: cosméticos virtuais
-     *  equipados (ClientCosmeticCache) + armaduras reais convertidas em cosmético que o jogador
-     *  está vestindo agora. */
-    private static List<CosmeticData.LureStats> collectActive(UUID selfUuid) {
-        List<CosmeticData.LureStats> result = new ArrayList<>();
+    /** Cosméticos virtuais equipados + armaduras reais convertidas em cosmético, deduplicados. */
+    private static List<CosmeticData> collectActive(UUID selfUuid) {
+        List<CosmeticData> result = new ArrayList<>();
         Set<String> seen = new HashSet<>();
 
         Set<String> equipped = ClientCosmeticCache.getEquipped(selfUuid);
         if (equipped != null) {
-            for (String id : equipped) {
-                if (id == null || !seen.add(id.toLowerCase())) continue;
-                addIfActive(result, GreatCosmetics.getCosmeticById(id));
+            for (String raw : equipped) {
+                if (raw == null) continue;
+                String base = EquippedCosmeticId.base(raw);
+                if (base == null || !seen.add(base.toLowerCase())) continue;
+                CosmeticData d = GreatCosmetics.getCosmeticById(base);
+                if (d != null) result.add(d);
             }
         }
 
@@ -115,7 +107,7 @@ public final class LureHudOverlay {
                     if (data == null || data.realItemId == null) continue;
                     Identifier realId = Identifier.tryParse(data.realItemId);
                     if (realId != null && realId.equals(wornId)) {
-                        if (data.id == null || seen.add(data.id.toLowerCase())) addIfActive(result, data);
+                        if (data.id == null || seen.add(data.id.toLowerCase())) result.add(data);
                         break;
                     }
                 }
@@ -124,48 +116,135 @@ public final class LureHudOverlay {
         return result;
     }
 
-    private static void addIfActive(List<CosmeticData.LureStats> out, CosmeticData data) {
-        if (data != null && data.lure != null && data.lure.enabled) out.add(data.lure);
-    }
+    // ── linhas ──────────────────────────────────────────────────────────────────────────────
 
-    private static List<Text> buildLines(CosmeticData.LureStats l) {
-        List<Text> lines = new ArrayList<>();
-        lines.add(LangConfig.text("hud.lure.header"));
+    private static List<Line> buildLines(List<CosmeticData> active) {
+        // agrega
+        int armor = 0; double toughness = 0;
+        boolean fly = false, backpack = false, autofeed = false, ivScanner = false, particleTrail = false;
+        int backpackRows = 0;
+        double groundMult = 1.0, flyMult = 1.0, swimMult = 1.0;
+        Set<String> effects = new LinkedHashSet<>();
+        CosmeticData.LureStats lure = new CosmeticData.LureStats();
+        boolean anyLure = false;
 
-        if (l.lureTYPE != null && !l.lureTYPE.isEmpty()) lines.add(LangConfig.text("hud.lure.type", "value", l.lureTYPE.toUpperCase()));
-        if (l.lureShinyMultiplier > 0) lines.add(LangConfig.text("hud.lure.shiny", "value", fmt(l.lureShinyMultiplier)));
-        if (l.lureUltraRAREMultiplier > 0) lines.add(LangConfig.text("hud.lure.ultrarare", "value", fmt(l.lureUltraRAREMultiplier)));
-        if (l.lureHiddenAbilityMultiplier > 0) lines.add(LangConfig.text("hud.lure.hidden_ability", "value", fmt(l.lureHiddenAbilityMultiplier)));
-        if (l.lureIV > 0) lines.add(LangConfig.text("hud.lure.iv", "value", l.lureIV));
-        if (l.lureChanceIV > 0) lines.add(LangConfig.text("hud.lure.iv_chance", "value", pctNum(l.lureChanceIV)));
-        if (l.lureExpAllMultiplier > 0) lines.add(LangConfig.text("hud.lure.expall", "value", fmt(l.lureExpAllMultiplier)));
-        if (l.lureEXP > 0) lines.add(LangConfig.text("hud.lure.exp", "value", fmt(l.lureEXP)));
-        if (l.lureEV > 0) lines.add(LangConfig.text("hud.lure.ev", "value", fmt(l.lureEV)));
-        if (l.lureAmizadeMultiplier > 0) lines.add(LangConfig.text("hud.lure.friendship", "value", fmt(l.lureAmizadeMultiplier)));
-        if (l.lureChanceDeCaptura > 0) lines.add(LangConfig.text("hud.lure.capture", "value", fmt(l.lureChanceDeCaptura)));
-
-        boolean fishing = l.lurePescaShiny > 0 || l.lurePescaIv > 0
-                || l.lurePescaIvChance > 0 || l.lurePescaVelocidade > 0;
-        if (fishing) {
-            lines.add(LangConfig.text("hud.lure.fishing_header"));
-            if (l.lurePescaShiny > 0) lines.add(LangConfig.text("hud.lure.fishing_shiny", "value", fmt(l.lurePescaShiny)));
-            if (l.lurePescaIv > 0) lines.add(LangConfig.text("hud.lure.fishing_iv", "value", l.lurePescaIv));
-            if (l.lurePescaIvChance > 0) lines.add(LangConfig.text("hud.lure.fishing_iv_chance", "value", pctNum(l.lurePescaIvChance)));
-            if (l.lurePescaVelocidade > 0) lines.add(LangConfig.text("hud.lure.fishing_speed", "value", pctNum(l.lurePescaVelocidade)));
+        for (CosmeticData d : active) {
+            armor += d.armor;
+            toughness += d.toughness;
+            if (d.EnableFly) fly = true;
+            if (d.isBackpack) { backpack = true; backpackRows = Math.max(backpackRows, d.backpackRows); }
+            if (d.AutoFeed) autofeed = true;
+            if (d.ivScanner) ivScanner = true;
+            if ((d.effectVisual != null && !d.effectVisual.isEmpty()) || (d.flyParticle != null && !d.flyParticle.isEmpty())) particleTrail = true;
+            groundMult = Math.max(groundMult, d.groundSpeedMultiplier);
+            flyMult = Math.max(flyMult, d.flySpeedMultiplier);
+            swimMult = Math.max(swimMult, d.swimSpeedMultiplier);
+            if (d.effects != null) effects.addAll(d.effects);
+            if (d.lure != null && d.lure.enabled) {
+                anyLure = true;
+                lure.lureShinyMultiplier += d.lure.lureShinyMultiplier;
+                lure.lureUltraRAREMultiplier += d.lure.lureUltraRAREMultiplier;
+                lure.lureHiddenAbilityMultiplier += d.lure.lureHiddenAbilityMultiplier;
+                lure.lureIV += d.lure.lureIV;
+                lure.lureChanceIV += d.lure.lureChanceIV;
+                lure.lureExpAllMultiplier += d.lure.lureExpAllMultiplier;
+                lure.lureEXP += d.lure.lureEXP;
+                lure.lureEV += d.lure.lureEV;
+                lure.lureAmizadeMultiplier += d.lure.lureAmizadeMultiplier;
+                lure.lureChanceDeCaptura += d.lure.lureChanceDeCaptura;
+                lure.lurePescaShiny += d.lure.lurePescaShiny;
+                lure.lurePescaIv += d.lure.lurePescaIv;
+                lure.lurePescaIvChance += d.lure.lurePescaIvChance;
+                lure.lurePescaVelocidade += d.lure.lurePescaVelocidade;
+                if ((lure.lureTYPE == null || lure.lureTYPE.isEmpty()) && d.lure.lureTYPE != null && !d.lure.lureTYPE.isEmpty())
+                    lure.lureTYPE = d.lure.lureTYPE;
+            }
         }
 
-        if (lines.size() == 1) lines.clear(); // só o header, nenhum bônus numérico > 0
-        return lines;
+        List<Line> out = new ArrayList<>();
+
+        // Abilities
+        List<Text> abilities = new ArrayList<>();
+        if (fly) abilities.add(LangConfig.text("hud.cos.flight"));
+        if (backpack) abilities.add(LangConfig.text("hud.cos.backpack", "rows", backpackRows));
+        if (autofeed) abilities.add(LangConfig.text("hud.cos.autofeed"));
+        section(out, "hud.cos.section.abilities", abilities);
+
+        // Attributes
+        List<Text> attrs = new ArrayList<>();
+        if (armor > 0) attrs.add(LangConfig.text("hud.cos.armor", "value", armor));
+        if (toughness > 0) attrs.add(LangConfig.text("hud.cos.toughness", "value", fmt(toughness)));
+        if (groundMult != 1.0) attrs.add(LangConfig.text("hud.cos.ground_speed", "value", fmt(groundMult)));
+        if (flyMult != 1.0) attrs.add(LangConfig.text("hud.cos.fly_speed", "value", fmt(flyMult)));
+        if (swimMult != 1.0) attrs.add(LangConfig.text("hud.cos.swim_speed", "value", fmt(swimMult)));
+        section(out, "hud.cos.section.attributes", attrs);
+
+        // Effects
+        List<Text> fx = new ArrayList<>();
+        for (String e : effects) fx.add(formatEffect(e));
+        if (particleTrail) fx.add(LangConfig.text("hud.cos.particle_trail"));
+        section(out, "hud.cos.section.effects", fx);
+
+        // Lure
+        if (anyLure) {
+            List<Text> lu = new ArrayList<>();
+            if (lure.lureTYPE != null && !lure.lureTYPE.isEmpty()) lu.add(LangConfig.text("hud.lure.type", "value", lure.lureTYPE.toUpperCase()));
+            if (lure.lureShinyMultiplier > 0) lu.add(LangConfig.text("hud.lure.shiny", "value", fmt(lure.lureShinyMultiplier)));
+            if (lure.lureUltraRAREMultiplier > 0) lu.add(LangConfig.text("hud.lure.ultrarare", "value", fmt(lure.lureUltraRAREMultiplier)));
+            if (lure.lureHiddenAbilityMultiplier > 0) lu.add(LangConfig.text("hud.lure.hidden_ability", "value", fmt(lure.lureHiddenAbilityMultiplier)));
+            if (lure.lureIV > 0) lu.add(LangConfig.text("hud.lure.iv", "value", lure.lureIV));
+            if (lure.lureChanceIV > 0) lu.add(LangConfig.text("hud.lure.iv_chance", "value", pctNum(lure.lureChanceIV)));
+            if (lure.lureExpAllMultiplier > 0) lu.add(LangConfig.text("hud.lure.expall", "value", fmt(lure.lureExpAllMultiplier)));
+            if (lure.lureEXP > 0) lu.add(LangConfig.text("hud.lure.exp", "value", fmt(lure.lureEXP)));
+            if (lure.lureEV > 0) lu.add(LangConfig.text("hud.lure.ev", "value", fmt(lure.lureEV)));
+            if (lure.lureAmizadeMultiplier > 0) lu.add(LangConfig.text("hud.lure.friendship", "value", fmt(lure.lureAmizadeMultiplier)));
+            if (lure.lureChanceDeCaptura > 0) lu.add(LangConfig.text("hud.lure.capture", "value", fmt(lure.lureChanceDeCaptura)));
+            section(out, "hud.cos.section.lure", lu);
+
+            List<Text> fish = new ArrayList<>();
+            if (lure.lurePescaShiny > 0) fish.add(LangConfig.text("hud.lure.fishing_shiny", "value", fmt(lure.lurePescaShiny)));
+            if (lure.lurePescaIv > 0) fish.add(LangConfig.text("hud.lure.fishing_iv", "value", lure.lurePescaIv));
+            if (lure.lurePescaIvChance > 0) fish.add(LangConfig.text("hud.lure.fishing_iv_chance", "value", pctNum(lure.lurePescaIvChance)));
+            if (lure.lurePescaVelocidade > 0) fish.add(LangConfig.text("hud.lure.fishing_speed", "value", pctNum(lure.lurePescaVelocidade)));
+            section(out, "hud.cos.section.fishing", fish);
+        }
+
+        // Scanner
+        if (ivScanner) section(out, "hud.cos.section.scanner", List.of(LangConfig.text("hud.cos.ivs_scanner")));
+
+        // remove a linha em branco final
+        if (!out.isEmpty() && out.get(out.size() - 1).text() == null) out.remove(out.size() - 1);
+        return out;
     }
 
-    // Duplicado de AcessoriesPage.formatLureNumber/formatLurePercent de propósito — não acopla as
-    // duas telas por causa de dois helpers de 3 linhas.
+    /** Adiciona "* Header" + "  * item" por item + 1 linha em branco, só se houver ≥1 item. */
+    private static void section(List<Line> out, String headerKey, List<Text> items) {
+        if (items.isEmpty()) return;
+        out.add(new Line(0, LangConfig.text(headerKey), true));
+        for (Text t : items) out.add(new Line(1, t, false));
+        out.add(new Line(0, null, false)); // blank separator
+    }
+
+    private static Text formatEffect(String eff) {
+        if (eff == null || eff.isEmpty()) return Text.literal("");
+        String[] parts = eff.split(":");
+        if (parts.length < 2) return Text.literal(eff.toUpperCase());
+        Identifier id = Identifier.tryParse(parts[0] + ":" + parts[1]);
+        Text name = id != null
+                ? Registries.STATUS_EFFECT.getEntry(id).map(e -> e.value().getName()).orElse(Text.literal(eff.toUpperCase()))
+                : Text.literal(eff.toUpperCase());
+        String level = parts.length > 2 ? parts[2] : "0";
+        Text out = Text.literal("").append(name);
+        try { int lv = Integer.parseInt(level); if (lv > 0) out.getSiblings().add(Text.literal(" " + (lv + 1))); } catch (Exception ignored) {}
+        return out;
+    }
+
+    // Duplicado de AcessoriesPage.formatLureNumber de propósito.
     private static String fmt(double v) {
         if (v == Math.rint(v) && !Double.isInfinite(v)) return String.valueOf((long) v);
         return java.math.BigDecimal.valueOf(v).setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
     }
 
-    /** Chance 0.0-1.0 -> número em pontos percentuais SEM o "%" (as strings de hud.lure.* já têm o "%"). */
     private static String pctNum(double chance01) {
         return fmt(chance01 * 100.0);
     }
