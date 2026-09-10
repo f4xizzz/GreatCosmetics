@@ -227,7 +227,9 @@ public class WardrobeManager {
         ServerPlayNetworking.send(target, new com.f4xizzz.greatcosmetics.network.SyncDevPermissionsPayload(
                 isOp,
                 com.f4xizzz.greatcosmetics.GreatCosmetics.checkPermission(target, "gc.dev"),
-                com.f4xizzz.greatcosmetics.GreatCosmetics.checkPermission(target, com.f4xizzz.greatcosmetics.config.MainConfig.config.devModePermission)
+                com.f4xizzz.greatcosmetics.GreatCosmetics.checkPermission(target, com.f4xizzz.greatcosmetics.config.MainConfig.config.devModePermission),
+                com.f4xizzz.greatcosmetics.util.ModCompat.cobblemon(),
+                com.f4xizzz.greatcosmetics.util.ModCompat.luckPerms()
         ));
 
         // Manda prefix/suffix do LuckPerms pro nametag customizado da aba Party (ver
@@ -237,7 +239,12 @@ public class WardrobeManager {
         ServerPlayNetworking.send(target, new com.f4xizzz.greatcosmetics.network.SyncNameTagPayload(prefixSuffix[0], prefixSuffix[1]));
 
         // Busca no Banco de Dados a lista de IDs que ele tem (MySQL ou SQLite)
-        List<String> unlockedCosmetics = DatabaseManager.getPlayerUnlockedCosmetics(target.getUuid());
+        List<String> unlockedCosmetics = new java.util.ArrayList<>(DatabaseManager.getPlayerUnlockedCosmetics(target.getUuid()));
+        // + AUTO-UNLOCK dinâmico: cosméticos cujo unlockPermission/unlockTag o jogador satisfaz agora
+        // (não grava no banco — recalculado a cada abertura do wardrobe / tentativa de equipar).
+        for (String id : com.f4xizzz.greatcosmetics.GreatCosmetics.autoUnlockedCosmeticIds(target)) {
+            if (!unlockedCosmetics.contains(id)) unlockedCosmetics.add(id);
+        }
 
         // Manda o Client abrir a interface repassando os dados corretos!
         ServerPlayNetworking.send(target, new OpenWardrobePayload(hasSavedBackground, isOp, unlockedCosmetics));

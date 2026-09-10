@@ -173,12 +173,12 @@ public class CosmeticsConfig {
           //     animations/**/<name>.animation.json, optional).
           //
           //  By default ("useExactPath": false) both of the above match by FILE NAME only (no
-          //  folder), in ANY subfolder — e.g. "cigarette" finds both models/item/cigarette.json
-          //  and models/sas/cigarette.json, whichever shows up first.
+          //  folder), in ANY subfolder — e.g. "wizard_hat" finds both models/item/wizard_hat.json
+          //  and models/hats/wizard_hat.json, whichever shows up first.
           //
           //  If you turn on "useExactPath": true, the field becomes the FULL RELATIVE PATH,
-          //  without extension (e.g. "sas/cigarette" for assets/<any namespace>/models/sas/
-          //  cigarette.json, or "item/faxihat" for assets/<any namespace>/geo/item/faxihat.geo.json)
+          //  without extension (e.g. "hats/wizard_hat" for assets/<any namespace>/models/hats/
+          //  wizard_hat.json, or "item/dragon_wings" for assets/<any namespace>/geo/item/dragon_wings.geo.json)
           //  — use this when you have two files with the same name in different folders and the
           //  name search is picking the wrong one.
           // ====================================================================================

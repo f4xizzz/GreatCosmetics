@@ -1,9 +1,7 @@
 package com.f4xizzz.greatcosmetics.mixin;
 
-import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
 import com.f4xizzz.greatcosmetics.client.ClientNameTagCache;
 import com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen;
-import com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage;
 import com.f4xizzz.greatcosmetics.util.TextUtils;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -21,47 +19,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(PlayerEntityRenderer.class)
 public class PlayerEntityRendererMixin {
 
-    @Inject(method = "render(Lnet/minecraft/client/network/AbstractClientPlayerEntity;FFLnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;I)V", at = @At("HEAD"), cancellable = true)
-    private void swapPlayerWithPokemon(AbstractClientPlayerEntity player, float yaw, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
-        if (player == MinecraftClient.getInstance().player && Wardrobe3DScreen.isPartyTabActive) {
-            ci.cancel();
-
-            PokemonEntity poke = PartyPage.getCurrentPokemonEntity();
-
-            if (poke != null) {
-                // Esse render substitui o player inteiro na tela (ci.cancel() já rodou acima) — uma
-                // exceção sem captura aqui dentro de um @Inject de Mixin sobe direto pro loop
-                // principal de render do jogo e derruba o client inteiro. Algumas combinações de
-                // species+aspect (ver pose/aspect resolvidos em PokemonClientDelegate) fazem o
-                // Cobblemon lançar durante poke.tick()/render() em vez de cair no fallback
-                // "Substitute" — captura aqui pra, na pior das hipóteses, só fechar a wardrobe em
-                // vez de crashar o jogo do player.
-                try {
-                    if (poke.age != player.age) {
-                        poke.tick();
-                        poke.age = player.age;
-                    }
-
-                    poke.setPos(player.getX(), player.getY(), player.getZ());
-                    poke.prevX = player.prevX;
-                    poke.prevY = player.prevY;
-                    poke.prevZ = player.prevZ;
-
-                    poke.setBodyYaw(player.bodyYaw);
-                    poke.prevBodyYaw = player.prevBodyYaw;
-                    poke.setHeadYaw(player.headYaw);
-                    poke.prevHeadYaw = player.prevHeadYaw;
-                    poke.setPitch(player.getPitch());
-                    poke.prevPitch = player.prevPitch;
-
-                    MinecraftClient.getInstance().getEntityRenderDispatcher().render(poke, 0.0, 0.0, 0.0, yaw, tickDelta, matrices, vertexConsumers, light);
-                } catch (Exception t) {
-                    System.err.println("[GreatCosmetics] Error rendering Pokémon in the Party preview — closing the wardrobe to avoid crashing the client. " + t);
-                    MinecraftClient.getInstance().setScreen(null);
-                }
-            }
-        }
-    }
+    // SOFT-DEP COBBLEMON: o swap do modelo do jogador pelo Pokémon da aba Party foi pra
+    // PokemonPreviewMixin (toca com.cobblemon.*, só é aplicado com o Cobblemon instalado). Aqui
+    // ficou só o nametag da aba Tags, que não depende do Cobblemon.
 
     // Visibilidade do CORPO do jogador (botão de 3 estados na barrinha lateral esquerda, ver
     // Wardrobe3DScreen#renderGizmoSidebar/cycleCharacterAlpha) — a implementação de verdade foi

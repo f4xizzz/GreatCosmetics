@@ -56,7 +56,7 @@ public abstract class ItemRendererMixin {
         ci.cancel();
 
         // =================================================================================
-        // SEM ÍCONE PRÓPRIO: LÊ EXATAMENTE A MODEL 3D DA PART (ex: "cigarro", "faxihat")
+        // SEM ÍCONE PRÓPRIO: LÊ EXATAMENTE A MODEL 3D DA PART (ex: "wizard_hat", "dragon_wings")
         // =================================================================================
 
         if (data.parts != null && !data.parts.isEmpty()) {
@@ -67,7 +67,7 @@ public abstract class ItemRendererMixin {
             matrices.scale(scale, scale, scale);
 
             for (CosmeticData.CosmeticPart part : data.parts) {
-                // Pega diretamente o número limpo calculado pelo AutoCMDManager ("cigarro" ou "faxihat")
+                // Pega diretamente o número limpo calculado pelo AutoCMDManager ("wizard_hat" ou "dragon_wings")
                 int modelToRender = part.resolvedCmd != 0 ? part.resolvedCmd : cmdComp.value();
 
                 boolean isGeoModel = com.f4xizzz.greatcosmetics.geckolib.GeoModelRegistry.has(modelToRender);

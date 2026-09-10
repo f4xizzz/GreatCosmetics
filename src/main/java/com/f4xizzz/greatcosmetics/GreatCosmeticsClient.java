@@ -61,6 +61,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 	public void onInitializeClient() {
 
 		com.f4xizzz.greatcosmetics.client.ClientFavoriteCosmetics.load();
+		com.f4xizzz.greatcosmetics.client.ClientLocalSettings.load();
 
 		// Limpa qualquer arquivo de textura decifrado que tenha sobrado de uma sessão anterior
 		// encerrada sem sair limpo (crash, "kill" do processo) — ver ClientForcedTextureCache.
@@ -126,7 +127,10 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 				debugLog("SyncSkinCatalogPayload received: " + payload.skins().size() + " skins, " + payload.groupColors().size() + " group colors.");
 				com.f4xizzz.greatcosmetics.config.SkinConfigManager.setSkinsFromServer(payload.skins());
 				com.f4xizzz.greatcosmetics.config.SkinGroupConfigManager.setColorsFromServer(payload.groupColors());
-				com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage.refreshSkinsIfOpen();
+				// SOFT-DEP COBBLEMON: PartyPage toca com.cobblemon.* — só referencia com Cobblemon
+				// instalado (o && curto-circuita antes do invokestatic quando é false). Ver ModCompat.
+				if (com.f4xizzz.greatcosmetics.util.ModCompat.cobblemon())
+					com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage.refreshSkinsIfOpen();
 			});
 		});
 
@@ -135,10 +139,13 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncDevPermissionsPayload.ID, (payload, context) -> {
 			context.client().execute(() -> {
-				debugLog("SyncDevPermissionsPayload received: isOperator=" + payload.isOperator() + " hasGcDev=" + payload.hasGcDev() + " hasGcPermDevmode=" + payload.hasGcPermDevmode());
+				debugLog("SyncDevPermissionsPayload received: isOperator=" + payload.isOperator() + " hasGcDev=" + payload.hasGcDev() + " hasGcPermDevmode=" + payload.hasGcPermDevmode()
+						+ " serverHasCobblemon=" + payload.serverHasCobblemon() + " serverHasLuckPerms=" + payload.serverHasLuckPerms());
 				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.isOperator = payload.isOperator();
 				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.hasGcDev = payload.hasGcDev();
 				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.hasGcPermDevmode = payload.hasGcPermDevmode();
+				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.serverHasCobblemon = payload.serverHasCobblemon();
+				com.f4xizzz.greatcosmetics.client.ClientPermissionCache.serverHasLuckPerms = payload.serverHasLuckPerms();
 			});
 		});
 
@@ -216,6 +223,15 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 			});
 		});
 
+		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncEffectGroupsPayload.ID, (payload, context) -> {
+			context.client().execute(() -> {
+				java.lang.reflect.Type type = new com.google.gson.reflect.TypeToken<java.util.Map<String, com.f4xizzz.greatcosmetics.config.EffectGroupData>>(){}.getType();
+				java.util.Map<String, com.f4xizzz.greatcosmetics.config.EffectGroupData> map = new com.google.gson.Gson().fromJson(payload.jsonData(), type);
+				com.f4xizzz.greatcosmetics.config.EffectGroupConfig.groupsMap = map != null ? map : new java.util.HashMap<>();
+				debugLog("SyncEffectGroupsPayload received: " + com.f4xizzz.greatcosmetics.config.EffectGroupConfig.groupsMap.size() + " effect group(s).");
+			});
+		});
+
 		// ==========================================
 		// ESTADO DO CATÁLOGO/TEXTURA FORÇADA (ver Fase 3 do plano — cache criptografado por
 		// servidor + supressão da SplashOverlay quando nada mudou). Mandado ANTES do resource pack
@@ -284,8 +300,8 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 		// ==========================================
 		// ARMADURAS CONVERTIDAS EM COSMÉTICO (ver ArmorCosmeticsConfig)
 		// ==========================================
-		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload.ID, (payload, context) -> {
-			context.client().execute(() -> com.f4xizzz.greatcosmetics.client.ClientPokemonIvCache.put(payload.ivsByEntityId()));
+		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncPokemonScanPayload.ID, (payload, context) -> {
+			context.client().execute(() -> com.f4xizzz.greatcosmetics.client.ClientPokemonScanCache.put(payload.byEntityId()));
 		});
 
 		ClientPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload.ID, (payload, context) -> {
@@ -676,7 +692,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 	 * sem precisar recompilar o mod.
 	 */
 	/** Acha, em QUALQUER namespace carregado, um recurso cujo caminho bate EXATO com
-	 *  {@code exactRelativePath} (ex: "models/sas/cigarro.json") — usado pelo modo "Caminho Exato"
+	 *  {@code exactRelativePath} (ex: "models/hats/wizard_hat.json") — usado pelo modo "Caminho Exato"
 	 *  (ver CosmeticPart#useExactPath) tanto pro modelo vanilla quanto pro GeckoLib, em vez da busca
 	 *  antiga por só o nome do arquivo (ambígua com pastas, e no caso do modelo vanilla, restrita ao
 	 *  namespace "greatcosmetics"). {@code topFolder} é só a otimização de raiz que findResources
@@ -805,7 +821,7 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 				Identifier animId;
 
 				if (part.useExactPath) {
-					// Modo "Caminho Exato": key é o caminho relativo COMPLETO (ex: "sas/cigarro"),
+					// Modo "Caminho Exato": key é o caminho relativo COMPLETO (ex: "hats/wizard_hat"),
 					// buscado por igualdade exata em qualquer namespace — nada de casar só pelo nome.
 					geoId = findExactResource(rm, "geo", "geo/" + key + ".geo.json");
 					if (geoId != null) {
@@ -816,14 +832,14 @@ public class GreatCosmeticsClient implements ClientModInitializer {
 					if (texId == null) texId = findExactResource(rm, "textures", "textures/" + key + ".png");
 					animId = findExactResource(rm, "animations", "animations/" + key + ".animation.json");
 				} else {
-					// Aceita tanto só o nome do arquivo ("brendans_hat") quanto o admin ter digitado
-					// junto a pasta que viu dentro do jar ("armors/brendans_hat") — só o nome depois da
+					// Aceita tanto só o nome do arquivo ("wizard_hat") quanto o admin ter digitado
+					// junto a pasta que viu dentro do jar ("hats/wizard_hat") — só o nome depois da
 					// última "/" importa pra achar o arquivo, então tenta os dois antes de desistir.
 					geoId = geoMap.containsKey(key) ? geoMap.get(key) : geoMap.get(baseName);
 
 					// Textura: alguns mods têm DOIS arquivos com o MESMO nome — um ícone chapado de
-					// inventário (ex: textures/item/brendans_hat.png) e a textura de verdade do modelo
-					// 3D, numa subpasta diferente (ex: textures/item/armor/brendans_hat.png). Casar só
+					// inventário (ex: textures/item/wizard_hat.png) e a textura de verdade do modelo
+					// 3D, numa subpasta diferente (ex: textures/item/armor/wizard_hat.png). Casar só
 					// pelo nome do arquivo é ambíguo nesse caso e pode pegar a errada (dá exatamente
 					// esse visual "quebrado", UV toda errada). Por isso tenta PRIMEIRO o caminho que
 					// espelha a MESMA subpasta do geo (troca "geo/" por "textures/" e ".geo.json" por

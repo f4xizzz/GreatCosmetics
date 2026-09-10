@@ -58,6 +58,19 @@ public class GreatCosmetics implements ModInitializer {
 	// vez de deixar só a duração curta acabar sozinha, que causava o ícone piscando "acabando").
 	public static final Map<UUID, Set<Identifier>> activeCosmeticStatusEffects = new HashMap<>();
 
+	// Nodes de permissão (transient, via LuckPerms) e scoreboard tags vanilla (/tag) que cada
+	// player tem AGORA "por causa de um cosmético equipado" — ver syncCosmeticGrants(). Mesmo
+	// padrão de reconcílio por delta de activeCosmeticStatusEffects: só toca o LuckPerms / NBT
+	// quando algo entra ou sai da lista.
+	public static final Map<UUID, Set<String>> activeCosmeticPermNodes = new HashMap<>();
+	public static final Map<UUID, Set<String>> activeCosmeticCommandTags = new HashMap<>();
+
+	// SOFT-DEP COBBLEMON: o loop de tick não pode chamar código que toca com.cobblemon.* direto
+	// (num servidor sem Cobblemon a classe nem carrega). Quando o Cobblemon está instalado,
+	// integration.CobblemonServer.init() planta aqui o empurrador de scan (IV/nature/ability/size);
+	// sem Cobblemon fica null e o bloco de scanner do tick vira no-op. Ver util.ModCompat.
+	public static java.util.function.BiConsumer<ServerPlayerEntity, boolean[]> scanPushHook = null;
+
 	// UUID -> tick alvo em que a re-validação de tags de grupo deve rodar de novo, um pouco depois
 	// do join. O LuckPerms carrega os dados do usuário de forma assíncrona no login: rodar
 	// validateEquippedGroupTag/autoEquipCurrentGroupTag imediato no JOIN podia acontecer ANTES
@@ -174,13 +187,17 @@ public class GreatCosmetics implements ModInitializer {
 		PayloadTypeRegistry.playC2S().register(EquipTagPayload.ID, EquipTagPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(SaveTagPayload.ID, SaveTagPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(DeleteTagPayload.ID, DeleteTagPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.DevGrantTagPayload.ID, com.f4xizzz.greatcosmetics.network.DevGrantTagPayload.CODEC);
 		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload.ID, com.f4xizzz.greatcosmetics.network.SyncArmorCosmeticsPayload.CODEC);
-		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload.ID, com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncPokemonScanPayload.ID, com.f4xizzz.greatcosmetics.network.SyncPokemonScanPayload.CODEC);
 
 		// --- SISTEMA DE EFEITOS (Dev Studio > Effects) ---
 		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncEffectsPayload.ID, com.f4xizzz.greatcosmetics.network.SyncEffectsPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.SaveEffectPayload.ID, com.f4xizzz.greatcosmetics.network.SaveEffectPayload.CODEC);
 		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.DeleteEffectPayload.ID, com.f4xizzz.greatcosmetics.network.DeleteEffectPayload.CODEC);
+		PayloadTypeRegistry.playS2C().register(com.f4xizzz.greatcosmetics.network.SyncEffectGroupsPayload.ID, com.f4xizzz.greatcosmetics.network.SyncEffectGroupsPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.SaveEffectGroupPayload.ID, com.f4xizzz.greatcosmetics.network.SaveEffectGroupPayload.CODEC);
+		PayloadTypeRegistry.playC2S().register(com.f4xizzz.greatcosmetics.network.DeleteEffectGroupPayload.ID, com.f4xizzz.greatcosmetics.network.DeleteEffectGroupPayload.CODEC);
 
 		WardrobeManager.loadStudios();
 		WardrobeManager.loadSessions();
@@ -192,11 +209,13 @@ public class GreatCosmetics implements ModInitializer {
 		com.f4xizzz.greatcosmetics.config.LegacyCosmeticMigrationConfig.load();
 		TagsConfig.load();
 
-		// Liga de verdade os bônus de CosmeticData.lure nos eventos do Cobblemon (shiny, IV,
-		// hidden ability, chance de captura, exp, amizade) — sem isso "lure" era só dado exibido
-		// no lore do item, sem nenhum efeito real no jogo. Ver LureManager pro que dá e o que NÃO
-		// dá pra aplicar com a API pública do Cobblemon 1.7.3.
-		com.f4xizzz.greatcosmetics.util.LureManager.register();
+		// SOFT-DEP COBBLEMON: tudo que toca com.cobblemon.* mora em integration.CobblemonServer
+		// (LureManager, receivers de skin/PC de Pokémon, scanner). Só é tocado se o Cobblemon
+		// estiver instalado — num servidor sem ele, essa chamada nem acontece e nada disso carrega.
+		// Ver util.ModCompat. Os TIPOS de payload continuam registrados acima (protocolo simétrico).
+		if (com.f4xizzz.greatcosmetics.util.ModCompat.cobblemon()) {
+			com.f4xizzz.greatcosmetics.integration.CobblemonServer.init();
+		}
 
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
 			com.f4xizzz.greatcosmetics.database.DatabaseManager.initialize();
@@ -213,8 +232,10 @@ public class GreatCosmetics implements ModInitializer {
 			broadcastTagsCatalog(server);
 
 			// Passa a escutar troca de cargo do LuckPerms em tempo real — ver
-			// LuckPermsTagManager.registerRankChangeListener().
-			com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.registerRankChangeListener(server);
+			// LuckPermsTagManager.registerRankChangeListener(). SOFT-DEP: só com LuckPerms instalado
+			// (sem ele o método já dá early-return, mas nem toca a classe assim). Ver ModCompat.
+			if (com.f4xizzz.greatcosmetics.util.ModCompat.luckPerms())
+				com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.registerRankChangeListener(server);
 
 			// Força /sr toda vez que o server termina de iniciar.
 			server.getCommandManager().executeWithPrefix(server.getCommandSource(), "sr");
@@ -225,6 +246,14 @@ public class GreatCosmetics implements ModInitializer {
 			// pendingStartupCommandsTick pro motivo (server híbrido com plugins Bukkit que ainda não
 			// terminaram o próprio onEnable() nesse ponto).
 			pendingStartupCommandsTick = server.getTicks() + 100; // ~5s (20 ticks/s)
+
+			// server.properties <-> mainconfig.conf: importa o resource-pack já configurado no
+			// server.properties (se o mainconfig ainda não tem URL), senão empurra o mainconfig
+			// pro server.properties. Antes do refresh de hash abaixo — se importou uma URL nova,
+			// o refresh já calcula o SHA1 dela.
+			if (com.f4xizzz.greatcosmetics.util.ServerPropertiesSync.reconcileOnLoad(server)) {
+				broadcastMainConfig(server);
+			}
 
 			// Calcula o SHA1 real do resource pack forçado (ver refreshTextureHashAsync) — só baixa
 			// de novo em joins futuros quando o CONTEÚDO do arquivo mudar de verdade.
@@ -238,6 +267,7 @@ public class GreatCosmetics implements ModInitializer {
 		LangConfig.loadLang();
 		SoundConfig.loadSounds();
 		EffectConfig.loadEffects();
+		com.f4xizzz.greatcosmetics.config.EffectGroupConfig.load();
 
 		CosmeticsCommand.register();
 
@@ -274,6 +304,8 @@ public class GreatCosmetics implements ModInitializer {
 					com.f4xizzz.greatcosmetics.config.MainConfig.config = parsed;
 					com.f4xizzz.greatcosmetics.config.MainConfig.saveConfig();
 					broadcastMainConfig(context.server());
+					// Espelha forceTexture/textureUrl/textureId/textureSha1 no server.properties.
+					com.f4xizzz.greatcosmetics.util.ServerPropertiesSync.pushToServerProperties(context.server());
 					debugLog("SaveMainConfigPayload: MainConfig saved by " + player.getName().getString() + " e sincronizado.");
 				} catch (Exception e) {
 					debugLog("SaveMainConfigPayload: FAILED to save by " + player.getName().getString() + " — " + e);
@@ -363,128 +395,9 @@ public class GreatCosmetics implements ModInitializer {
 			});
 		});
 
-		// ==========================================
-		// REMOVER SKINS (MODO DEV)
-		// ==========================================
-		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.ClearPokemonSkinsPayload.ID, (payload, context) -> {
-			context.server().execute(() -> {
-				ServerPlayerEntity player = context.player();
-				if (licenseBlocked(player)) return;
-
-				// "gc.permission.dev" (antes usado aqui) nunca foi o node certo — em TODO o resto
-				// do mod (linhas 249/269/847/883, TagsPage, botão DEV da PartyPage) o acesso ao
-				// Dev Mode é sempre gated por "gc.dev". Quem tivesse "gc.dev" mas não fosse OP de
-				// verdade conseguia abrir o Dev Mode inteiro só não conseguia usar "Limpar Skins"
-				// dentro dele, silenciosamente, por checar um permission node que não existe/nunca
-				// foi documentado nem concedido por ninguém.
-				if (!isRealOperator(player) && !checkPermission(player, "gc.dev")) {
-					player.sendMessage(LangConfig.chat("messages.devstudio.no_perm_clear_skins", context.server().getRegistryManager()), false);
-					return;
-				}
-
-				com.cobblemon.mod.common.api.storage.party.PlayerPartyStore party = com.cobblemon.mod.common.Cobblemon.INSTANCE.getStorage().getParty(player);
-				boolean changed = false;
-
-				if (payload.slot() == -1) {
-					for (int i = 0; i < party.size(); i++) {
-						com.cobblemon.mod.common.pokemon.Pokemon p = party.get(i);
-						if (p != null && removeAllSkinAspects(p)) {
-							changed = true;
-						}
-					}
-				} else {
-					com.cobblemon.mod.common.pokemon.Pokemon p = party.get(payload.slot());
-					if (p != null && removeAllSkinAspects(p)) {
-						changed = true;
-					}
-				}
-
-				if (changed) {
-					playCustomSound(player, "equip_item");
-					player.sendMessage(LangConfig.chat("messages.skin.removed_success", context.server().getRegistryManager()), false);
-				} else {
-					player.sendMessage(LangConfig.chat("messages.skin.none_detected", context.server().getRegistryManager()), false);
-				}
-			});
-		});
-
-		// ==========================================
-		// EQUIPAR SKIN NO POKEMON DA PARTY
-		// ==========================================
-		ServerPlayNetworking.registerGlobalReceiver(EquipPokemonSkinPayload.ID, (payload, context) -> {
-			context.server().execute(() -> {
-				ServerPlayerEntity player = context.player();
-				if (licenseBlocked(player)) return;
-
-				debugLog("EquipPokemonSkinPayload from " + player.getName().getString() + ": skinId='" + payload.skinId() + "' slot=" + payload.slot());
-
-				PokemonSkin skin = SkinConfigManager.getSkin(payload.skinId());
-				if (skin == null) {
-					debugLog("EquipPokemonSkinPayload: skin '" + payload.skinId() + "' not found in the catalog.");
-					return;
-				}
-
-				com.cobblemon.mod.common.api.storage.party.PlayerPartyStore party = com.cobblemon.mod.common.Cobblemon.INSTANCE.getStorage().getParty(player);
-				com.cobblemon.mod.common.pokemon.Pokemon targetPokemon = party.get(payload.slot());
-				if (targetPokemon == null) {
-					debugLog("EquipPokemonSkinPayload: slot " + payload.slot() + " empty in the party of " + player.getName().getString() + ".");
-					return;
-				}
-
-				boolean isOp = isRealOperator(player);
-
-				if (!isOp) {
-					java.util.List<String> unlocked = com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerUnlockedSkins(player.getUuid());
-					if (!unlocked.contains(skin.getId())) return;
-				}
-
-				if (!targetPokemon.getSpecies().getName().equalsIgnoreCase(skin.getSpecies())) {
-					player.sendMessage(LangConfig.chat("messages.skin.incompatible", context.server().getRegistryManager()), true);
-					return;
-				}
-
-				long now = System.currentTimeMillis();
-
-				if (!isOp) {
-					long lastApplied = com.f4xizzz.greatcosmetics.database.DatabaseManager.getSkinLastApplied(player.getUuid(), skin.getId());
-					long cooldownMs = skin.getCooldownMinutes() * 60 * 1000L;
-					if (now - lastApplied < cooldownMs) {
-						player.sendMessage(LangConfig.chat("messages.skin.on_cooldown", context.server().getRegistryManager()), true);
-						return;
-					}
-				}
-
-				removeAllSkinAspects(targetPokemon);
-
-				String rawAspect = skin.getAspect().toLowerCase().trim();
-
-				if (rawAspect.startsWith("f=") || rawAspect.startsWith("form=") || rawAspect.startsWith("f:") || rawAspect.startsWith("form:")) {
-					String expectedForm = rawAspect.replace("form=", "").replace("f=", "").replace("form:", "").replace("f:", "").trim();
-					com.cobblemon.mod.common.api.pokemon.PokemonProperties.Companion.parse("f=" + expectedForm).apply(targetPokemon);
-				} else {
-					java.util.Set<String> newAspects = new java.util.HashSet<>(targetPokemon.getForcedAspects());
-					for (String part : rawAspect.split(" ")) {
-						String cleanPart = part.trim();
-						if (!cleanPart.isEmpty()) {
-							if (cleanPart.contains(":")) cleanPart = cleanPart.substring(cleanPart.indexOf(":") + 1).trim();
-							else if (cleanPart.contains("=")) cleanPart = cleanPart.substring(cleanPart.indexOf("=") + 1).trim();
-
-							newAspects.add(cleanPart);
-						}
-					}
-					targetPokemon.setForcedAspects(newAspects);
-				}
-
-				targetPokemon.updateAspects();
-
-				com.f4xizzz.greatcosmetics.database.DatabaseManager.setSkinCooldown(player.getUuid(), skin.getId(), now);
-				com.f4xizzz.greatcosmetics.command.CosmeticsCommand.syncPlayerSkins(player);
-				debugLog("EquipPokemonSkinPayload: skin '" + skin.getId() + "' applied to the Pokémon in slot " + payload.slot() + " of " + player.getName().getString() + ".");
-
-				playCustomSound(player, "equip_item");
-				player.sendMessage(LangConfig.chat("messages.skin.applied", context.server().getRegistryManager()), true);
-			});
-		});
+		// SOFT-DEP COBBLEMON: os receivers de ClearPokemonSkinsPayload e EquipPokemonSkinPayload
+		// (mexem na party do Cobblemon) moram em integration.CobblemonServer.init(), registrado
+		// só quando o Cobblemon está instalado. Os TIPOS continuam registrados acima.
 
 		ServerPlayNetworking.registerGlobalReceiver(ClearAllCosmeticsPayload.ID, (payload, context) -> {
 			context.server().execute(() -> {
@@ -540,33 +453,8 @@ public class GreatCosmetics implements ModInitializer {
 			});
 		});
 
-		// Botão PC da PartyPage: abre o PC direto pela API do Cobblemon (igual clicar num bloco
-		// de PC de verdade), sem passar pelo comando "/pc" — assim nenhum plugin de permissão de
-		// comando (ex: VanillaPermissions) consegue bloquear isso sem querer.
-		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.OpenPcFromWardrobePayload.ID, (payload, context) -> {
-			context.server().execute(() -> {
-				ServerPlayerEntity player = context.player();
-				if (licenseBlocked(player)) return;
-				try {
-					if (com.cobblemon.mod.common.util.PlayerExtensionsKt.isInBattle(player)) return;
-
-					com.cobblemon.mod.common.api.storage.pc.PCStore pcStore = com.cobblemon.mod.common.util.PlayerExtensionsKt.pc(player);
-
-					// PCLink puro (sem PermissiblePcLink) de propósito — o wrapper "Permissible"
-					// checa a permissão real do Cobblemon (CobblemonPermissions.getPC()) a cada
-					// ação dentro do PC, e em servidores onde o grupo default não tem essa
-					// permissão liberada, o PC abria mas as ações dentro dele ficavam bloqueadas.
-					// O PC do wardrobe deve se comportar como se fosse um PC físico colocado na
-					// frente do player e aberto direto — sem depender de permissão nenhuma.
-					com.cobblemon.mod.common.api.storage.pc.link.PCLinkManager.INSTANCE.addLink(
-							new com.cobblemon.mod.common.api.storage.pc.link.PCLink(pcStore, player.getUuid())
-					);
-					new com.cobblemon.mod.common.net.messages.client.storage.pc.OpenPCPacket(pcStore, null).sendToPlayer(player);
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			});
-		});
+		// SOFT-DEP COBBLEMON: o receiver do botão PC da PartyPage (abre o PC pela API do Cobblemon)
+		// mora em integration.CobblemonServer.init(), registrado só quando o Cobblemon existe.
 
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
 			com.f4xizzz.greatcosmetics.database.DatabaseManager.close();
@@ -580,10 +468,10 @@ public class GreatCosmetics implements ModInitializer {
 			server.execute(() -> {
 				// ==========================================
 				// CHECAGEM DO MOD DO CLIENTE
-				// SyncCosmeticsPayload é registrado como receiver tanto no jar completo (dev) quanto
-				// no jar do jogador (client-only) — se o client não respondeu que sabe receber esse
-				// canal, ele não tem o SaSCosmetics instalado (ou está numa versão desatualizada que
-				// ainda não registrava esse payload). Sem essa checagem, o jogador só descobria isso
+				// SyncCosmeticsPayload é registrado como receiver assim que o mod carrega — se o
+				// client não respondeu que sabe receber esse canal, ele não tem o GreatCosmetics
+				// instalado (ou está numa versão desatualizada que ainda não registrava esse
+				// payload). Sem essa checagem, o jogador só descobria isso
 				// quando o servidor mandava um payload que o client não reconhecia, derrubando ele com
 				// uma mensagem genérica de erro de pacote em vez de um aviso claro pra atualizar.
 				// ==========================================
@@ -611,7 +499,9 @@ public class GreatCosmetics implements ModInitializer {
 				ServerPlayNetworking.send(handler.player, new com.f4xizzz.greatcosmetics.network.SyncDevPermissionsPayload(
 						isRealOperator(handler.player),
 						checkPermission(handler.player, "gc.dev"),
-						checkPermission(handler.player, MainConfig.config.devModePermission)
+						checkPermission(handler.player, MainConfig.config.devModePermission),
+						com.f4xizzz.greatcosmetics.util.ModCompat.cobblemon(),
+						com.f4xizzz.greatcosmetics.util.ModCompat.luckPerms()
 				));
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.broadcastPlayerCosmetics(handler.player);
 
@@ -648,6 +538,7 @@ public class GreatCosmetics implements ModInitializer {
 
 				// SISTEMA DE EFEITOS: catálogo completo pro jogador que entrou (ver SaveEffectPayload)
 				ServerPlayNetworking.send(handler.player, new com.f4xizzz.greatcosmetics.network.SyncEffectsPayload(new com.google.gson.Gson().toJson(EffectConfig.effectsMap)));
+				ServerPlayNetworking.send(handler.player, new com.f4xizzz.greatcosmetics.network.SyncEffectGroupsPayload(new com.google.gson.Gson().toJson(com.f4xizzz.greatcosmetics.config.EffectGroupConfig.groupsMap)));
 
 				// NAMETAG (prefix/suffix do LuckPerms — ver SyncNameTagPayload): antes só era
 				// mandado quando o wardrobe abria, então ClientNameTagCache ficava sem valor
@@ -695,6 +586,12 @@ public class GreatCosmetics implements ModInitializer {
 			debugLog("DISCONNECT: " + handler.player.getName().getString() + " disconnecting — clearing in-memory state.");
 			WardrobeManager.forceReturnIfPending(handler.player);
 			activeCosmeticStatusEffects.remove(handler.player.getUuid());
+			// Scoreboard tags concedidas por cosmético são persistentes no playerdata — tirar agora
+			// enquanto o jogador ainda existe. As permissões transient do LuckPerms o próprio LP
+			// descarta no logout, então só limpamos o rastreio.
+			java.util.Set<String> leftoverTags = activeCosmeticCommandTags.remove(handler.player.getUuid());
+			if (leftoverTags != null) for (String tag : leftoverTags) handler.player.removeCommandTag(tag);
+			activeCosmeticPermNodes.remove(handler.player.getUuid());
 			activeFlyPlayers.remove(handler.player.getUuid());
 			activeFlySpeedBoostPlayers.remove(handler.player.getUuid());
 			com.f4xizzz.greatcosmetics.database.DatabaseManager.clearPlayerCache(handler.player.getUuid());
@@ -759,7 +656,9 @@ public class GreatCosmetics implements ModInitializer {
 				// (player_equipped_cosmetics) mesmo sem o player nunca ter desbloqueado ele de
 				// verdade, e ficava "grudado" pra sempre depois que ele perdia o OP/permissão
 				// (ver validateEquippedCosmeticOwnership, que só limpa DEPOIS do fato).
-				if (!canUseDevMode && !com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), baseId)) {
+				if (!canUseDevMode
+						&& !com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), baseId)
+						&& !playerSatisfiesUnlock(player, data)) {
 					debugLog("EquipCosmeticPayload: " + player.getName().getString() + " does NOT own '" + baseId + "' and has no bypass — blocked.");
 					player.sendMessage(LangConfig.chat("messages.cosmetic.not_owned", context.server().getRegistryManager()), true);
 					playCustomSound(player, "error_action");
@@ -990,6 +889,40 @@ public class GreatCosmetics implements ModInitializer {
 			});
 		});
 
+		// DEV (gc.dev): recebe de verdade uma tag/grupo que está testando no Dev Mode. ADD = entra
+		// no grupo / ganha a posse; SET = /lp parent set (só grupo — perde os outros).
+		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DevGrantTagPayload.ID, (payload, context) -> {
+			context.server().execute(() -> {
+				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
+				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) return;
+
+				TagData data = TagsConfig.getById(payload.tagId());
+				if (data == null) return;
+				var regs = context.server().getRegistryManager();
+
+				if (data.isGroupTag) {
+					boolean ok = payload.set()
+							? com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.setGroupExclusive(player, data.id)
+							: com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.addToGroup(player, data.id);
+					debugLog("DevGrantTagPayload: " + player.getName().getString() + (payload.set() ? " SET" : " ADD")
+							+ " group '" + data.id + "' -> " + ok);
+					player.sendMessage(LangConfig.chat(ok
+							? (payload.set() ? "messages.tag.dev_group_set" : "messages.tag.dev_group_added")
+							: "messages.tag.dev_group_fail", regs, "id", data.id), true);
+					// o listener de recálculo do LuckPerms re-sincroniza as tags do player sozinho
+				} else {
+					// Tag custom: dá a posse no banco + equipa.
+					com.f4xizzz.greatcosmetics.database.DatabaseManager.unlockTag(player.getUuid(), data.id);
+					com.f4xizzz.greatcosmetics.database.DatabaseManager.equipTag(player.getUuid(), data.id);
+					com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.applyTag(player, data);
+					syncPlayerTags(player);
+					debugLog("DevGrantTagPayload: " + player.getName().getString() + " granted custom tag '" + data.id + "'.");
+					player.sendMessage(LangConfig.chat("messages.tag.dev_custom_added", regs, "id", data.id), true);
+				}
+			});
+		});
+
 		// ==========================================
 		// SISTEMA DE EFEITOS: dev cria/edita um efeito de partícula (aba Dev Studio > Effects)
 		// ==========================================
@@ -1043,6 +976,54 @@ public class GreatCosmetics implements ModInitializer {
 				debugLog("DeleteEffectPayload: effect '" + payload.id() + "' deleted by " + player.getName().getString() + ".");
 
 				player.sendMessage(LangConfig.chat("messages.effect.deleted", context.server().getRegistryManager(), "id", payload.id()), true);
+			});
+		});
+
+		// ==========================================
+		// SISTEMA DE EFEITOS: dev cria/edita/apaga um GRUPO de efeito
+		// ==========================================
+		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.SaveEffectGroupPayload.ID, (payload, context) -> {
+			context.server().execute(() -> {
+				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
+				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) {
+					player.sendMessage(LangConfig.chat("messages.effect.no_perm_edit", context.server().getRegistryManager()), true);
+					return;
+				}
+				String newId = payload.newId() != null ? payload.newId().trim() : "";
+				if (newId.isEmpty()) {
+					player.sendMessage(LangConfig.chat("messages.effect.id_empty", context.server().getRegistryManager()), true);
+					return;
+				}
+				com.f4xizzz.greatcosmetics.config.EffectGroupData data =
+						new com.google.gson.Gson().fromJson(payload.jsonData(), com.f4xizzz.greatcosmetics.config.EffectGroupData.class);
+				if (data == null) return;
+				if (data.effectIds == null) data.effectIds = new java.util.ArrayList<>();
+				if (data.ownedEffects == null) data.ownedEffects = new java.util.ArrayList<>();
+
+				String oldId = payload.oldId() != null ? payload.oldId().trim() : "";
+				if (!oldId.isEmpty() && !oldId.equals(newId)) {
+					com.f4xizzz.greatcosmetics.config.EffectGroupConfig.groupsMap.remove(oldId);
+				}
+				com.f4xizzz.greatcosmetics.config.EffectGroupConfig.groupsMap.put(newId, data);
+				com.f4xizzz.greatcosmetics.config.EffectGroupConfig.save();
+				broadcastEffectsCatalog(context.server());
+				debugLog("SaveEffectGroupPayload: group '" + oldId + "' -> '" + newId + "' saved by " + player.getName().getString() + ".");
+			});
+		});
+
+		ServerPlayNetworking.registerGlobalReceiver(com.f4xizzz.greatcosmetics.network.DeleteEffectGroupPayload.ID, (payload, context) -> {
+			context.server().execute(() -> {
+				ServerPlayerEntity player = context.player();
+				if (licenseBlocked(player)) return;
+				if (!(isRealOperator(player) || checkPermission(player, "gc.dev"))) {
+					player.sendMessage(LangConfig.chat("messages.effect.no_perm_delete", context.server().getRegistryManager()), true);
+					return;
+				}
+				if (com.f4xizzz.greatcosmetics.config.EffectGroupConfig.groupsMap.remove(payload.id()) == null) return;
+				com.f4xizzz.greatcosmetics.config.EffectGroupConfig.save();
+				broadcastEffectsCatalog(context.server());
+				debugLog("DeleteEffectGroupPayload: group '" + payload.id() + "' deleted by " + player.getName().getString() + ".");
 			});
 		});
 
@@ -1127,8 +1108,16 @@ public class GreatCosmetics implements ModInitializer {
 				boolean isFlying = player.getAbilities().flying;
 
 				double flySpeedMult = 1.0, groundSpeedMult = 1.0, swimSpeedMult = 1.0;
-				boolean wantsIvScan = false;
+				boolean[] wantsScan = {false, false, false, false}; // iv, nature, ability, size
 				Map<Identifier, Integer> desiredStatusEffects = isMajorTick ? new HashMap<>() : null;
+				// Permissões concedidas + scoreboard tags de TODO cosmético equipado (virtual + armadura)
+				// que passa o gate — agregado neste tick, aplicado por delta em syncCosmeticGrants().
+				java.util.Set<String> desiredPermNodes = isMajorTick ? new java.util.HashSet<>() : null;
+				java.util.Set<String> desiredCommandTags = isMajorTick ? new java.util.HashSet<>() : null;
+
+				// Bloqueio de efeitos por grupo (MainConfig.effectBlockGroups): o cosmético continua
+				// aparecendo (render é client-side, lê só a lista de equipados), mas não dá NADA.
+				boolean effectsBlocked = cosmeticEffectsBlockedFor(player);
 
 				java.util.List<String> equippedIds = com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerEquippedCosmetics(player.getUuid());
 				// Cosmético "escondido" (botão de olho na Wardrobe — ver ToggleCosmeticVisibilityPayload)
@@ -1154,24 +1143,31 @@ public class GreatCosmetics implements ModInitializer {
 							}
 						}
 
-						if (!hiddenIds.contains(com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(id))) {
+						if (!effectsBlocked && !hiddenIds.contains(com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(id))) {
 							for (String effectId : data.effectVisual) {
-								EffectData effect = EffectConfig.effectsMap.get(effectId);
-								if (effect != null && server.getTicks() % effect.tickInterval == 0) spawnCosmeticParticle(player, effect);
+								// effectId pode ser um id de efeito OU de grupo (→ todos os membros).
+								for (EffectData effect : com.f4xizzz.greatcosmetics.config.EffectGroupConfig.resolve(effectId)) {
+									if (effect != null) spawnEffect(player, effect, server.getTicks());
+								}
 							}
 
 							if (isFlying) {
 								for (String flyId : data.flyParticle) {
-									EffectData effect = EffectConfig.effectsMap.get(flyId);
-									if (effect != null && server.getTicks() % effect.tickInterval == 0) spawnCosmeticParticle(player, effect);
+									for (EffectData effect : com.f4xizzz.greatcosmetics.config.EffectGroupConfig.resolve(flyId)) {
+										if (effect != null) spawnEffect(player, effect, server.getTicks());
+									}
 								}
 							}
 						}
 
-						if (isMajorTick) {
+						if (isMajorTick && !effectsBlocked) {
 							if (data.EnableFly) shouldFly = true;
-							if (data.ivScanner) wantsIvScan = true;
+							if (data.ivScanner) wantsScan[0] = true;
+							if (data.natureScanner) wantsScan[1] = true;
+							if (data.abilityScanner) wantsScan[2] = true;
+							if (data.sizeScanner) wantsScan[3] = true;
 							collectPotionEffects(data, desiredStatusEffects);
+							collectCosmeticGrants(data, desiredPermNodes, desiredCommandTags);
 							// Math.max (não mais *=) — dois cosméticos de +50% de velocidade
 							// multiplicando entre si virava +125% (1.5*1.5), empilhando bônus que
 							// cada um deveria valer sozinho. Igual collectPotionEffects já faz pros
@@ -1188,9 +1184,19 @@ public class GreatCosmetics implements ModInitializer {
 					handleSpeedLogic(player, flySpeedMult, groundSpeedMult, swimSpeedMult);
 					syncCosmeticStatusEffects(player, desiredStatusEffects);
 
-					// IVs Scanner: cosmético virtual (acima) OU armadura-cosmético vestida
-					if (!wantsIvScan) wantsIvScan = wearsIvScannerArmorCosmetic(player);
-					if (wantsIvScan) pushNearbyPokemonIvs(player);
+					// Permissões / scoreboard tags concedidas: o loop acima só viu os cosméticos
+					// virtuais — as armaduras-cosmético vestidas nas slots reais entram aqui.
+					// (effectsBlocked → desiredPermNodes/desiredCommandTags ficam vazios e o sync
+					// remove tudo que estava ativo, mantendo o cosmético só visual.)
+					if (!effectsBlocked) collectArmorCosmeticGrants(player, desiredPermNodes, desiredCommandTags);
+					syncCosmeticGrants(player, desiredPermNodes, desiredCommandTags);
+
+					// Scanners (IV / nature / ability / size): cosmético virtual (acima) OU armadura-cosmético
+					// vestida. Só faz sentido com Cobblemon — scanPushHook == null num servidor sem ele.
+					if (scanPushHook != null) {
+						if (!effectsBlocked) collectScannerArmorCosmetic(player, wantsScan);
+						if (wantsScan[0] || wantsScan[1] || wantsScan[2] || wantsScan[3]) scanPushHook.accept(player, wantsScan);
+					}
 				}
 			}
 		});
@@ -1205,81 +1211,50 @@ public class GreatCosmetics implements ModInitializer {
 		});
 	}
 
-	private void spawnCosmeticParticle(ServerPlayerEntity player, EffectData effect) {
+	/** Decide sozinho (pelo tick) SE spawna neste tick — chamado TODO tick pelo loop. SIMPLE = a
+	 *  cada tickInterval, count partículas com spread. Forma (CIRCLE/HELIX/BEAM/PULSE) = os pontos
+	 *  de ParticleShapes; se animTicks>0, a forma anima ao longo de animTicks e pausa tickInterval. */
+	private void spawnEffect(ServerPlayerEntity player, EffectData effect, long ticks) {
 		ServerWorld world = (ServerWorld) player.getWorld();
-		Identifier partId = Identifier.tryParse(effect.particleId);
-		if (partId != null) {
-			ParticleType<?> type = Registries.PARTICLE_TYPE.get(partId);
-			if (type instanceof ParticleEffect particleEffect) {
-				// BUG: isso usava spreadX/spreadZ (o ESPALHAMENTO aleatório) pra calcular a posição
-				// rotacionada, e nunca lia offsetX/offsetZ (o OFFSET de posição de verdade, ajustado
-				// pelo gizmo 3D no Dev Studio) — por isso a partícula nunca ficava onde configurado.
-				// offsetX/offsetZ são "Lados"/"Frente-Trás" (ver labels em DevEffectsSubPage), ou
-				// seja, relativos ao corpo do jogador — por isso rotacionam com bodyYaw. spreadX/Y/Z
-				// agora vão pro lugar de verdade: os parâmetros deltaX/deltaY/deltaZ de
-				// spawnParticles(), que é o espalhamento aleatório por partícula (igual o preview
-				// client-side já fazia em DevEffectsSubPage#spawnPreviewParticles).
-				// Convenção de yaw do Minecraft (yaw=0 olhando pro +Z/sul): forward = (-sin, cos),
-				// right = forward × up = (-cos, -sin). offsetZ anda ao longo de "forward" (frente/
-				// trás), offsetX ao longo de "right" (lados) — a versão anterior somava offsetX
-				// com o sinal invertido (tratava como se fosse um "left" em vez de "right"), então
-				// o lado pra onde a partícula desviava ficava espelhado conforme o jogador girava.
-				double yawRad = Math.toRadians(player.bodyYaw);
-				double finalX = player.getX() - (effect.offsetX * Math.cos(yawRad)) - (effect.offsetZ * Math.sin(yawRad));
-				double finalZ = player.getZ() - (effect.offsetX * Math.sin(yawRad)) + (effect.offsetZ * Math.cos(yawRad));
-				world.spawnParticles(particleEffect, finalX, player.getY() + effect.offsetY, finalZ, effect.count, effect.spreadX, effect.spreadY, effect.spreadZ, effect.speed);
-			}
+		ParticleEffect pe = com.f4xizzz.greatcosmetics.util.ParticleFx.resolve(effect);
+		if (pe == null) return;
+
+		// offsetX/offsetZ são "Lados"/"Frente-Trás" — relativos ao corpo, rotacionam com bodyYaw.
+		double yawRad = Math.toRadians(player.bodyYaw);
+		double cos = Math.cos(yawRad), sin = Math.sin(yawRad);
+		double baseX = player.getX() - (effect.offsetX * cos) - (effect.offsetZ * sin);
+		double baseZ = player.getZ() - (effect.offsetX * sin) + (effect.offsetZ * cos);
+		double baseY = player.getY() + effect.offsetY;
+		int interval = Math.max(1, effect.tickInterval);
+
+		if (!effect.isShape()) {
+			if (ticks % interval != 0) return;
+			world.spawnParticles(pe, baseX, baseY, baseZ, effect.count, effect.spreadX, effect.spreadY, effect.spreadZ, effect.speed);
+			return;
+		}
+
+		double anim;
+		if (effect.animTicks > 0) {
+			long cycle = effect.animTicks + Math.max(0, effect.tickInterval);
+			long inCycle = ticks % cycle;
+			if (inCycle >= effect.animTicks) return; // fase de pausa entre ciclos
+			anim = inCycle / (double) effect.animTicks;
+		} else {
+			if (ticks % interval != 0) return; // forma estática: só a cada tickInterval
+			anim = 1.0;
+		}
+
+		for (org.joml.Vector3d p : com.f4xizzz.greatcosmetics.util.ParticleShapes.points(effect, anim)) {
+			// a forma acompanha o corpo: rotaciona X/Z pelo bodyYaw também.
+			double wx = baseX + (p.x * cos - p.z * sin);
+			double wz = baseZ + (p.x * sin + p.z * cos);
+			world.spawnParticles(pe, wx, baseY + p.y, wz, 1, effect.spreadX, effect.spreadY, effect.spreadZ, effect.speed);
 		}
 	}
 
-	public static boolean removeAllSkinAspects(com.cobblemon.mod.common.pokemon.Pokemon pokemon) {
-		boolean changed = false;
-		String currentSpecies = pokemon.getSpecies().getName().toLowerCase();
-		java.util.Set<String> forcedAspects = new java.util.HashSet<>(pokemon.getForcedAspects());
-
-		for (com.f4xizzz.greatcosmetics.config.PokemonSkin skin : com.f4xizzz.greatcosmetics.config.SkinConfigManager.getAllSkins()) {
-			if (skin.getSpecies().toLowerCase().equals(currentSpecies)) {
-
-				String rawAspect = skin.getAspect().toLowerCase().trim();
-
-				if (rawAspect.startsWith("f=") || rawAspect.startsWith("form=") || rawAspect.startsWith("f:") || rawAspect.startsWith("form:")) {
-					String expectedForm = rawAspect.replace("form=", "").replace("f=", "").replace("form:", "").replace("f:", "").trim();
-					if (pokemon.getForm().getName().toLowerCase().contains(expectedForm.toLowerCase())) {
-						pokemon.setForm(pokemon.getSpecies().getStandardForm());
-						changed = true;
-					}
-				} else {
-					String[] parts = rawAspect.split(" ");
-					for (String part : parts) {
-						String cleanPart = part.trim();
-						if (!cleanPart.isEmpty()) {
-							String afterColon = cleanPart.contains(":") ? cleanPart.substring(cleanPart.indexOf(":") + 1).trim() : cleanPart;
-							String afterEquals = cleanPart.contains("=") ? cleanPart.substring(cleanPart.indexOf("=") + 1).trim() : cleanPart;
-
-							java.util.Set<String> toRemove = new java.util.HashSet<>();
-
-							for (String aspect : forcedAspects) {
-								if (aspect.equalsIgnoreCase(cleanPart) || aspect.equalsIgnoreCase(afterColon) || aspect.equalsIgnoreCase(afterEquals)) {
-									toRemove.add(aspect);
-								}
-							}
-
-							if (!toRemove.isEmpty()) {
-								forcedAspects.removeAll(toRemove);
-								changed = true;
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if (changed) {
-			pokemon.setForcedAspects(forcedAspects);
-			pokemon.updateAspects();
-		}
-		return changed;
-	}
+	// SOFT-DEP COBBLEMON: removeAllSkinAspects(Pokemon) mudou pra integration.CobblemonServer
+	// (o tipo Pokemon na assinatura forçava o carregamento de com.cobblemon.* nesta classe
+	// sempre-carregada). Só é chamado pelos receivers de skin, que também moram lá.
 
 	/** Junta (sem aplicar ainda) os efeitos de status que este cosmético concede, dentro do mapa
 	 *  agregado de TODOS os cosméticos equipados nesse tick — quando duas peças dão o mesmo efeito,
@@ -1295,6 +1270,75 @@ public class GreatCosmetics implements ModInitializer {
 			if (id != null) {
 				desired.merge(id, Math.max(0, level), Math::max);
 			}
+		}
+	}
+
+	/** Junta (sem aplicar ainda) as permissões concedidas + scoreboard tags vanilla que este
+	 *  cosmético dá — dentro dos conjuntos agregados de TODOS os cosméticos equipados nesse tick.
+	 *  Só é chamado pra cosmético que já passou o gate {@code data.permission}. Ver
+	 *  syncCosmeticGrants() pra aplicação por delta. */
+	private void collectCosmeticGrants(CosmeticData data, java.util.Set<String> desiredPerms, java.util.Set<String> desiredTags) {
+		if (desiredPerms == null) return; // não é isMajorTick
+		if (data.grantedPermissions != null) {
+			for (String node : data.grantedPermissions) if (node != null && !node.isBlank()) desiredPerms.add(node.trim());
+		}
+		if (data.minecraftTags != null) {
+			for (String tag : data.minecraftTags) if (tag != null && !tag.isBlank()) desiredTags.add(tag.trim());
+		}
+	}
+
+	/** Igual collectCosmeticGrants, mas pras armaduras REAIS convertidas em cosmético que o jogador
+	 *  veste nas slots de armadura de verdade (o loop de tick só enxerga cosmético virtual). Mesmo
+	 *  padrão de varredura de wearsIvScannerArmorCosmetic. */
+	private void collectArmorCosmeticGrants(ServerPlayerEntity player, java.util.Set<String> desiredPerms, java.util.Set<String> desiredTags) {
+		if (desiredPerms == null) return;
+		if (com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics.isEmpty()) return;
+		for (net.minecraft.entity.EquipmentSlot slot : new net.minecraft.entity.EquipmentSlot[]{
+				net.minecraft.entity.EquipmentSlot.HEAD, net.minecraft.entity.EquipmentSlot.CHEST,
+				net.minecraft.entity.EquipmentSlot.LEGS, net.minecraft.entity.EquipmentSlot.FEET}) {
+			net.minecraft.item.ItemStack stack = player.getEquippedStack(slot);
+			if (stack.isEmpty()) continue;
+			String id = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getCosmeticIdForItem(stack.getItem());
+			if (id == null) continue;
+			CosmeticData d = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getSyntheticCosmetic(id);
+			if (d == null) continue;
+			if (d.permission != null && !d.permission.isEmpty() && !checkPermission(player, d.permission)) continue;
+			collectCosmeticGrants(d, desiredPerms, desiredTags);
+		}
+	}
+
+	/** Aplica por delta (só o que entrou/saiu desde o último tick) as permissões transient +
+	 *  scoreboard tags concedidas pelos cosméticos equipados agora, e remove as que ficaram órfãs
+	 *  (cosmético desequipado / gate perdido). Mesmo esquema de syncCosmeticStatusEffects. */
+	private void syncCosmeticGrants(ServerPlayerEntity player, java.util.Set<String> desiredPerms, java.util.Set<String> desiredTags) {
+		java.util.Set<String> prevPerms = activeCosmeticPermNodes.computeIfAbsent(player.getUuid(), k -> new java.util.HashSet<>());
+		java.util.Set<String> prevTags = activeCosmeticCommandTags.computeIfAbsent(player.getUuid(), k -> new java.util.HashSet<>());
+
+		java.util.List<String> permsToRemove = new java.util.ArrayList<>();
+		for (String node : prevPerms) if (!desiredPerms.contains(node)) permsToRemove.add(node);
+		java.util.List<String> permsToAdd = new java.util.ArrayList<>();
+		for (String node : desiredPerms) if (!prevPerms.contains(node)) permsToAdd.add(node);
+
+		if (!permsToRemove.isEmpty()) {
+			com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.removeTransientPermissions(player, permsToRemove);
+			prevPerms.removeAll(permsToRemove);
+			debugLog("syncCosmeticGrants: " + player.getName().getString() + " — removeu perms transient " + permsToRemove);
+		}
+		if (!permsToAdd.isEmpty()) {
+			com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.addTransientPermissions(player, permsToAdd);
+			prevPerms.addAll(permsToAdd);
+			debugLog("syncCosmeticGrants: " + player.getName().getString() + " — concedeu perms transient " + permsToAdd
+					+ " (LuckPerms presente? " + (com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.isAvailable()) + ")");
+		}
+
+		for (String tag : new java.util.ArrayList<>(prevTags)) {
+			if (!desiredTags.contains(tag)) {
+				player.removeCommandTag(tag);
+				prevTags.remove(tag);
+			}
+		}
+		for (String tag : desiredTags) {
+			if (prevTags.add(tag)) player.addCommandTag(tag);
 		}
 	}
 
@@ -1329,13 +1373,12 @@ public class GreatCosmetics implements ModInitializer {
 		}
 	}
 
-	// ── IVs Scanner ─────────────────────────────────────────────────────────────────────
-	private static final double IV_SCAN_RANGE = 48.0;
+	// ── Scanners (IV / Nature / Ability / Size) ─────────────────────────────────────────
 
-	/** Armadura real convertida em cosmético (ver ArmorCosmeticsConfig) que o jogador veste e
-	 *  tem {@code ivScanner}. Cosmético virtual já é checado no loop de tick. */
-	private boolean wearsIvScannerArmorCosmetic(ServerPlayerEntity player) {
-		if (com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics.isEmpty()) return false;
+	/** Marca em {@code wantsScan} (iv, nature, ability, size) o que as armaduras REAIS convertidas
+	 *  em cosmético que o jogador veste pedem. Cosmético virtual já é checado no loop de tick. */
+	private void collectScannerArmorCosmetic(ServerPlayerEntity player, boolean[] wantsScan) {
+		if (com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics.isEmpty()) return;
 		for (net.minecraft.entity.EquipmentSlot slot : new net.minecraft.entity.EquipmentSlot[]{
 				net.minecraft.entity.EquipmentSlot.HEAD, net.minecraft.entity.EquipmentSlot.CHEST,
 				net.minecraft.entity.EquipmentSlot.LEGS, net.minecraft.entity.EquipmentSlot.FEET}) {
@@ -1344,39 +1387,17 @@ public class GreatCosmetics implements ModInitializer {
 			String id = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getCosmeticIdForItem(stack.getItem());
 			if (id == null) continue;
 			CosmeticData d = com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.getSyntheticCosmetic(id);
-			if (d != null && d.ivScanner
-					&& (d.permission == null || d.permission.isEmpty() || checkPermission(player, d.permission))) return true;
+			if (d == null) continue;
+			if (d.permission != null && !d.permission.isEmpty() && !checkPermission(player, d.permission)) continue;
+			if (d.ivScanner) wantsScan[0] = true;
+			if (d.natureScanner) wantsScan[1] = true;
+			if (d.abilityScanner) wantsScan[2] = true;
+			if (d.sizeScanner) wantsScan[3] = true;
 		}
-		return false;
 	}
 
-	private void pushNearbyPokemonIvs(ServerPlayerEntity player) {
-		try {
-			ServerWorld world = player.getServerWorld();
-			net.minecraft.util.math.Box box = player.getBoundingBox().expand(IV_SCAN_RANGE);
-			java.util.List<com.cobblemon.mod.common.entity.pokemon.PokemonEntity> mons =
-					world.getEntitiesByClass(com.cobblemon.mod.common.entity.pokemon.PokemonEntity.class, box, e -> true);
-			com.cobblemon.mod.common.api.pokemon.stats.Stat[] stats = {
-					com.cobblemon.mod.common.api.pokemon.stats.Stats.HP,
-					com.cobblemon.mod.common.api.pokemon.stats.Stats.ATTACK,
-					com.cobblemon.mod.common.api.pokemon.stats.Stats.DEFENCE,
-					com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_ATTACK,
-					com.cobblemon.mod.common.api.pokemon.stats.Stats.SPECIAL_DEFENCE,
-					com.cobblemon.mod.common.api.pokemon.stats.Stats.SPEED };
-			java.util.Map<Integer, int[]> out = new java.util.HashMap<>();
-			for (com.cobblemon.mod.common.entity.pokemon.PokemonEntity pe : mons) {
-				com.cobblemon.mod.common.pokemon.Pokemon pk = pe.getPokemon();
-				if (pk == null) continue;
-				int[] iv = new int[6];
-				for (int i = 0; i < 6; i++) iv[i] = pk.getIvs().getOrDefault(stats[i]);
-				out.put(pe.getId(), iv);
-			}
-			net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(player,
-					new com.f4xizzz.greatcosmetics.network.SyncPokemonIvsPayload(out));
-		} catch (Throwable t) {
-			debugLog("pushNearbyPokemonIvs falhou: " + t);
-		}
-	}
+	// SOFT-DEP COBBLEMON: pushNearbyPokemonScanData mudou pra integration.CobblemonServer.pushScanData
+	// (varre PokemonEntity, lê IVs/nature/ability/scale). Chamado pelo loop de tick via scanPushHook.
 
 	private void handleFlyLogic(ServerPlayerEntity player, boolean shouldFly) {
 		boolean isModFlyActive = activeFlyPlayers.contains(player.getUuid());
@@ -1497,6 +1518,42 @@ public class GreatCosmetics implements ModInitializer {
 		} catch (Exception e) {
 			return false;
 		}
+	}
+
+	/** O jogador está em algum grupo da lista {@code MainConfig.effectBlockGroups}? Se sim, os
+	 *  cosméticos dele continuam aparecendo mas não dão nenhum efeito (ver o loop de tick). */
+	public static boolean cosmeticEffectsBlockedFor(ServerPlayerEntity player) {
+		java.util.List<String> groups = MainConfig.config.effectBlockGroups;
+		if (groups == null || groups.isEmpty()) return false;
+		for (String g : groups) {
+			if (g != null && !g.isBlank() && com.f4xizzz.greatcosmetics.util.LuckPermsTagManager.isInGroup(player, g.trim())) return true;
+		}
+		return false;
+	}
+
+	/** AUTO-UNLOCK dinâmico: o jogador satisfaz a regra de desbloqueio deste cosmético (tem o
+	 *  {@code unlockPermission} OU a {@code unlockTag})? Não grava nada — recalculado toda vez. */
+	public static boolean playerSatisfiesUnlock(ServerPlayerEntity player, CosmeticData data) {
+		if (data == null) return false;
+		if (data.unlockPermission != null && !data.unlockPermission.isBlank()
+				&& checkPermission(player, data.unlockPermission.trim())) return true;
+		if (data.unlockTag != null && !data.unlockTag.isBlank()
+				&& player.getCommandTags().contains(data.unlockTag.trim())) return true;
+		return false;
+	}
+
+	/** Ids (base) de todos os cosméticos — virtuais e armadura-cosmético — que o jogador desbloqueou
+	 *  via AUTO-UNLOCK agora. Adicionado à lista de desbloqueados mandada no OpenWardrobePayload
+	 *  (ver WardrobeManager) pra o cliente mostrar/deixar equipar. */
+	public static java.util.List<String> autoUnlockedCosmeticIds(ServerPlayerEntity player) {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (java.util.Map.Entry<String, CosmeticData> e : CosmeticsConfig.cosmeticsMap.entrySet()) {
+			if (playerSatisfiesUnlock(player, e.getValue())) out.add(e.getKey());
+		}
+		for (java.util.Map.Entry<String, CosmeticData> e : com.f4xizzz.greatcosmetics.config.ArmorCosmeticsConfig.armorCosmetics.entrySet()) {
+			if (playerSatisfiesUnlock(player, e.getValue())) out.add(e.getKey());
+		}
+		return out;
 	}
 
 	public static CosmeticData getCosmeticData(int cmdToFind) {
@@ -1644,6 +1701,8 @@ public class GreatCosmetics implements ModInitializer {
 						for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
 							sendForcedResourcePack(p);
 						}
+						// SHA1 novo -> reflete no server.properties.
+						com.f4xizzz.greatcosmetics.util.ServerPropertiesSync.pushToServerProperties(server);
 					});
 				}
 			} catch (Exception e) {
@@ -1692,8 +1751,9 @@ public class GreatCosmetics implements ModInitializer {
 	/** textureId não precisa ser um UUID de verdade — qualquer texto vira um UUID estável via
 	 *  nameUUIDFromBytes. Extraído de sendForcedResourcePack() pra sendCatalogStateSnapshot()
 	 *  mandar o MESMO id (byte a byte) — o client precisa reconhecer, quando o pacote de resource
-	 *  pack de verdade chegar, que é ESSE pack específico (ver ServerResourcePackLoaderMixin). */
-	private static UUID resolveForcedTexturePackId() {
+	 *  pack de verdade chegar, que é ESSE pack específico (ver ServerResourcePackLoaderMixin).
+	 *  Também usado por ServerPropertiesSync pra preencher resource-pack-id no server.properties. */
+	public static UUID resolveForcedTexturePackId() {
 		try {
 			return UUID.fromString(MainConfig.config.textureId);
 		} catch (Exception e) {
@@ -1848,6 +1908,10 @@ public class GreatCosmetics implements ModInitializer {
 			}
 		}
 
+		// + slots extras dados pelo comando /gc extraslot (banco): específico do slot + "ALL".
+		bonus += com.f4xizzz.greatcosmetics.database.DatabaseManager.getExtraSlots(player.getUuid(), slotVirtual);
+		bonus += com.f4xizzz.greatcosmetics.database.DatabaseManager.getExtraSlots(player.getUuid(), "ALL");
+
 		return bonus;
 	}
 
@@ -1859,10 +1923,14 @@ public class GreatCosmetics implements ModInitializer {
 	}
 
 	public static void broadcastEffectsCatalog(net.minecraft.server.MinecraftServer server) {
-		String json = new com.google.gson.Gson().toJson(EffectConfig.effectsMap);
-		com.f4xizzz.greatcosmetics.network.SyncEffectsPayload payload = new com.f4xizzz.greatcosmetics.network.SyncEffectsPayload(json);
+		com.google.gson.Gson gson = new com.google.gson.Gson();
+		com.f4xizzz.greatcosmetics.network.SyncEffectsPayload payload =
+				new com.f4xizzz.greatcosmetics.network.SyncEffectsPayload(gson.toJson(EffectConfig.effectsMap));
+		com.f4xizzz.greatcosmetics.network.SyncEffectGroupsPayload groupsPayload =
+				new com.f4xizzz.greatcosmetics.network.SyncEffectGroupsPayload(gson.toJson(com.f4xizzz.greatcosmetics.config.EffectGroupConfig.groupsMap));
 		for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
 			ServerPlayNetworking.send(p, payload);
+			ServerPlayNetworking.send(p, groupsPayload);
 		}
 	}
 
@@ -1950,11 +2018,12 @@ public class GreatCosmetics implements ModInitializer {
 		java.util.List<String> equippedIds = com.f4xizzz.greatcosmetics.database.DatabaseManager.getPlayerEquippedCosmetics(player.getUuid());
 		boolean changed = false;
 		for (String id : equippedIds) {
-			if (!com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(),
-					com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(id))) {
+			String base = com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(id);
+			if (!com.f4xizzz.greatcosmetics.database.DatabaseManager.hasCosmetic(player.getUuid(), base)
+					&& !playerSatisfiesUnlock(player, getCosmeticById(base))) {
 				com.f4xizzz.greatcosmetics.database.DatabaseManager.unequipCosmetic(player.getUuid(), id);
 				changed = true;
-				debugLog("Cosmetic '" + id + "' automatically unequipped from " + player.getName().getString() + " (equipped via OP/Dev Mode bypass, no real ownership, and the bypass is no longer active).");
+				debugLog("Cosmetic '" + id + "' automatically unequipped from " + player.getName().getString() + " (no real ownership / auto-unlock rule not satisfied, and no bypass active).");
 			}
 		}
 

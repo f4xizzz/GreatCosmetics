@@ -30,6 +30,19 @@ public class GreatCosmeticsMixinPlugin implements IMixinConfigPlugin {
             "com.f4xizzz.greatcosmetics.util.WardrobeManager",
     };
 
+    // SOFT-DEP COBBLEMON: mixins que alvejam classes com.cobblemon.* (PokemonRendererMixin) ou
+    // tocam com.cobblemon.* no corpo (PokemonPreviewMixin) NÃO entram na config quando o Cobblemon
+    // está ausente — saíram da lista estática do greatcosmetics.mixins.json e são adicionados aqui
+    // por getMixins() só se isModLoaded("cobblemon"). Assim o Mixin nem tenta resolver o alvo
+    // inexistente num servidor sem Cobblemon. shouldApplyMixin() reforça (defesa em profundidade).
+    private static final boolean COBBLEMON =
+            net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("cobblemon");
+
+    private static final java.util.List<String> COBBLEMON_ONLY_MIXINS = java.util.List.of(
+            "PokemonRendererMixin",
+            "PokemonPreviewMixin"
+    );
+
     @Override
     public void onLoad(String mixinPackage) {}
 
@@ -40,7 +53,13 @@ public class GreatCosmeticsMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (!COBBLEMON && mixinClassName != null) {
+            for (String m : COBBLEMON_ONLY_MIXINS) {
+                if (mixinClassName.endsWith("." + m) || mixinClassName.equals(m)) return false;
+            }
+        }
         if (targetClassName == null) return true;
+        if (targetClassName.startsWith("com.cobblemon.")) return COBBLEMON;
         for (String p : PROTECTED_PREFIXES) {
             if (targetClassName.startsWith(p)) return false;
         }
@@ -55,7 +74,9 @@ public class GreatCosmeticsMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public List<String> getMixins() {
-        return null;
+        // Só adiciona os mixins de Cobblemon quando o Cobblemon está presente (ver comentário em
+        // COBBLEMON_ONLY_MIXINS). Sem ele, o Mixin nunca vê essas classes.
+        return COBBLEMON ? COBBLEMON_ONLY_MIXINS : null;
     }
 
     @Override

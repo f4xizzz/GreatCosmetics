@@ -109,10 +109,7 @@ public class BackpackManager {
 
         GreatCosmetics.debugLog("BackpackManager: openSpecificBackpack(" + cosmeticId + ") player=" + player.getName().getString());
 
-        boolean isReopen = cosmeticId.equals(openSessions.get(playerUuid));
-        if (!isReopen && data.sounds != null && data.sounds.backpackSound != null && !data.sounds.backpackSound.isEmpty()) {
-            GreatCosmetics.playCosmeticSound(player, data.sounds.backpackSound, (float) data.sounds.backpackVolume, (float) data.sounds.backpackPitch);
-        }
+        // Backpack sound REMOVIDO (pedido do usuário) — não toca mais nada ao abrir a mochila.
 
         SimpleInventory inventory = new SimpleInventory(size);
         loadInventoryInto(playerUuid, cosmeticId, inventory, registries);

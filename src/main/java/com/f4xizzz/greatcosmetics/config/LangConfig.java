@@ -41,6 +41,18 @@ public class LangConfig {
     /** Todas as chaves resolvidas, mescladas de todos os arquivos. */
     private static final Map<String, String> messages = new ConcurrentHashMap<>();
 
+    /** Chaves cujo texto DEFAULT mudou entre versões: se o valor no disco do dono ainda é um
+     *  destes valores antigos (nunca foi customizado), o load troca pelo novo default. Customização
+     *  de verdade (qualquer outro valor) é respeitada. */
+    private static final Map<String, java.util.Set<String>> STALE_DEFAULTS = new java.util.HashMap<>();
+    static {
+        STALE_DEFAULTS.put("devstudio.lure.title", java.util.Set.of("Lure Config", "Cobblemon Cosmetics"));
+        STALE_DEFAULTS.put("devstudio.cosmetic.btn.config_lure", java.util.Set.of(">> Configure LURE", ">> Cobblemon Cosmetics"));
+        STALE_DEFAULTS.put("devstudio.cosmetic.divider.lure", java.util.Set.of("=== LURE SYSTEM ===", "=== COBBLEMON COSMETICS ==="));
+        STALE_DEFAULTS.put("devstudio.cosmetic.tooltip.config_lure", java.util.Set.of(
+                "<gray>Cobblemon-specific perks this cosmetic grants:\n<gray>Lure bonuses (shiny/IV/spawn/xp/fishing) and the\n<gray>IVs Scanner. Hover each field inside for details."));
+    }
+
     public static void load() {
         messages.clear();
         if (!LANG_DIR.exists()) LANG_DIR.mkdirs();
@@ -64,7 +76,17 @@ public class LangConfig {
             for (Map.Entry<String, String> def : file.getValue().entrySet()) {
                 String key = def.getKey();
                 if (onDisk.containsKey(key)) {
-                    merged.put(key, onDisk.get(key));
+                    String onDiskVal = onDisk.get(key);
+                    // Chave RENOMEADA no código: se o valor no disco ainda é um default ANTIGO
+                    // (o dono nunca customizou), atualiza pro novo. Se ele customizou pra outra
+                    // coisa, respeita. Ver STALE_DEFAULTS.
+                    java.util.Set<String> stale = STALE_DEFAULTS.get(key);
+                    if (stale != null && stale.contains(onDiskVal)) {
+                        merged.put(key, def.getValue());
+                        changed = true;
+                    } else {
+                        merged.put(key, onDiskVal);
+                    }
                 } else if (legacyCustom.containsKey(key)) {
                     merged.put(key, legacyCustom.get(key));
                     changed = true;
@@ -217,6 +239,8 @@ public class LangConfig {
         commands.put("commands.forceequip.success", "<green>Cosmetic '{id}' force-equipped on {player} (ignoring slot limit)!");
         commands.put("commands.forceunequip.success", "<green>Cosmetic '{id}' unequipped from {player}!");
         commands.put("commands.forceunequip.not_equipped", "<yellow>{player} didn't have that cosmetic equipped.");
+        commands.put("commands.extraslot.done", "<green>{player} now has <white>{total}<green> extra slot(s) for <white>{slot}<green>.");
+        commands.put("commands.extraslot.bad_slot", "<red>Invalid slot '{slot}'. Use ALL, HEAD, FACE, NECK, CHEST, BACK, WAIST, LEGS, FEET or HAND.");
         commands.put("commands.tag.given", "<green>Tag '{id}' granted to {player}!");
         commands.put("commands.tag.received", "<green>You received the tag: <white>{name}");
         commands.put("commands.tag.already_has", "<yellow>{player} already has the tag '{id}'!");
@@ -277,6 +301,10 @@ public class LangConfig {
         m.put("messages.tag.no_perm_delete", "<red>[!] You don't have permission to delete tags.");
         m.put("messages.tag.group_cannot_delete", "<red>[!] Group tags can't be deleted.");
         m.put("messages.tag.deleted", "<green>Tag '{id}' deleted.");
+        m.put("messages.tag.dev_group_added", "<green>[DEV] You were added to group '{id}'.");
+        m.put("messages.tag.dev_group_set", "<yellow>[DEV] Your groups were replaced with '{id}' only.");
+        m.put("messages.tag.dev_group_fail", "<red>[DEV] Failed to change group '{id}' (LuckPerms missing?).");
+        m.put("messages.tag.dev_custom_added", "<green>[DEV] Custom tag '{id}' granted and equipped.");
         m.put("messages.effect.no_perm_edit", "<red>[!] You don't have permission to edit effects.");
         m.put("messages.effect.id_empty", "<red>[!] Effect ID can't be empty.");
         m.put("messages.effect.saved", "<green>Effect '{id}' saved successfully!");
@@ -318,23 +346,21 @@ public class LangConfig {
         items.put("items.lure.fishing_shiny", "<gray>  ▪ <yellow>Shiny: <green>+{value}x");
         items.put("items.lure.fishing_iv_chance", "<gray>  ▪ <green>Per-IV Perfect Chance: <green>+{value}%");
         items.put("items.lure.fishing_speed", "<gray>  ▪ <aqua>Speed: <green>+{value}%");
-        // ---------------- HUD de cosméticos (LureHudOverlay — canto inferior esquerdo) ----------------
+        // ---------------- HUD de cosméticos (LureHudOverlay — canto inferior DIREITO) ----------------
         items.put("hud.cos.section.abilities", "<gold>Abilities");
-        items.put("hud.cos.section.attributes", "<gold>Attributes");
         items.put("hud.cos.section.effects", "<gold>Effects");
         items.put("hud.cos.section.lure", "<gold>Lure");
         items.put("hud.cos.section.fishing", "<gold>Fishing");
-        items.put("hud.cos.section.scanner", "<gold>Scanner");
         items.put("hud.cos.flight", "<aqua>Flight");
         items.put("hud.cos.backpack", "<yellow>Backpack — {rows} rows");
         items.put("hud.cos.autofeed", "<green>Auto Feed");
-        items.put("hud.cos.armor", "<white>+{value} Armor");
-        items.put("hud.cos.toughness", "<white>+{value} Toughness");
-        items.put("hud.cos.ground_speed", "<white>Ground Speed x{value}");
-        items.put("hud.cos.fly_speed", "<white>Fly Speed x{value}");
-        items.put("hud.cos.swim_speed", "<white>Swim Speed x{value}");
         items.put("hud.cos.particle_trail", "<light_purple>Particle Trail");
         items.put("hud.cos.ivs_scanner", "<aqua>IVs Scanner");
+        items.put("hud.cos.scanner.line", "<aqua>{names} Scanner");
+        items.put("hud.cos.scanner.ivs", "IVs");
+        items.put("hud.cos.scanner.nature", "Nature");
+        items.put("hud.cos.scanner.size", "Size");
+        items.put("hud.cos.scanner.ability", "Ability");
         items.put("hud.lure.type", "<white>Type: <aqua>{value}");
         items.put("hud.lure.shiny", "<yellow>✨ Shiny <green>+{value}x");
         items.put("hud.lure.ultrarare", "<dark_purple>🔮 Ultra Rare <green>+{value}x");
@@ -382,6 +408,7 @@ public class LangConfig {
         w.put("wardrobe.customize.chestplate", "Chestplate");
         w.put("wardrobe.customize.leggings", "Leggings");
         w.put("wardrobe.customize.boots", "Boots");
+        w.put("wardrobe.customize.hide_others", "Others' cosmetics");
         w.put("wardrobe.customize.hidden", "HIDDEN");
         w.put("wardrobe.customize.visible", "VISIBLE");
         files.put("wardrobe", w);
@@ -410,6 +437,7 @@ public class LangConfig {
         a.put("accessories.tooltip.backpack", " <gold>🎒 <white>Backpack <gray>({info})");
         a.put("accessories.tooltip.backpack_rows", "{rows} Rows");
         a.put("accessories.tooltip.autofeed", " <green>🍖 <white>Auto Feed");
+        a.put("accessories.tooltip.iv_scanner", " <aqua>⚲ <white>IVs Scanner");
         a.put("accessories.tooltip.passive_effects", "<light_purple>Passive Effects:");
         a.put("accessories.tooltip.effect_line", " <dark_purple>- <white>");
         a.put("accessories.variant_picker.default", "Default");
@@ -471,6 +499,10 @@ public class LangConfig {
         t.put("tags.editor.field.minecraft_tag", "Minecraft Tag");
         t.put("tags.editor.save", "Save");
         t.put("tags.editor.delete", "DELETE TAG");
+        t.put("tags.dev.add", "+ Add to me");
+        t.put("tags.dev.set", "Set as only");
+        t.put("tags.dev.set_confirm_title", "Set as your only group?");
+        t.put("tags.dev.set_confirm_body", "You will lose every other LuckPerms group.");
         files.put("tags", t);
 
         // ---------------- backpack.json ----------------
@@ -488,7 +520,8 @@ public class LangConfig {
         d.put("devstudio.menu.types", "Cosmetics Types");
         d.put("devstudio.menu.server_config", "Server Config");
         d.put("devstudio.menu.slots", "Slots");
-        d.put("devstudio.menu.help", "<gray>Need help? Join <yellow>SaSDEV<gray> on Discord\nand ask!");
+        d.put("devstudio.menu.tags", "Chat Tags");
+        d.put("devstudio.menu.help", "<gray>Need help? Ask on the mod's\n<gray>support Discord!");
         d.put("devstudio.unsaved.title", "<yellow><bold>UNSAVED CHANGES!");
         d.put("devstudio.unsaved.question", "Do you want to save the current edits?");
         d.put("devstudio.unsaved.save", "Save");
@@ -513,10 +546,14 @@ public class LangConfig {
         d.put("devstudio.cosmetic.divider.status_combat", "=== STATUS & COMBAT ===");
         d.put("devstudio.cosmetic.divider.backpack", "=== BACKPACK ===");
         d.put("devstudio.cosmetic.divider.special_effects", "=== SPECIAL EFFECTS ===");
-        d.put("devstudio.cosmetic.divider.lure", "=== COBBLEMON COSMETICS ===");
+        d.put("devstudio.cosmetic.divider.lure", "=== COBBLEMON EFFECTS ===");
         d.put("devstudio.cosmetic.divider.sounds", "=== SOUNDS ===");
         d.put("devstudio.cosmetic.field.real_item", "Real Item");
-        d.put("devstudio.cosmetic.tooltip.real_item", "<gray>The real Minecraft item this armor cosmetic\n<gray>represents (players actually wear this item,\n<gray>the mod just changes how it looks in-game).\n<gray>Type the item's ID, e.g. minecraft:diamond_helmet.");
+        d.put("devstudio.cosmetic.tooltip.real_item", "<gray>The real Minecraft item this armor cosmetic\n<gray>represents (players actually wear this item,\n<gray>the mod just changes how it looks in-game).\n<gray>Type the item's ID, e.g. minecraft:diamond_helmet.\n<gray>Chestplate/leggings auto-split into body + limb parts.");
+        d.put("devstudio.cosmetic.btn.split_armor_parts", ">> Split into {n} body parts");
+        d.put("devstudio.cosmetic.tooltip.split_armor_parts", "<gray>Rebuilds the Part list to match this armor slot:\n<gray>chestplate = torso + right arm + left arm,\n<gray>leggings = torso + right leg + left leg,\n<gray>boots = right leg + left leg. Each part follows\n<gray>its body bone. Keeps the model of Part 0.");
+        d.put("devstudio.cosmetic.confirm.split_armor_title", "Split parts?");
+        d.put("devstudio.cosmetic.confirm.split_armor_body", "Replaces the current parts with {n} (one per body bone).");
         d.put("devstudio.cosmetic.field.main_id", "Main ID");
         d.put("devstudio.cosmetic.tooltip.main_id", "<gray>The internal name of this cosmetic — used in\n<gray>commands (/gc give, /gc cosmetics equip),\n<gray>permissions and the config file name. Players\n<gray>never see this, only the Display Name below.\n<gray>Letters, numbers and underscore only.");
         d.put("devstudio.cosmetic.field.icon_name", "Icon Name");
@@ -530,14 +567,27 @@ public class LangConfig {
         d.put("devstudio.cosmetic.tooltip.type", "<gray>Free-text category/tag for this cosmetic (e.g.\n<gray>\"halloween\", \"event\"). Used only to filter the\n<gray>list in this Dev Studio and in slot limits — it\n<gray>doesn't change how the cosmetic behaves.");
         d.put("devstudio.cosmetic.field.permission", "Permission");
         d.put("devstudio.cosmetic.tooltip.permission", "<gray>Optional permission node a player needs to equip\n<gray>this cosmetic (checked via your permissions\n<gray>plugin, e.g. LuckPerms). Leave empty for\n<gray>everyone to be able to use it.");
+        d.put("devstudio.cosmetic.field.granted_permissions", "Granted Permissions");
+        d.put("devstudio.cosmetic.tooltip.granted_permissions", "<gray>Permission nodes GRANTED to the player while this\n<gray>cosmetic is equipped (and the Permission gate above\n<gray>passes), removed on unequip. Comma-separated.\n<gray>Needs LuckPerms. Nodes are session-only (transient)\n<gray>— they never touch LuckPerms storage. Don't put\n<gray>this cosmetic's own gate node here.");
+        d.put("devstudio.cosmetic.field.minecraft_tags", "Minecraft Tags");
+        d.put("devstudio.cosmetic.tooltip.minecraft_tags", "<gray>Vanilla scoreboard tags (/tag) added to the player\n<gray>while this cosmetic is equipped and removed on\n<gray>unequip. Comma-separated. Use them in\n<gray>/execute if entity @s[tag=...] and datapacks.");
+        d.put("devstudio.cosmetic.field.tooltip_description", "Tooltip Description");
+        d.put("devstudio.cosmetic.tooltip.tooltip_description", "<gray>Free text shown in the accessory tooltip (right\n<gray>under the name) in the Wardrobe. MiniMessage; type\n<gray>\\n for a line break. Empty = nothing shows.");
+        d.put("devstudio.cosmetic.divider.auto_unlock", "=== AUTO-UNLOCK ===");
+        d.put("devstudio.cosmetic.field.unlock_permission", "Unlock Permission");
+        d.put("devstudio.cosmetic.tooltip.unlock_permission", "<gray>Players who HAVE this permission node get this\n<gray>cosmetic automatically — no need to /gc give it.\n<gray>It's dynamic: lose the node (e.g. VIP expired) and\n<gray>the cosmetic is gone (unequips). Nothing is saved\n<gray>to the database. Empty = off. Different from\n<gray>\"Permission\" above, which only gates visibility.");
+        d.put("devstudio.cosmetic.field.unlock_tag", "Unlock Tag");
+        d.put("devstudio.cosmetic.tooltip.unlock_tag", "<gray>Same as Unlock Permission, but a vanilla scoreboard\n<gray>tag (/tag <player> add <tag>). Player has the tag\n<gray>→ gets the cosmetic (dynamic). Fill EITHER this or\n<gray>Unlock Permission (or both). Empty = off.");
         d.put("devstudio.cosmetic.field.part_model", "Part {i}: Model ID");
         d.put("devstudio.cosmetic.tooltip.part_model", "<gray>The item/model this Part renders — either a\n<gray>Custom Model Data name registered by this mod,\n<gray>or a vanilla item id. Ignored if the GeckoLib\n<gray>Model ID below is filled in.");
-        d.put("devstudio.cosmetic.hint.part_model", "e.g. examplehat (name) or sas/cigar (Exact Path)");
+        d.put("devstudio.cosmetic.hint.part_model", "e.g. wizard_hat (name) or hats/wizard_hat (Exact Path)");
         d.put("devstudio.cosmetic.field.part_geo", "Part {i}: GeckoLib Model");
         d.put("devstudio.cosmetic.tooltip.part_geo", "<gray>Optional. The id of a GeckoLib 3D model (.geo.json)\n<gray>for this Part, used instead of a flat item icon.\n<gray>Takes priority over Model ID above and over the\n<gray>Real Item, if this is an armor cosmetic.");
-        d.put("devstudio.cosmetic.hint.part_geo", "e.g. faxihat (name) or item/faxihat (Exact Path)");
+        d.put("devstudio.cosmetic.hint.part_geo", "e.g. dragon_wings (name) or item/dragon_wings (Exact Path)");
+        d.put("devstudio.cosmetic.field.part_anchor", "Part {i}: Anchor");
+        d.put("devstudio.cosmetic.tooltip.part_anchor", "<gray>Which body part this Part is attached to:\n<gray>HEAD, BODY, RIGHT_ARM, LEFT_ARM, RIGHT_LEG or\n<gray>LEFT_LEG. Applies to the flat-icon and GeckoLib\n<gray>render paths. With a real 3D armor model the\n<gray>piece always renders in its natural spot.");
         d.put("devstudio.cosmetic.field.part_exact_path", "Part {i}: Exact Path");
-        d.put("devstudio.cosmetic.tooltip.part_exact_path", "<gray>OFF (default): the Model ID/GeckoLib fields above\n<gray>are just a file name, found in any folder.\n<gray>ON: they become the full relative path, e.g.\n<gray>\"sas/cigar\" — needed when two files share a name\n<gray>in different folders.");
+        d.put("devstudio.cosmetic.tooltip.part_exact_path", "<gray>OFF (default): the Model ID/GeckoLib fields above\n<gray>are just a file name, found in any folder.\n<gray>ON: they become the full relative path, e.g.\n<gray>\"hats/wizard_hat\" — needed when two files share a\n<gray>name in different folders.");
         d.put("devstudio.cosmetic.btn.config_part", ">> Config Part {i}");
         d.put("devstudio.cosmetic.tooltip.config_part", "<gray>Opens Offset, Rotation, Scale and Anchor for this\n<gray>Part — fine-tune with the 3D arrows or by typing\n<gray>exact numbers.");
         d.put("devstudio.cosmetic.tooltip.config_part_disabled_armor", "<gray>Disabled for this Part.\n<gray>This cosmetic uses the real 3D armor model\n<gray>(it's a head item like a helmet), which already\n<gray>fits the player automatically. Offset, Rotation\n<gray>and Scale here would be ignored, so there's\n<gray>nothing to configure.");
@@ -576,8 +626,8 @@ public class LangConfig {
         d.put("devstudio.cosmetic.tooltip.effect_visual", "<gray>Comma-separated list of particle effect ids that\n<gray>constantly play around the player while this\n<gray>cosmetic is equipped (e.g. minecraft:heart).");
         d.put("devstudio.cosmetic.field.fly_particle", "Fly Particle");
         d.put("devstudio.cosmetic.tooltip.fly_particle", "<gray>Comma-separated list of particle effect ids shown\n<gray>only while the player is flying with this\n<gray>cosmetic equipped (needs \"Allows Flight?\" ON).");
-        d.put("devstudio.cosmetic.btn.config_lure", ">> Cobblemon Cosmetics");
-        d.put("devstudio.cosmetic.tooltip.config_lure", "<gray>Cobblemon-specific perks this cosmetic grants:\n<gray>Lure bonuses (shiny/IV/spawn/xp/fishing) and the\n<gray>IVs Scanner. Hover each field inside for details.");
+        d.put("devstudio.cosmetic.btn.config_lure", ">> Cobblemon Effects");
+        d.put("devstudio.cosmetic.tooltip.config_lure", "<gray>Cobblemon-specific perks this cosmetic grants:\n<gray>Lure bonuses (shiny/IV/EV/spawn/xp/fishing) and the\n<gray>scanners (IVs/Nature/Ability/Size). Hover each field\n<gray>inside for details.");
         // --- Part popup ---
         d.put("devstudio.part.new", "New");
         d.put("devstudio.part.popup_title", "Part {i}: {name}");
@@ -609,14 +659,20 @@ public class LangConfig {
         d.put("devstudio.part.gizmo_move", "Move");
         d.put("devstudio.part.gizmo_rotate", "Rotate");
         d.put("devstudio.part.gizmo_scale", "Scale");
-        // --- Cobblemon Cosmetics popup (ex-Lure) ---
-        d.put("devstudio.lure.title", "Cobblemon Cosmetics");
+        // --- Cobblemon Effects popup (ex-Lure) ---
+        d.put("devstudio.lure.title", "Cobblemon Effects");
         d.put("devstudio.cobcos.divider.lures", "LURES");
         d.put("devstudio.cobcos.divider.fishing", "FISHING");
         d.put("devstudio.cobcos.divider.scanner", "SCANNER");
         d.put("devstudio.cobcos.field.ivs_scanner", "IVs Scanner");
-        d.put("devstudio.cobcos.tooltip.enabled", "Master switch. Off = none of the bonuses below do anything.\nThe IVs Scanner has its own switch and is NOT gated by this.");
-        d.put("devstudio.cobcos.tooltip.type", "Type name or id (e.g. fire). While worn, only WILD Pokemon of this type spawn around you — Cobblemon still spawns at the normal rate from what's left. If no species of the type can spawn in the biome, nothing spawns. Your party / NPCs are never affected. Blank = off.");
+        d.put("devstudio.cobcos.field.nature_scanner", "Nature Scanner");
+        d.put("devstudio.cobcos.field.ability_scanner", "Ability Scanner");
+        d.put("devstudio.cobcos.field.size_scanner", "Size Scanner");
+        d.put("devstudio.cobcos.tooltip.nature_scanner", "While worn, shows each nearby Pokemon's NATURE above its name (right under the IV block when both scanners are on). Server-computed, like the IVs Scanner.");
+        d.put("devstudio.cobcos.tooltip.ability_scanner", "While worn, shows each nearby Pokemon's ABILITY to the RIGHT of its name, in red. Server-computed.");
+        d.put("devstudio.cobcos.tooltip.size_scanner", "While worn, shows each nearby Pokemon's SIZE (XS/S/M/L/XL) to the LEFT of its name, in yellow bold. Server-computed.");
+        d.put("devstudio.cobcos.tooltip.enabled", "Master switch. Off = none of the bonuses below do anything.\nThe scanners have their own switches and are NOT gated by this.");
+        d.put("devstudio.cobcos.tooltip.type", "Type name or id (e.g. fire). While worn, ~95% of the WILD Pokemon spawning around you are of this type (the rest still spawn rarely, so there are no dead spells with nothing spawning). Your party / NPCs are never affected. Blank = off.");
         d.put("devstudio.cobcos.tooltip.shiny_mult", "Chance (0.0-1.0) to re-roll a non-shiny catch into shiny, checked on capture. Stacks additively across all worn Lure cosmetics.");
         d.put("devstudio.cobcos.tooltip.ultrarare_mult", "Chance (0.0-1.0) to upgrade a land spawn to the 'ultra-rare' rarity bucket. Fishing does not use rarity buckets, so this has no effect on fished Pokemon.");
         d.put("devstudio.cobcos.tooltip.hidden_ability_mult", "Chance (0.0-1.0) that a caught Pokemon gets its hidden ability.");
@@ -626,7 +682,7 @@ public class LangConfig {
         d.put("devstudio.cobcos.tooltip.exp_mult", "Extra experience for the Pokemon that battled. 0.5 = +50%. Applies to the active Pokemon only (unless Exp Share is on).");
         d.put("devstudio.cobcos.tooltip.expall", "On = every other ALIVE party Pokemon also gets the full XP the active Pokemon gained (EXP Multiplier included). Does NOT apply to candy XP.");
         d.put("devstudio.cobcos.tooltip.friendship_mult", "Multiplies positive friendship gains. 0.5 = +50%.");
-        d.put("devstudio.cobcos.tooltip.ev_mult", "Not implemented — Cobblemon's battle EV logic exposes no hook. Leave 0.");
+        d.put("devstudio.cobcos.tooltip.ev_mult", "Extra EVs gained in battle by the player's Pokemon. 0.5 = +50%. 0 = off. (Cobblemon 1.8+ only — earlier versions had no hook.)");
         d.put("devstudio.cobcos.tooltip.fishing_shiny", "Extra shiny chance (0.0-1.0), fishing only. Stacks with Shiny Multiplier.");
         d.put("devstudio.cobcos.tooltip.fishing_iv", "Guaranteed perfect IVs on a fished Pokemon (random stats). 0-6.");
         d.put("devstudio.cobcos.tooltip.fishing_iv_chance", "Per-IV chance (0.0-1.0) for each IV to roll 31 on a fished Pokemon.");
@@ -655,11 +711,42 @@ public class LangConfig {
         d.put("devstudio.effects.off", "OFF (click to enable)");
         // --- Effects subpage ---
         d.put("devstudio.effect.list_title", "<light_purple>Effects");
+        d.put("devstudio.effect.search_hint", "Search…");
+        d.put("devstudio.effect.filter.all", "All");
+        d.put("devstudio.effect.filter.effects", "Effects");
+        d.put("devstudio.effect.filter.groups", "Groups");
         d.put("devstudio.effect.new", "+ New Effect");
+        d.put("devstudio.effect.new_group", "+ New Group");
         d.put("devstudio.effect.delete", "DELETE EFFECT");
-        d.put("devstudio.effect.particles_none", "<gray>(no particles found)");
+        d.put("devstudio.effect.particles_none", "<gray>(no matches)");
         d.put("devstudio.effect.divider.identification", "=== IDENTIFICATION ===");
         d.put("devstudio.effect.divider.configuration", "=== CONFIGURATION ===");
+        d.put("devstudio.effect.divider.color", "=== COLOR ===");
+        d.put("devstudio.effect.field.color_enabled", "Custom Color");
+        d.put("devstudio.effect.field.color_r", "Red");
+        d.put("devstudio.effect.field.color_g", "Green");
+        d.put("devstudio.effect.field.color_b", "Blue");
+        d.put("devstudio.effect.tooltip.color", "<gray>0-255 each. Leave all three BLANK for no color.\n<gray>Only works on colourable particles:\n<gray>minecraft:dust, minecraft:dust_color_transition\n<gray>and minecraft:entity_effect. Ignored on the rest.");
+        // --- Effect groups ---
+        d.put("devstudio.effect.group.divider.id", "=== GROUP ID ===");
+        d.put("devstudio.effect.group.field.id", "Group ID");
+        d.put("devstudio.effect.group.divider.members", "=== EFFECTS IN THIS GROUP ===");
+        d.put("devstudio.effect.group.btn.edit_member", "Edit: {id}");
+        d.put("devstudio.effect.group.btn.edit_owned", "Edit: {label}");
+        d.put("devstudio.effect.group.btn.remove_member", "Remove {id}");
+        d.put("devstudio.effect.group.btn.add_existing", "+ Add Existing Effect");
+        d.put("devstudio.effect.group.btn.create_new", "+ Create New Effect");
+        d.put("devstudio.effect.group.delete", "DELETE GROUP");
+        d.put("devstudio.effect.group.pick_title", "=== PICK AN EFFECT TO ADD ===");
+        d.put("devstudio.effect.group.pick_cancel", "< Cancel");
+        // --- Effect / group: confirmação de delete ---
+        d.put("devstudio.effect.confirm.delete_group_title", "Delete group?");
+        d.put("devstudio.effect.confirm.delete_effect_title", "Delete effect?");
+        d.put("devstudio.effect.confirm.delete_body", "\"{id}\" will be gone for good.");
+        d.put("devstudio.effect.confirm.remove_member_title", "Remove from group?");
+        d.put("devstudio.effect.confirm.remove_member_body", "\"{id}\" stays in the Effects tab.");
+        d.put("devstudio.effect.confirm.remove_owned_title", "Delete this effect?");
+        d.put("devstudio.effect.confirm.remove_owned_body", "It only exists inside this group.");
         d.put("devstudio.effect.divider.tool_3d", "=== 3D TOOL ===");
         d.put("devstudio.effect.divider.offsets", "=== OFFSETS (POSITION) ===");
         d.put("devstudio.effect.divider.spread", "=== SPREAD ===");
@@ -687,6 +774,52 @@ public class LangConfig {
         d.put("devstudio.effect.tooltip.spread_z", "<gray>Random forward/backward variation applied to each\n<gray>particle's spawn position. 0 = always the exact\n<gray>same spot.");
         d.put("devstudio.effect.field.speed", "Speed");
         d.put("devstudio.effect.tooltip.speed", "<gray>The particle's own motion speed (how fast it\n<gray>travels after spawning). 0 = stays still.");
+        // --- Effect: presets + formas ---
+        d.put("devstudio.effect.divider.preset", "=== EFFECT PRESET ===");
+        d.put("devstudio.effect.field.preset", "Preset");
+        d.put("devstudio.effect.tooltip.preset", "<gray>Pick a ready-made effect (Ring, Helix, Beam, Pulse\n<gray>...) — it fills in every field below and you tweak\n<gray>from there. This box stays empty; it's an action.");
+        d.put("devstudio.effect.divider.shape", "=== SHAPE ===");
+        d.put("devstudio.effect.field.shape", "Shape");
+        d.put("devstudio.effect.tooltip.shape", "<gray>SIMPLE = a burst of particles with spread (the\n<gray>classic behaviour). CIRCLE / HELIX / BEAM / PULSE\n<gray>draw a geometric pattern instead — the fields\n<gray>below change with the shape you pick.");
+        d.put("devstudio.effect.divider.shape_params", "=== SHAPE PARAMS ===");
+        d.put("devstudio.effect.field.radius", "Radius");
+        d.put("devstudio.effect.tooltip.radius", "<gray>Size of the ring/helix (blocks). For BEAM it's the\n<gray>horizontal offset of extra strands.");
+        d.put("devstudio.effect.field.points", "Points");
+        d.put("devstudio.effect.tooltip.points", "<gray>Particles per full turn / per ring. More = smoother\n<gray>but heavier. Capped around 200.");
+        d.put("devstudio.effect.field.strands", "Strands");
+        d.put("devstudio.effect.tooltip.strands", "<gray>Parallel copies of the shape, evenly spaced (e.g.\n<gray>2 = double helix). Capped at 12.");
+        d.put("devstudio.effect.field.phase", "Phase");
+        d.put("devstudio.effect.tooltip.phase", "<gray>Starting angle of the shape, in degrees.");
+        d.put("devstudio.effect.field.clockwise", "Clockwise");
+        d.put("devstudio.effect.tooltip.clockwise", "<gray>Direction the shape is drawn / spins.");
+        d.put("devstudio.effect.field.helix_height", "Helix Height");
+        d.put("devstudio.effect.tooltip.helix_height", "<gray>How tall the helix is, in blocks.");
+        d.put("devstudio.effect.field.turns", "Turns");
+        d.put("devstudio.effect.tooltip.turns", "<gray>How many full revolutions the helix makes over its\n<gray>height.");
+        d.put("devstudio.effect.field.reverse", "Reverse");
+        d.put("devstudio.effect.tooltip.reverse", "<gray>Draw the helix from the top down instead of bottom\n<gray>up.");
+        d.put("devstudio.effect.field.beam_height", "Beam Height");
+        d.put("devstudio.effect.tooltip.beam_height", "<gray>Length of the beam, in blocks.");
+        d.put("devstudio.effect.field.spacing", "Spacing");
+        d.put("devstudio.effect.tooltip.spacing", "<gray>Gap between particles along the beam, in blocks.\n<gray>Smaller = denser beam.");
+        d.put("devstudio.effect.field.upwards", "Upwards");
+        d.put("devstudio.effect.tooltip.upwards", "<gray>Beam goes up from the anchor (on) or down (off).");
+        d.put("devstudio.effect.field.end_radius", "End Radius");
+        d.put("devstudio.effect.tooltip.end_radius", "<gray>The radius the pulse grows to (starts at Radius).");
+        d.put("devstudio.effect.field.end_points", "End Points");
+        d.put("devstudio.effect.tooltip.end_points", "<gray>Particle count of the outermost ring (starts at\n<gray>Points).");
+        d.put("devstudio.effect.field.rings", "Rings");
+        d.put("devstudio.effect.tooltip.rings", "<gray>How many rings the pulse steps through between\n<gray>Radius and End Radius. Capped at 24.");
+        d.put("devstudio.effect.field.outwards", "Outwards");
+        d.put("devstudio.effect.tooltip.outwards", "<gray>Pulse expands outward (on) or contracts inward\n<gray>(off).");
+        d.put("devstudio.effect.field.rot_x", "Rotate X");
+        d.put("devstudio.effect.field.rot_y", "Rotate Y");
+        d.put("devstudio.effect.field.rot_z", "Rotate Z");
+        d.put("devstudio.effect.tooltip.rot", "<gray>Tilt the whole shape around each axis, in degrees.\n<gray>e.g. Rotate X 30 tilts a flat ring forward.");
+        d.put("devstudio.effect.field.anim_ticks", "Anim Ticks");
+        d.put("devstudio.effect.tooltip.anim_ticks", "<gray>0 = the whole shape is drawn every Interval ticks\n<gray>(static). >0 = the shape ANIMATES over this many\n<gray>ticks (helix draws, beam rises, pulse expands),\n<gray>then pauses Interval ticks and repeats.");
+        d.put("devstudio.effect.group.divider.preset", "=== GROUP PRESET ===");
+        d.put("devstudio.effect.group.tooltip.preset", "<gray>Pick a ready-made combo (Smash, Vortex...) — it\n<gray>creates one effect per piece and REPLACES this\n<gray>group's members with them.");
         // --- Types subpage ---
         d.put("devstudio.type.list_title", "<aqua>Types");
         d.put("devstudio.type.new", "+ New Type");
@@ -707,6 +840,8 @@ public class LangConfig {
         d.put("devstudio.serverconfig.tooltip.auto_detect_models", "<gray>When ON, the mod automatically scans your resource\n<gray>pack for new 3D models on startup. Turn OFF only\n<gray>if you want full manual control over model IDs.");
         d.put("devstudio.serverconfig.field.lure_hud", "Lure HUD");
         d.put("devstudio.serverconfig.tooltip.lure_hud", "<gray>When ON, players wearing a cosmetic that grants Lure\n<gray>see the combined Lure bonuses in a column to the\n<gray>right of their hotbar. It hides when no Lure is active.");
+        d.put("devstudio.serverconfig.field.effect_block_groups", "Effect-Blocked Groups");
+        d.put("devstudio.serverconfig.tooltip.effect_block_groups", "<gray>LuckPerms groups (comma-separated) whose players get\n<gray>NO cosmetic effects at all — particles, potion effects,\n<gray>flight, speed, lure, scanners, granted perms/tags. The\n<gray>cosmetic model still shows. Empty = nobody blocked.");
         d.put("devstudio.serverconfig.field.use_mysql", "Use MySQL");
         d.put("devstudio.serverconfig.tooltip.use_mysql", "<gray>ON: player cosmetic data is stored in a MySQL\n<gray>database (needed for server networks/BungeeCord).\n<gray>OFF (default): stored in local files, simpler for\n<gray>a single server.");
         d.put("devstudio.serverconfig.field.mysql_host", "MySQL Host");
@@ -743,6 +878,24 @@ public class LangConfig {
         d.put("devstudio.type.tooltip.type_id", "<gray>A unique name for this Type — used internally and\n<gray>in each cosmetic's own \"Type\" field to link it here.");
         d.put("devstudio.type.field.base_slot", "Base Slot");
         d.put("devstudio.type.tooltip.base_slot", "<gray>Which Wardrobe slot this Type's limit applies to,\n<gray>e.g. NECK. Should match one of your configured\n<gray>Slots.");
+        // --- Chat Tags subpage ---
+        d.put("devstudio.tags.list_title", "<green>Chat Tags");
+        d.put("devstudio.tags.new", "+ New Tag");
+        d.put("devstudio.tags.title_new", "§bNew Tag");
+        d.put("devstudio.tags.delete", "DELETE TAG");
+        d.put("devstudio.tags.group_locked", "LuckPerms group tag — editable, can't be deleted");
+        d.put("devstudio.tags.field.id", "Tag ID");
+        d.put("devstudio.tags.tooltip.id", "<gray>Internal name of the tag — used in /gc tags and the\n<gray>config file name. Lowercase letters, numbers and\n<gray>underscore only. Can't be changed after creation.");
+        d.put("devstudio.tags.field.display_name", "Display Name");
+        d.put("devstudio.tags.tooltip.display_name", "<gray>Name shown in the Tags menu and tooltips. Supports\n<gray>color codes (&a, &d...) and MiniMessage tags.");
+        d.put("devstudio.tags.field.description", "Description");
+        d.put("devstudio.tags.tooltip.description", "<gray>Optional line shown under the name in the Tags\n<gray>menu tooltip.");
+        d.put("devstudio.tags.field.prefix", "Prefix");
+        d.put("devstudio.tags.tooltip.prefix", "<gray>The chat prefix applied to the player while this\n<gray>tag is equipped (via LuckPerms, weight 1000).\n<gray>MiniMessage, e.g. <gold>[VIP]</gold>.");
+        d.put("devstudio.tags.field.permissions", "Permissions");
+        d.put("devstudio.tags.tooltip.permissions", "<gray>Permission nodes granted to the player while this\n<gray>tag is equipped, removed on unequip. Comma-\n<gray>separated. Needs LuckPerms.");
+        d.put("devstudio.tags.field.minecraft_tag", "Minecraft Tag");
+        d.put("devstudio.tags.tooltip.minecraft_tag", "<gray>Optional vanilla scoreboard tag (/tag) added while\n<gray>this chat tag is equipped and removed on unequip.");
         files.put("devstudio", d);
 
         return files;

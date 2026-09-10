@@ -1,8 +1,8 @@
 package com.f4xizzz.greatcosmetics.mixin.client;
 
 import com.f4xizzz.greatcosmetics.client.ClientJoinReloadState;
+import com.f4xizzz.greatcosmetics.client.PartyPcState;
 import com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen;
-import com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Overlay;
 import net.minecraft.client.gui.screen.Screen;
@@ -45,18 +45,18 @@ public class MinecraftClientMixin {
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void interceptPCState(CallbackInfo ci) {
-        if (PartyPage.waitingForPcToOpen || PartyPage.reopenAfterPC) {
+        if (PartyPcState.waitingForPcToOpen || PartyPcState.reopenAfterPC) {
             MinecraftClient client = MinecraftClient.getInstance();
             Screen current = client.currentScreen;
 
-            if (PartyPage.waitingForPcToOpen && current != null) {
+            if (PartyPcState.waitingForPcToOpen && current != null) {
                 // O servidor abriu a tela do PC para nós
-                PartyPage.waitingForPcToOpen = false;
-                PartyPage.reopenAfterPC = true;
+                PartyPcState.waitingForPcToOpen = false;
+                PartyPcState.reopenAfterPC = true;
 
-            } else if (PartyPage.reopenAfterPC && current == null) {
+            } else if (PartyPcState.reopenAfterPC && current == null) {
                 // O jogador apertou ESC e a tela do PC ficou nula. Nós reabrimos o Wardrobe!
-                PartyPage.reopenAfterPC = false;
+                PartyPcState.reopenAfterPC = false;
 
                 client.execute(() -> {
                     Wardrobe3DScreen screen = new Wardrobe3DScreen(true);

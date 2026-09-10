@@ -53,7 +53,12 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             // DESEMPACOTANDO OS ATRIBUTOS
             // ==========================================
             data.DisplayName = buf.readString();
+            data.tooltipDescription = buf.readString();
             data.permission = buf.readString();
+            data.unlockPermission = buf.readString();
+            data.unlockTag = buf.readString();
+            data.grantedPermissions = readStringList(buf);
+            data.minecraftTags = readStringList(buf);
             data.maxDurability = buf.readInt();
             data.armor = buf.readInt();
             data.toughness = buf.readDouble();
@@ -63,6 +68,9 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             data.EnableFly = buf.readBoolean();
             data.AutoFeed = buf.readBoolean();
             data.ivScanner = buf.readBoolean();
+            data.natureScanner = buf.readBoolean();
+            data.abilityScanner = buf.readBoolean();
+            data.sizeScanner = buf.readBoolean();
             data.flySpeedMultiplier = buf.readDouble();
             data.groundSpeedMultiplier = buf.readDouble();
             data.swimSpeedMultiplier = buf.readDouble();
@@ -153,7 +161,12 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             // EMPACOTANDO OS ATRIBUTOS
             // ==========================================
             buf.writeString(data.DisplayName != null ? data.DisplayName : "");
+            buf.writeString(data.tooltipDescription != null ? data.tooltipDescription : "");
             buf.writeString(data.permission != null ? data.permission : "");
+            buf.writeString(data.unlockPermission != null ? data.unlockPermission : "");
+            buf.writeString(data.unlockTag != null ? data.unlockTag : "");
+            writeStringList(buf, data.grantedPermissions);
+            writeStringList(buf, data.minecraftTags);
             buf.writeInt(data.maxDurability);
             buf.writeInt(data.armor);
             buf.writeDouble(data.toughness);
@@ -163,6 +176,9 @@ public record SyncCosmeticsPayload(Map<String, CosmeticData> configMap, boolean 
             buf.writeBoolean(data.EnableFly);
             buf.writeBoolean(data.AutoFeed);
             buf.writeBoolean(data.ivScanner);
+            buf.writeBoolean(data.natureScanner);
+            buf.writeBoolean(data.abilityScanner);
+            buf.writeBoolean(data.sizeScanner);
             buf.writeDouble(data.flySpeedMultiplier);
             buf.writeDouble(data.groundSpeedMultiplier);
             buf.writeDouble(data.swimSpeedMultiplier);

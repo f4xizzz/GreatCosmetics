@@ -55,6 +55,11 @@ public class Wardrobe3DScreen extends Screen {
         return com.f4xizzz.greatcosmetics.client.ClientPermissionCache.isOperator;
     }
 
+    /** Aba Party existe? (só com Cobblemon — ver init() e util.ModCompat). */
+    private boolean hasPartyTab() { return this.pages.containsKey(Tab.PARTY); }
+    /** Aba Tags existe? (só com LuckPerms — ver init() e util.ModCompat). */
+    private boolean hasTagsTab() { return this.pages.containsKey(Tab.TAGS); }
+
     private final Map<Tab, WardrobePage> pages = new HashMap<>();
 
     public static float targetYaw, currentYaw;
@@ -70,7 +75,15 @@ public class Wardrobe3DScreen extends Screen {
     public static boolean isPartyTabActive = false; // <--- VARIÁVEL DE CONTROLE ADICIONADA
     public static boolean isTagsTabActive = false;
     public static String previewCosmeticId = null;
+    /** Quando != null, o preview do Dev Studio mostra as parts DESTA variante do previewCosmeticId
+     *  em vez das parts base — usado pelo editor de variante (gizmo + preview ao vivo). */
+    public static String previewVariantId = null;
     public static boolean isPreviewSneaking = false;
+
+    // Botão "D" no canto inferior esquerdo (só aparece com o gizmo ativo) — liga o texto de
+    // diagnóstico do gizmo (ver GizmoManager#debugStatus/lastClickDebug). SEMPRE começa
+    // desligado: resetado pra false em removed() toda vez que a tela fecha.
+    public static boolean gizmoDebugEnabled = false;
 
     // Visibilidade do CORPO do jogador (não afeta armadura/cosméticos, ver PlayerEntityRendererMixin
     // + o reset em ArmorFeatureRendererMixin) — 3 estados só, ciclados por clique (não mais um
@@ -138,8 +151,19 @@ public class Wardrobe3DScreen extends Screen {
 
         this.pages.put(Tab.ACESSORIES, new AcessoriesPage(this));
         this.pages.put(Tab.CUSTOMIZE, new CustomizePage(this));
-        this.pages.put(Tab.PARTY, new PartyPage(this));
-        this.pages.put(Tab.TAGS, new TagsPage(this));
+
+        // SOFT-DEP: a aba Party só existe se o CLIENT e o SERVIDOR tiverem Cobblemon (o client
+        // nem consegue instanciar a PartyPage sem — ela toca com.cobblemon.* nas assinaturas, por
+        // isso o `new` fica atrás da ponte lazy integration.CobblemonClient). A aba Tags só existe
+        // se o SERVIDOR tiver LuckPerms (o client nunca precisa dele; TagsPage é 100% visual).
+        // O que o servidor tem vem no SyncDevPermissionsPayload do join (ClientPermissionCache).
+        if (com.f4xizzz.greatcosmetics.util.ModCompat.cobblemon()
+                && com.f4xizzz.greatcosmetics.client.ClientPermissionCache.serverHasCobblemon) {
+            this.pages.put(Tab.PARTY, com.f4xizzz.greatcosmetics.integration.CobblemonClient.newPartyPage(this));
+        }
+        if (com.f4xizzz.greatcosmetics.client.ClientPermissionCache.serverHasLuckPerms) {
+            this.pages.put(Tab.TAGS, new TagsPage(this));
+        }
 
         // A instância existe pra todo mundo (só existe um jar — ver build.gradle); quem não tem
         // permissão nunca vê o botão da aba nem consegue trocar pra ela (ver hasDevPermission()).
@@ -330,17 +354,21 @@ public class Wardrobe3DScreen extends Screen {
         drawTechTab(c, Tab.CUSTOMIZE, "C", Tab.CUSTOMIZE.getDisplayName(), startX, topBarY, (int)widthCus, hovCus);
         startX += (int)widthCus + tabSpacing;
 
-        boolean hovPrt = over(vMouseX, vMouseY, startX, topBarY, (int)widthPrt, tabH);
-        float targetWPrt = (this.currentTab == Tab.PARTY || hovPrt) ? fullWPrt : tabBaseW;
-        widthPrt += (targetWPrt - widthPrt) * 0.2f;
-        drawTechTab(c, Tab.PARTY, "P", Tab.PARTY.getDisplayName(), startX, topBarY, (int)widthPrt, hovPrt);
-        startX += (int)widthPrt + tabSpacing;
+        if (hasPartyTab()) {
+            boolean hovPrt = over(vMouseX, vMouseY, startX, topBarY, (int)widthPrt, tabH);
+            float targetWPrt = (this.currentTab == Tab.PARTY || hovPrt) ? fullWPrt : tabBaseW;
+            widthPrt += (targetWPrt - widthPrt) * 0.2f;
+            drawTechTab(c, Tab.PARTY, "P", Tab.PARTY.getDisplayName(), startX, topBarY, (int)widthPrt, hovPrt);
+            startX += (int)widthPrt + tabSpacing;
+        }
 
-        boolean hovTag = over(vMouseX, vMouseY, startX, topBarY, (int)widthTag, tabH);
-        float targetWTag = (this.currentTab == Tab.TAGS || hovTag) ? fullWTag : tabBaseW;
-        widthTag += (targetWTag - widthTag) * 0.2f;
-        drawTechTab(c, Tab.TAGS, "T", Tab.TAGS.getDisplayName(), startX, topBarY, (int)widthTag, hovTag);
-        startX += (int)widthTag + tabSpacing;
+        if (hasTagsTab()) {
+            boolean hovTag = over(vMouseX, vMouseY, startX, topBarY, (int)widthTag, tabH);
+            float targetWTag = (this.currentTab == Tab.TAGS || hovTag) ? fullWTag : tabBaseW;
+            widthTag += (targetWTag - widthTag) * 0.2f;
+            drawTechTab(c, Tab.TAGS, "T", Tab.TAGS.getDisplayName(), startX, topBarY, (int)widthTag, hovTag);
+            startX += (int)widthTag + tabSpacing;
+        }
 
         if (hasDevPermission()) {
             boolean hovDev = over(vMouseX, vMouseY, startX, topBarY, (int)widthDev, tabH);
@@ -432,6 +460,10 @@ public class Wardrobe3DScreen extends Screen {
             com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.updateHover(vMouseX, vMouseY);
             updateGeoOffsetHold();
             renderGizmoSidebar(c, vMouseX, vMouseY);
+            renderGizmoDebug(c, vHeight, vMouseX, vMouseY);
+            if (com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activePart != null) {
+                renderPartTools(c, vWidth, vHeight, vMouseX, vMouseY);
+            }
         }
 
         this.equippedSlotsWidget.render(c, vMouseX, vMouseY, vWidth, vHeight, this.currentTab == Tab.DEV);
@@ -476,12 +508,31 @@ public class Wardrobe3DScreen extends Screen {
      *  visibilidade do CORPO do jogador no meio (3 estados por clique — ver
      *  PlayerEntityRendererMixin#greatcosmetics$startBodyAlpha/cycleCharacterAlpha), e — só pra
      *  Parts GeckoLib — o ajuste do pivô do gizmo (ver GizmoDevConfig) embaixo. */
+    private static final int SIDEBAR_E_H = 18;
+
+    /** true quando o botão "E" (isolar preview de grupo) deve aparecer — só editando um efeito que
+     *  faz parte de um grupo (ver DevEffectsSubPage#isEditingGroupEffect). */
+    private boolean showEffectIsolateButton() {
+        var inst = com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevEffectsSubPage.INSTANCE;
+        return inst != null && inst.isEditingGroupEffect();
+    }
+
     private void renderGizmoSidebar(DrawContext c, int mouseX, int mouseY) {
         int sbH = sidebarHeight();
 
         c.fill(SIDEBAR_X - 2, SIDEBAR_Y - 4, SIDEBAR_X + SIDEBAR_W + 2, SIDEBAR_Y + sbH + 4, SHADOW_GLOW);
         c.fill(SIDEBAR_X, SIDEBAR_Y, SIDEBAR_X + SIDEBAR_W, SIDEBAR_Y + sbH, BG_PANEL_DARK);
         c.drawBorder(SIDEBAR_X, SIDEBAR_Y, SIDEBAR_W, sbH, ACCENT_GRAY);
+
+        // Botão "E" (isolar) — LOGO ACIMA do "S", só quando editando um efeito de um grupo.
+        if (showEffectIsolateButton()) {
+            boolean iso = com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevEffectsSubPage.isolateGroupPreview;
+            int eY = SIDEBAR_Y - 4 - SIDEBAR_E_H;
+            boolean hovE = over(mouseX, mouseY, SIDEBAR_X + 2, eY, SIDEBAR_W - 4, SIDEBAR_E_H);
+            c.fill(SIDEBAR_X + 2, eY, SIDEBAR_X + SIDEBAR_W - 2, eY + SIDEBAR_E_H, iso ? 0xFF227722 : (hovE ? 0x66FFFFFF : 0x44000000));
+            c.drawBorder(SIDEBAR_X + 2, eY, SIDEBAR_W - 4, SIDEBAR_E_H, iso ? 0xFF55FF55 : 0xFF666666);
+            c.drawCenteredTextWithShadow(this.textRenderer, "E", SIDEBAR_X + SIDEBAR_W / 2, eY + SIDEBAR_E_H / 2 - 4, iso ? 0xFFFFFFFF : 0xFFAAAAAA);
+        }
 
         boolean hovSneak = over(mouseX, mouseY, SIDEBAR_X + 2, SIDEBAR_Y + 2, SIDEBAR_W - 4, SIDEBAR_SNEAK_H);
         c.fill(SIDEBAR_X + 2, SIDEBAR_Y + 2, SIDEBAR_X + SIDEBAR_W - 2, SIDEBAR_Y + 2 + SIDEBAR_SNEAK_H,
@@ -528,23 +579,117 @@ public class Wardrobe3DScreen extends Screen {
                     SIDEBAR_X + SIDEBAR_W / 2, rowY + SIDEBAR_GEO_BTN_H + 2, 0xFFFFAA55);
         }
 
-        // DIAGNÓSTICO TEMPORÁRIO (ver GizmoManager#debugStatus/lastClickDebug) — some assim que
-        // confirmarmos que o gizmo tá funcionando de verdade. Duas linhas: estado geral (atualiza
-        // todo frame) e o resultado do ÚLTIMO clique tentado no gizmo (só atualiza ao clicar).
-        // BUG (2026-09) — duas rodadas: primeiro vazava pra fora do painel (sem largura travando o
-        // desenho); tentei cortar com enablePerfectScissor()/RenderSystem.disableScissor() cru, só
-        // que esse é o MESMO padrão errado já documentado em PartyPage#enableScissorStacked — não
-        // empilha com o resto do sistema de recorte da tela, então o corte saía desalinhado do
-        // texto de verdade (exatamente o "cabeçalho cortado errado" que motivou criar
-        // enableScissorStacked em primeiro lugar). Trocado pro método certo.
-        int dbgX = SIDEBAR_X + SIDEBAR_W + 6;
-        enableScissorStacked(c, dbgX, SIDEBAR_Y, 260, 20);
-        c.drawTextWithShadow(this.textRenderer, com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.debugStatus(),
-                dbgX, SIDEBAR_Y, 0xFFFF5555);
-        c.drawTextWithShadow(this.textRenderer, com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.lastClickDebug,
-                dbgX, SIDEBAR_Y + 10, 0xFFFFFF55);
-        c.disableScissor();
     }
+
+    // ─── Botão "D" (debug do gizmo) + texto de diagnóstico — canto INFERIOR ESQUERDO ──────────
+    private static final int DBG_BTN_W = 22, DBG_BTN_H = 18;
+
+    private int dbgBtnX() { return 4; }
+    private int dbgBtnY(int vHeight) { return vHeight - 4 - DBG_BTN_H; }
+
+    /** Desenha o botão "D" (liga/desliga o diagnóstico do gizmo) no canto inferior esquerdo e, se
+     *  ligado, as duas linhas de debug LOGO ACIMA dele — reduzidas pra caber sem cortar (o texto é
+     *  longo). Só é chamado quando o gizmo tem alvo (ver render()). */
+    private void renderGizmoDebug(DrawContext c, int vHeight, int mouseX, int mouseY) {
+        int bx = dbgBtnX(), by = dbgBtnY(vHeight);
+        boolean hov = over(mouseX, mouseY, bx, by, DBG_BTN_W, DBG_BTN_H);
+        int bg = gizmoDebugEnabled ? 0xFF227722 : (hov ? 0x66FFFFFF : 0x44000000);
+        int border = gizmoDebugEnabled ? 0xFF55FF55 : 0xFF666666;
+        c.fill(bx, by, bx + DBG_BTN_W, by + DBG_BTN_H, bg);
+        c.drawBorder(bx, by, DBG_BTN_W, DBG_BTN_H, border);
+        c.drawCenteredTextWithShadow(this.textRenderer, "D", bx + DBG_BTN_W / 2, by + DBG_BTN_H / 2 - 4,
+                gizmoDebugEnabled ? 0xFFFFFFFF : 0xFFAAAAAA);
+
+        if (!gizmoDebugEnabled) return;
+
+        String l1 = com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.debugStatus();
+        String l2 = com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.lastClickDebug;
+        float s = 0.7f;
+        int lineH = this.textRenderer.fontHeight + 2;
+        // Bloco de 2 linhas ancorado por BAIXO, logo acima do botão.
+        c.getMatrices().push();
+        c.getMatrices().translate(bx, by - 4 - 2 * lineH * s, 0);
+        c.getMatrices().scale(s, s, 1f);
+        c.drawTextWithShadow(this.textRenderer, l1, 0, 0, 0xFFFF5555);
+        c.drawTextWithShadow(this.textRenderer, l2, 0, lineH, 0xFFFFFF55);
+        c.getMatrices().pop();
+    }
+
+    // ─── 3 botões de ferramenta da Part (canto INFERIOR DIREITO) — espelhar H, espelhar V, resetar.
+    // Só aparecem quando uma Part está sendo configurada (GizmoManager.activePart != null). ──────
+    private static final int PT_BTN_W = 22, PT_BTN_H = 18, PT_GAP = 4;
+
+    private int ptBtnX(int vWidth) { return vWidth - 4 - PT_BTN_W; }
+    /** i=0 → botão de baixo (Espelhar H); i=1 → meio (Espelhar V); i=2 → topo (Resetar). */
+    private int ptBtnY(int vHeight, int i) { return vHeight - 4 - PT_BTN_H - i * (PT_BTN_H + PT_GAP); }
+
+    private void renderPartTools(DrawContext c, int vWidth, int vHeight, int mouseX, int mouseY) {
+        int bx = ptBtnX(vWidth);
+        String[] glyphs = {"↔", "↕", "↺"};
+        String[] tips = {
+                "Mirror Horizontal — flips the model left↔right (X).",
+                "Mirror Vertical — flips the model top↔bottom (Y).",
+                "Reset — puts the model back to its original position\n(offset 0, rotation 0, scale 1)."
+        };
+        int hovered = -1;
+        for (int i = 0; i < 3; i++) {
+            int by = ptBtnY(vHeight, i);
+            boolean hov = over(mouseX, mouseY, bx, by, PT_BTN_W, PT_BTN_H);
+            if (hov) hovered = i;
+            boolean isReset = i == 2;
+            c.fill(bx, by, bx + PT_BTN_W, by + PT_BTN_H, hov ? 0x66FFFFFF : 0x44000000);
+            c.drawBorder(bx, by, PT_BTN_W, PT_BTN_H, isReset ? 0xFFCC5555 : 0xFF666666);
+            c.drawCenteredTextWithShadow(this.textRenderer, glyphs[i], bx + PT_BTN_W / 2, by + PT_BTN_H / 2 - 4,
+                    isReset ? 0xFFFF8888 : 0xFFDDDDDD);
+        }
+        if (hovered >= 0) {
+            // Tooltip à ESQUERDA dos botões (eles ficam colados na borda direita).
+            String[] lines = tips[hovered].split("\n");
+            int tw = 0;
+            for (String s : lines) tw = Math.max(tw, this.textRenderer.getWidth(s));
+            int th = lines.length * (this.textRenderer.fontHeight + 1) + 4;
+            int tx = bx - 6 - tw - 6;
+            int ty = ptBtnY(vHeight, hovered) + PT_BTN_H / 2 - th / 2;
+            if (ty < 4) ty = 4;
+            c.getMatrices().push();
+            c.getMatrices().translate(0, 0, 380);
+            c.fill(tx - 4, ty - 2, tx + tw + 4, ty + th, 0xF0111111);
+            c.drawBorder(tx - 4, ty - 2, tw + 8, th + 2, 0xFF555555);
+            for (int i = 0; i < lines.length; i++) {
+                c.drawTextWithShadow(this.textRenderer, lines[i], tx, ty + 2 + i * (this.textRenderer.fontHeight + 1), 0xFFDDDDDD);
+            }
+            c.getMatrices().pop();
+        }
+    }
+
+    /** true se o clique caiu num dos 3 botões de ferramenta da Part — já executa a ação. */
+    private boolean handlePartToolClick(int vWidth, int vHeight, int mx, int my) {
+        if (com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activePart == null) return false;
+        var part = com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.activePart;
+        int bx = ptBtnX(vWidth);
+        for (int i = 0; i < 3; i++) {
+            if (!over(mx, my, bx, ptBtnY(vHeight, i), PT_BTN_W, PT_BTN_H)) continue;
+            playClick();
+            switch (i) {
+                case 0 -> part.scaleX = -greatcosmetics$nz(part.scaleX);   // espelha X
+                case 1 -> part.scaleY = -greatcosmetics$nz(part.scaleY);   // espelha Y
+                case 2 -> {                                               // resetar
+                    part.offsetX = 0; part.offsetY = 0; part.offsetZ = 0;
+                    part.rotationX = 0; part.rotationY = 0; part.rotationZ = 0;
+                    part.scaleX = 1; part.scaleY = 1; part.scaleZ = 1;
+                    part.shiftOffsetX = 0; part.shiftOffsetY = 0; part.shiftOffsetZ = 0;
+                    part.shiftRotationX = 0; part.shiftRotationY = 0; part.shiftRotationZ = 0;
+                }
+            }
+            Runnable up = com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.onUpdate;
+            if (up != null) up.run();   // marca "não salvo" + espelha nos campos do popup
+            return true;
+        }
+        return false;
+    }
+
+    /** Trata 0 como 1 pra o toggle de sinal do espelho não ficar preso em 0. */
+    private static float greatcosmetics$nz(float v) { return v == 0f ? 1f : v; }
 
     /** Chamado todo frame enquanto o botão +/- do offset do pivô está pressionado (ver
      *  mouseClicked/mouseReleased) — depois de um atraso inicial (senão um clique único rápido já
@@ -639,6 +784,14 @@ public class Wardrobe3DScreen extends Screen {
                     return;
                 }
             }
+
+            // 6. Checa se tem alterações pendentes nas CHAT TAGS
+            if (com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevTagsSubPage.INSTANCE != null) {
+                if (com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevTagsSubPage.INSTANCE.hasPendingChanges()) {
+                    com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevTagsSubPage.INSTANCE.attemptTabSwitch(doSwitch);
+                    return;
+                }
+            }
         }
 
         doSwitch.run();
@@ -660,6 +813,18 @@ public class Wardrobe3DScreen extends Screen {
         if (this.equippedSlotsWidget.mouseClicked(vMouseX, vMouseY, vWidth, vHeight, this.currentTab == Tab.DEV)) return true;
 
         if (com.f4xizzz.greatcosmetics.client.gui.pages.utils.GizmoManager.hasTarget()) {
+            if (over(vMouseX, vMouseY, dbgBtnX(), dbgBtnY(vHeight), DBG_BTN_W, DBG_BTN_H)) {
+                gizmoDebugEnabled = !gizmoDebugEnabled;
+                playClick();
+                return true;
+            }
+            if (handlePartToolClick(vWidth, vHeight, vMouseX, vMouseY)) return true;
+            if (showEffectIsolateButton() && over(vMouseX, vMouseY, SIDEBAR_X + 2, SIDEBAR_Y - 4 - SIDEBAR_E_H, SIDEBAR_W - 4, SIDEBAR_E_H)) {
+                com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevEffectsSubPage.isolateGroupPreview =
+                        !com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevEffectsSubPage.isolateGroupPreview;
+                playClick();
+                return true;
+            }
             if (over(vMouseX, vMouseY, SIDEBAR_X + 2, SIDEBAR_Y + 2, SIDEBAR_W - 4, SIDEBAR_SNEAK_H)) {
                 isPreviewSneaking = !isPreviewSneaking;
                 if (com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevCosmeticsSubPage.INSTANCE != null) {
@@ -717,15 +882,19 @@ public class Wardrobe3DScreen extends Screen {
         }
         startX += (int)widthCus + tabSpacing;
 
-        if (over(vMouseX, vMouseY, startX, topBarY, (int)widthPrt, tabH)) {
-            attemptTabSwitch(Tab.PARTY, 0.5f, 3.5, 0.6f); return true;
+        if (hasPartyTab()) {
+            if (over(vMouseX, vMouseY, startX, topBarY, (int)widthPrt, tabH)) {
+                attemptTabSwitch(Tab.PARTY, 0.5f, 3.5, 0.6f); return true;
+            }
+            startX += (int)widthPrt + tabSpacing;
         }
-        startX += (int)widthPrt + tabSpacing;
 
-        if (over(vMouseX, vMouseY, startX, topBarY, (int)widthTag, tabH)) {
-            attemptTabSwitch(Tab.TAGS, 1.6f, 1.8, 0.0f); return true;
+        if (hasTagsTab()) {
+            if (over(vMouseX, vMouseY, startX, topBarY, (int)widthTag, tabH)) {
+                attemptTabSwitch(Tab.TAGS, 1.6f, 1.8, 0.0f); return true;
+            }
+            startX += (int)widthTag + tabSpacing;
         }
-        startX += (int)widthTag + tabSpacing;
 
         if (hasDevPermission()) {
             if (over(vMouseX, vMouseY, startX, topBarY, (int)widthDev, tabH)) {
@@ -837,8 +1006,11 @@ public class Wardrobe3DScreen extends Screen {
         isPartyTabActive = false; // <--- LIMPA AO FECHAR A TELA
         isTagsTabActive = false;
         isPreviewSneaking = false;
+        gizmoDebugEnabled = false;
+        com.f4xizzz.greatcosmetics.client.gui.pages.subpages.dev.DevEffectsSubPage.isolateGroupPreview = false;
         characterAlpha = 1.0f;
         previewCosmeticId = null;
+        previewVariantId = null;
         com.f4xizzz.greatcosmetics.client.gui.pages.TagsPage.devPreviewEquippedId = null;
         // Mesmo motivo do reset em toggleTab() — fechar a tela inteira (Esc, clicar fora) é OUTRO
         // jeito de "sair" do editor de Cosméticos/Effects sem passar pelo botão "Voltar" deles.
@@ -859,7 +1031,7 @@ public class Wardrobe3DScreen extends Screen {
         // conta como sair do wardrobe de verdade — não avisa o servidor, senão ele teleportava o
         // player de volta pro lugar de ANTES de entrar no studio, mesmo o wardrobe reabrindo
         // sozinho assim que o PC fechar (MinecraftClientMixin cuida do reabrir).
-        if (!com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage.waitingForPcToOpen) {
+        if (!com.f4xizzz.greatcosmetics.client.PartyPcState.waitingForPcToOpen) {
             ClientPlayNetworking.send(new CloseWardrobePayload());
         }
     }

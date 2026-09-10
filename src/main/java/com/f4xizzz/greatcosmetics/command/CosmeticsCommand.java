@@ -12,7 +12,9 @@ import com.f4xizzz.greatcosmetics.network.SyncCosmeticsPayload;
 import com.f4xizzz.greatcosmetics.util.BackpackManager;
 import com.f4xizzz.greatcosmetics.util.WardrobeManager;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -83,6 +85,14 @@ public class CosmeticsCommand {
             if (id.toLowerCase().startsWith(builder.getRemaining().toLowerCase())) {
                 builder.suggest(id);
             }
+        }
+        return builder.buildFuture();
+    };
+
+    public static final SuggestionProvider<ServerCommandSource> SUGGEST_EXTRASLOT_SLOTS = (context, builder) -> {
+        String rem = builder.getRemaining().toUpperCase();
+        for (String s : new String[]{"ALL", "HEAD", "FACE", "NECK", "CHEST", "BACK", "WAIST", "LEGS", "FEET", "HAND"}) {
+            if (s.startsWith(rem)) builder.suggest(s);
         }
         return builder.buildFuture();
     };
@@ -320,6 +330,24 @@ public class CosmeticsCommand {
                                             )
                                     )
                             )
+                            // --- COMANDO: EXTRASLOT (slots extras aditivos por jogador, guardados no banco) ---
+                            .then(CommandManager.literal("extraslot")
+                                    .requires(source -> hasCmdPermission(source, "gc.command.extraslot"))
+                                    .then(CommandManager.argument("alvo", EntityArgumentType.player())
+                                            .then(CommandManager.argument("slot", StringArgumentType.word())
+                                                    .suggests(SUGGEST_EXTRASLOT_SLOTS)
+                                                    .then(CommandManager.literal("add")
+                                                            .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 100))
+                                                                    .executes(ctx -> executeExtraSlot(ctx, "add"))))
+                                                    .then(CommandManager.literal("set")
+                                                            .then(CommandManager.argument("amount", IntegerArgumentType.integer(0, 100))
+                                                                    .executes(ctx -> executeExtraSlot(ctx, "set"))))
+                                                    .then(CommandManager.literal("remove")
+                                                            .then(CommandManager.argument("amount", IntegerArgumentType.integer(1, 100))
+                                                                    .executes(ctx -> executeExtraSlot(ctx, "remove"))))
+                                            )
+                                    )
+                            )
                             .then(CommandManager.literal("wardrobe")
                                     .requires(source -> hasCmdPermission(source, "gc.command.wardrobe.setbackground"))
                                     .then(CommandManager.literal("setbackground")
@@ -548,6 +576,39 @@ public class CosmeticsCommand {
     // ==========================================
     // MÉTODOS NOVOS: TAGS GIVE/REMOVE
     // ==========================================
+    private static final java.util.Set<String> EXTRASLOT_VALID =
+            java.util.Set.of("ALL", "HEAD", "FACE", "NECK", "CHEST", "BACK", "WAIST", "LEGS", "FEET", "HAND");
+
+    /** {@code /gc extraslot <player> <slot> add|set|remove <amount>} — slots extras aditivos no banco
+     *  (somam por cima do que a permissão dá). */
+    private static int executeExtraSlot(CommandContext<ServerCommandSource> ctx, String mode) {
+        ServerCommandSource source = ctx.getSource();
+        RegistryWrapper.WrapperLookup regs = source.getWorld().getRegistryManager();
+        ServerPlayerEntity target;
+        try { target = EntityArgumentType.getPlayer(ctx, "alvo"); } catch (Exception e) { return 0; }
+        if (target == null) return 0;
+
+        String slot = StringArgumentType.getString(ctx, "slot").toUpperCase();
+        if (!EXTRASLOT_VALID.contains(slot)) {
+            source.sendFeedback(() -> LangConfig.chat("commands.extraslot.bad_slot", regs, "slot", slot), false);
+            return 0;
+        }
+        int amount = IntegerArgumentType.getInteger(ctx, "amount");
+
+        int novo;
+        switch (mode) {
+            case "add" -> novo = com.f4xizzz.greatcosmetics.database.DatabaseManager.addExtraSlots(target.getUuid(), slot, amount);
+            case "remove" -> novo = com.f4xizzz.greatcosmetics.database.DatabaseManager.addExtraSlots(target.getUuid(), slot, -amount);
+            default -> novo = com.f4xizzz.greatcosmetics.database.DatabaseManager.setExtraSlots(target.getUuid(), slot, amount);
+        }
+        final int fNovo = novo;
+        GreatCosmetics.debugLog("/gc extraslot " + mode + " " + amount + " " + slot + " -> " + target.getName().getString()
+                + " (executor=" + source.getName() + ") new total=" + fNovo);
+        source.sendFeedback(() -> LangConfig.chat("commands.extraslot.done", regs,
+                "player", target.getName().getString(), "slot", slot, "total", fNovo), false);
+        return 1;
+    }
+
     private static int executeTagGive(ServerCommandSource source, String idProcurado, ServerPlayerEntity target) {
         if (isBlockedByLicense(source, "tags")) return 0;
         if (target == null) return 0;
@@ -983,6 +1044,7 @@ public class CosmeticsCommand {
             LangConfig.load();
             CosmeticsConfig.loadConfig();
             com.f4xizzz.greatcosmetics.config.EffectConfig.loadEffects();
+            com.f4xizzz.greatcosmetics.config.EffectGroupConfig.load();
             com.f4xizzz.greatcosmetics.GreatCosmetics.broadcastEffectsCatalog(source.getServer());
 
             // --- RECARREGA A LISTA DE SKINS E NPCs ---
@@ -1007,6 +1069,9 @@ public class CosmeticsCommand {
             if (textureHashError != null) {
                 source.sendFeedback(() -> LangConfig.chat("general.reload.texture_hash_fail", regs, "error", textureHashError), true);
             }
+
+            // mainconfig.conf (recém-recarregado, possivelmente editado na mão) -> server.properties.
+            com.f4xizzz.greatcosmetics.util.ServerPropertiesSync.pushToServerProperties(source.getServer());
 
             // Ressincroniza animação/cosméticos de NPC pros jogadores já online (mesma lógica do JOIN).
             for (ServerPlayerEntity player : source.getServer().getPlayerManager().getPlayerList()) {

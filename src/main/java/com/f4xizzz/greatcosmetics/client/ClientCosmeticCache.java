@@ -21,6 +21,11 @@ public class ClientCosmeticCache {
 
     public static boolean isDevModeActive = false; // Controle do botão Dev Mode
 
+    /** Setting LOCAL do cliente (não vai pro servidor, não é por-player): quando true, os cosméticos
+     *  de OUTROS jogadores não renderizam — pra aliviar FPS em PC fraco. Persistido em
+     *  config/GreatCosmetics/client_local.json (ver ClientLocalSettings). */
+    public static boolean hideOtherPlayersCosmetics = false;
+
     public static void setEquipped(UUID playerUuid, List<String> cosmeticIds) {
         equippedCosmetics.put(playerUuid, new HashSet<>(cosmeticIds));
     }

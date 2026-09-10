@@ -47,7 +47,30 @@ public class CosmeticData {
 
     @SerializedName(value = "DisplayName", alternate = {"displayName", "displayname"})
     public String DisplayName = null;
+
+    /** Descrição livre mostrada no tooltip do acessório (logo abaixo do nome), editável pelo Dev
+     *  Studio. MiniMessage; {@code \n} quebra linha. Vazio = nada aparece. */
+    public String tooltipDescription = "";
+
     public String permission = "";
+
+    /** AUTO-UNLOCK (dinâmico): se o jogador tiver ESTE node de permissão (LuckPerms/Fabric perms)
+     *  OU a {@link #unlockTag} abaixo, o cosmético conta como desbloqueado — sem gravar nada no
+     *  banco. Perdeu a permissão/tag → perde o acesso (desequipa). Vazio = desligado. Diferente do
+     *  {@link #permission}, que é um GATE de visibilidade (não concede posse). */
+    public String unlockPermission = "";
+    /** AUTO-UNLOCK (dinâmico): scoreboard tag vanilla (/tag) que também libera o cosmético. Vazio
+     *  = desligado. Ver {@link #unlockPermission}. */
+    public String unlockTag = "";
+
+    /** Nodes de permissão CONCEDIDOS ao jogador (via LuckPerms, transient) enquanto este cosmético
+     *  está equipado e passa o gate {@link #permission} acima. Removidos ao desequipar. Espelha
+     *  {@code TagData.permissions}. NÃO deve conter o próprio node de gate (loop de dependência). */
+    public List<String> grantedPermissions = new ArrayList<>();
+
+    /** Scoreboard tags vanilla (/tag) aplicadas ao jogador enquanto o cosmético está equipado e
+     *  removidas ao desequipar. Espelha {@code TagData.minecraftTag}, mas em lista. */
+    public List<String> minecraftTags = new ArrayList<>();
 
     public LureStats lure = new LureStats();
 
@@ -106,10 +129,17 @@ public class CosmeticData {
     public boolean AutoFeed = false;
     public List<String> effects = new ArrayList<>();
 
-    /** Editado no popup "Cobblemon Cosmetics". Com o cosmético equipado, o jogador vê os IVs de
-     *  todo Pokémon num raio ~48 blocos, renderizados acima do nome (ver PokemonNameTagMixin +
-     *  SyncPokemonIvsPayload). Servidor calcula e empurra; IV de selvagem não existe no cliente. */
+    /** Editado no popup "Cobblemon Effects". Com o cosmético equipado, o jogador vê os IVs de
+     *  todo Pokémon num raio ~48 blocos, renderizados acima do nome (ver PokemonRendererMixin +
+     *  SyncPokemonScanPayload). Servidor calcula e empurra; IV de selvagem não existe no cliente. */
     public boolean ivScanner = false;
+    /** Nature Scanner — mostra a nature acima do nick (abaixo do bloco de IVs quando os dois estão
+     *  ligados). Mesmo pipeline do ivScanner. */
+    public boolean natureScanner = false;
+    /** Ability Scanner — mostra a habilidade à DIREITA do nick ({@code <red>ability}). */
+    public boolean abilityScanner = false;
+    /** Size Scanner — mostra o tamanho à ESQUERDA do nick ({@code <yellow><b>size}, ex: XL/S/L). */
+    public boolean sizeScanner = false;
 
     // --- VELOCIDADE (1.0 = normal, valores >1 aceleram, <1 desaceleram) ---
     public double flySpeedMultiplier = 1.0;
@@ -156,10 +186,10 @@ public class CosmeticData {
         public String geoModelId = "";
 
         /** Quando true, "customModelData_or_ID" (modelo vanilla/ícone) e "geoModelId" (GeckoLib)
-         *  passam a ser tratados como o CAMINHO RELATIVO COMPLETO do arquivo (ex: "sas/cigarro" para
-         *  assets/&lt;qualquer namespace carregado&gt;/models/sas/cigarro.json), buscado por caminho
-         *  EXATO em qualquer namespace — em vez do modo antigo (só o nome do arquivo, sem pasta,
-         *  restrito ao namespace "greatcosmetics" no caso do modelo vanilla). */
+         *  passam a ser tratados como o CAMINHO RELATIVO COMPLETO do arquivo (ex: "hats/wizard_hat"
+         *  para assets/&lt;qualquer namespace carregado&gt;/models/hats/wizard_hat.json), buscado por
+         *  caminho EXATO em qualquer namespace — em vez do modo antigo (só o nome do arquivo, sem
+         *  pasta, restrito ao namespace "greatcosmetics" no caso do modelo vanilla). */
         public boolean useExactPath = false;
 
         public float offsetX = 0.0F;

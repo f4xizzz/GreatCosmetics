@@ -7,13 +7,11 @@
 		"LivingEntityMixin",
 		"LivingEntityRendererMixin",
 		"PlayerEntityRendererMixin",
-		"PokemonRendererMixin",
 		"ItemStackAttributeMixin",
 		"RecipeManagerMixin"
 	],
 	"client": [
 		"client.ArmorFeatureRendererMixin",
-		"client.MimikeyaPriorityMixin",
 		"client.ItemRendererMixin",
 		"client.CameraMixin",
 		"client.EntityPreviewMixin",

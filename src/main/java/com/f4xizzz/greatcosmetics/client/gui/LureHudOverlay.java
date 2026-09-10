@@ -23,10 +23,11 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * HUD dos bônus dos cosméticos equipados — canto INFERIOR ESQUERDO, fundo transparente. Lista
- * TUDO que os cosméticos/armaduras-cosmético equipados dão (habilidades, atributos, efeitos de
- * poção, Lure, pesca, IVs Scanner), agrupado em bullets aninhados. Encolhe sozinho quando fica
- * alto demais. Some quando não há nada pra mostrar.
+ * HUD dos bônus dos cosméticos equipados — canto INFERIOR DIREITO, fundo transparente, texto
+ * reduzido. Lista só o que é útil no dia a dia: habilidades (voo, mochila, auto-feed, IVs
+ * Scanner), efeitos de poção / rastro de partícula, e os bônus de Lure/pesca — agrupado em
+ * bullets aninhados. NÃO mostra atributos de combate (armor/toughness/velocidade) pra não poluir.
+ * Encolhe sozinho quando fica alto demais. Some quando não há nada pra mostrar.
  *
  * <p>100% client-side: o client já tem o catálogo (SyncCosmeticsPayload/SyncArmorCosmeticsPayload)
  * e o que o próprio jogador tem equipado (ClientCosmeticCache + slots de armadura reais). Ligado
@@ -49,30 +50,39 @@ public final class LureHudOverlay {
         List<Line> lines = buildLines(active);
         if (lines.isEmpty()) return;
 
+        // Pré-monta o Text de cada linha (pra medir a largura e desenhar o mesmo objeto).
+        List<Text> rendered = new ArrayList<>(lines.size());
+        int maxWidth = 0;
+        for (Line l : lines) {
+            if (l.text == null) { rendered.add(null); continue; }
+            String prefix = l.header ? "* " : "  * ";
+            Text t = Text.literal("§7" + " ".repeat(l.indent * 2) + prefix)
+                    .append(l.header ? Text.literal("§6§l").append(l.text) : Text.literal("§f").append(l.text));
+            rendered.add(t);
+            maxWidth = Math.max(maxWidth, mc.textRenderer.getWidth(t));
+        }
+
         int lineH = mc.textRenderer.fontHeight + 1;
         int screenH = mc.getWindow().getScaledHeight();
+        int screenW = mc.getWindow().getScaledWidth();
         int total = lines.size() * lineH;
 
-        // Auto-shrink: nunca passa de ~55% da altura da tela; piso 0.5.
-        float scale = 1.0f;
-        float maxH = screenH * 0.55f;
-        if (total > maxH) scale = Math.max(0.5f, maxH / total);
+        // Base menor (0.8) + auto-shrink: nunca passa de ~50% da altura da tela; piso 0.4.
+        float scale = 0.8f;
+        float maxH = screenH * 0.5f;
+        if (total * scale > maxH) scale = Math.max(0.4f, maxH / total);
 
-        int x = 4;
-        int bottom = screenH - 4;
+        int pad = 4;
+        int bottom = screenH - pad;
+        double left = screenW - pad - maxWidth * scale; // ancorado no canto inferior DIREITO
 
         ctx.getMatrices().push();
-        ctx.getMatrices().translate(x, bottom, 0);
+        ctx.getMatrices().translate(left, bottom, 0);
         ctx.getMatrices().scale(scale, scale, 1f);
 
         int y = -total; // desenha de cima pra baixo dentro do bloco, ancorado no rodapé
-        for (Line l : lines) {
-            if (l.text != null) {
-                String prefix = l.header ? "* " : "  * ";
-                Text render = Text.literal("§7" + " ".repeat(l.indent * 2) + prefix)
-                        .append(l.header ? Text.literal("§6§l").append(l.text) : Text.literal("§f").append(l.text));
-                ctx.drawTextWithShadow(mc.textRenderer, render, 0, y, 0xFFFFFFFF);
-            }
+        for (Text t : rendered) {
+            if (t != null) ctx.drawTextWithShadow(mc.textRenderer, t, 0, y, 0xFFFFFFFF);
             y += lineH;
         }
 
@@ -119,26 +129,23 @@ public final class LureHudOverlay {
     // ── linhas ──────────────────────────────────────────────────────────────────────────────
 
     private static List<Line> buildLines(List<CosmeticData> active) {
-        // agrega
-        int armor = 0; double toughness = 0;
-        boolean fly = false, backpack = false, autofeed = false, ivScanner = false, particleTrail = false;
+        // agrega (só o que a HUD mostra — atributos de combate ficaram de fora de propósito)
+        boolean fly = false, backpack = false, autofeed = false, particleTrail = false;
+        boolean ivScanner = false, natureScanner = false, abilityScanner = false, sizeScanner = false;
         int backpackRows = 0;
-        double groundMult = 1.0, flyMult = 1.0, swimMult = 1.0;
         Set<String> effects = new LinkedHashSet<>();
         CosmeticData.LureStats lure = new CosmeticData.LureStats();
         boolean anyLure = false;
 
         for (CosmeticData d : active) {
-            armor += d.armor;
-            toughness += d.toughness;
             if (d.EnableFly) fly = true;
             if (d.isBackpack) { backpack = true; backpackRows = Math.max(backpackRows, d.backpackRows); }
             if (d.AutoFeed) autofeed = true;
             if (d.ivScanner) ivScanner = true;
+            if (d.natureScanner) natureScanner = true;
+            if (d.abilityScanner) abilityScanner = true;
+            if (d.sizeScanner) sizeScanner = true;
             if ((d.effectVisual != null && !d.effectVisual.isEmpty()) || (d.flyParticle != null && !d.flyParticle.isEmpty())) particleTrail = true;
-            groundMult = Math.max(groundMult, d.groundSpeedMultiplier);
-            flyMult = Math.max(flyMult, d.flySpeedMultiplier);
-            swimMult = Math.max(swimMult, d.swimSpeedMultiplier);
             if (d.effects != null) effects.addAll(d.effects);
             if (d.lure != null && d.lure.enabled) {
                 anyLure = true;
@@ -163,21 +170,22 @@ public final class LureHudOverlay {
 
         List<Line> out = new ArrayList<>();
 
-        // Abilities
+        // Abilities (voo, mochila, auto-feed, IVs Scanner)
         List<Text> abilities = new ArrayList<>();
         if (fly) abilities.add(LangConfig.text("hud.cos.flight"));
         if (backpack) abilities.add(LangConfig.text("hud.cos.backpack", "rows", backpackRows));
         if (autofeed) abilities.add(LangConfig.text("hud.cos.autofeed"));
+        // Scanners: junta os nomes ativos com vírgula + um "Scanner" só no fim
+        // (ex: 1 → "IVs Scanner"; 3 → "IVs, Nature, Size Scanner").
+        java.util.List<String> scannerNames = new ArrayList<>();
+        if (ivScanner) scannerNames.add(LangConfig.legacy("hud.cos.scanner.ivs"));
+        if (natureScanner) scannerNames.add(LangConfig.legacy("hud.cos.scanner.nature"));
+        if (sizeScanner) scannerNames.add(LangConfig.legacy("hud.cos.scanner.size"));
+        if (abilityScanner) scannerNames.add(LangConfig.legacy("hud.cos.scanner.ability"));
+        if (!scannerNames.isEmpty()) {
+            abilities.add(LangConfig.text("hud.cos.scanner.line", "names", String.join(", ", scannerNames)));
+        }
         section(out, "hud.cos.section.abilities", abilities);
-
-        // Attributes
-        List<Text> attrs = new ArrayList<>();
-        if (armor > 0) attrs.add(LangConfig.text("hud.cos.armor", "value", armor));
-        if (toughness > 0) attrs.add(LangConfig.text("hud.cos.toughness", "value", fmt(toughness)));
-        if (groundMult != 1.0) attrs.add(LangConfig.text("hud.cos.ground_speed", "value", fmt(groundMult)));
-        if (flyMult != 1.0) attrs.add(LangConfig.text("hud.cos.fly_speed", "value", fmt(flyMult)));
-        if (swimMult != 1.0) attrs.add(LangConfig.text("hud.cos.swim_speed", "value", fmt(swimMult)));
-        section(out, "hud.cos.section.attributes", attrs);
 
         // Effects
         List<Text> fx = new ArrayList<>();
@@ -208,9 +216,6 @@ public final class LureHudOverlay {
             if (lure.lurePescaVelocidade > 0) fish.add(LangConfig.text("hud.lure.fishing_speed", "value", pctNum(lure.lurePescaVelocidade)));
             section(out, "hud.cos.section.fishing", fish);
         }
-
-        // Scanner
-        if (ivScanner) section(out, "hud.cos.section.scanner", List.of(LangConfig.text("hud.cos.ivs_scanner")));
 
         // remove a linha em branco final
         if (!out.isEmpty() && out.get(out.size() - 1).text() == null) out.remove(out.size() - 1);

@@ -107,4 +107,28 @@ public abstract class DevSubPage {
     protected void playClick() {
         try { MinecraftClient.getInstance().getSoundManager().play(net.minecraft.client.sound.PositionedSoundInstance.master(net.minecraft.sound.SoundEvents.UI_BUTTON_CLICK, 1.0F)); } catch (Exception ignored) {}
     }
+
+    /** Botão destrutivo? (id contém "delete" ou "remove", ex: "delete", "remove_owned_2",
+     *  "btn_remove_part_0"). Cor VERMELHA no GUI inteiro. */
+    public static boolean isDeleteButton(String id) {
+        if (id == null) return false;
+        String s = id.toLowerCase();
+        return s.contains("delete") || s.contains("remove");
+    }
+
+    /** Botão de criar/adicionar? (id contém "add"/"create" ou começa com "new", ex: "add_existing",
+     *  "btn_add_part", "new_group"). Cor VERDE no GUI inteiro. */
+    public static boolean isAddButton(String id) {
+        if (id == null) return false;
+        String s = id.toLowerCase();
+        return s.contains("add") || s.contains("create") || s.startsWith("new") || s.contains("_new");
+    }
+
+    /** Cor de fundo padrão de um botão de row do editor: vermelho (delete), verde (add/new) ou
+     *  cinza neutro. Usada por TODAS as subpáginas do Dev Studio pra manter a paleta consistente. */
+    public static int devButtonFill(String id, boolean hovered) {
+        if (isDeleteButton(id)) return hovered ? 0xFFDD3333 : 0xFFAA2222;
+        if (isAddButton(id))    return hovered ? 0xFF33CC33 : 0xFF22AA22;
+        return hovered ? 0x66FFFFFF : 0x44FFFFFF;
+    }
 }

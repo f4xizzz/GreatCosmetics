@@ -26,6 +26,10 @@ public class DevCosmeticsSubPage extends DevSubPage {
     private enum State { LIST, EDITOR }
     private State currentState = State.LIST;
 
+    /** Setado pelo changed-listener do campo "Real Item" quando faz auto-split das parts de
+     *  armadura — o rebuild ({@code loadEditor}) roda no próximo render(), não dentro do listener. */
+    private boolean pendingArmorSplitRebuild = false;
+
     private float scrollY = 0;
     private float maxScrollY = 0;
 
@@ -45,7 +49,8 @@ public class DevCosmeticsSubPage extends DevSubPage {
     private List<String> openDropdownFiltered = List.of();
     private int openDropdownX, openDropdownY, openDropdownW;
     private static final int AUTOCOMPLETE_ITEM_H = 12;
-    private static final int AUTOCOMPLETE_MAX_ITEMS = 6;
+    // 10 (era 6) — o dropdown de "Slot" tem 9 opções e as 3 últimas (LEGS/FEET/FACE/HAND) sumiam.
+    private static final int AUTOCOMPLETE_MAX_ITEMS = 10;
 
     private String editingId = null;
     private String tempId = null;
@@ -470,7 +475,10 @@ public class DevCosmeticsSubPage extends DevSubPage {
                     isDraggingPopup = true; dragOffsetX = (int) mx - x; dragOffsetY = (int) my - y; return true;
                 }
                 if (mx >= x + width - 16 && mx <= x + width && my >= y && my <= y + 16) {
-                    playClick(); GizmoManager.activePart = null; GizmoManager.currentAxis = GizmoManager.Axis.NONE; activePopup = null; return true;
+                    playClick(); GizmoManager.activePart = null; GizmoManager.currentAxis = GizmoManager.Axis.NONE; activePopup = null;
+                    // Fechar o popup de variante volta o preview pras parts base.
+                    Wardrobe3DScreen.previewVariantId = null;
+                    return true;
                 }
                 if (pMaxScrollY > 0) {
                     int scrollX = x + width - 6; int listY = y + 20; int viewHeight = height - 25;
@@ -543,6 +551,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
         this.backupRealItemId = this.editingData != null ? this.editingData.realItemId : null;
 
         Wardrobe3DScreen.previewCosmeticId = id;
+        Wardrobe3DScreen.previewVariantId = null;
 
         if (this.currentState == State.LIST) this.listScrollY = this.scrollY;
         this.currentState = State.EDITOR;
@@ -559,6 +568,17 @@ public class DevCosmeticsSubPage extends DevSubPage {
         if (this.editingData.lure == null) this.editingData.lure = new CosmeticData.LureStats();
         if (this.editingData.parts == null) this.editingData.parts = new ArrayList<>();
         if (this.editingData.parts.isEmpty()) this.editingData.parts.add(new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD));
+        // Armadura-cosmético: garante que as Parts batem com os ossos do corpo daquela peça
+        // (peitoral = torso + 2 braços, etc). Só quando ainda estão cruas — pra migrar as antigas
+        // (1 part HEAD) sem apagar trabalho.
+        if (this.editingIsArmorCosmetic) {
+            java.util.List<CosmeticData.Anchor> a = armorAnchorsFor(this.editingData.realItemId);
+            if (a != null && armorPartsArePristine() && !anchorsMatch(this.editingData.parts, a)) {
+                applyArmorAnchorLayout(a);
+            }
+        }
+        if (this.editingData.grantedPermissions == null) this.editingData.grantedPermissions = new ArrayList<>();
+        if (this.editingData.minecraftTags == null) this.editingData.minecraftTags = new ArrayList<>();
 
         // --- PREVIEW ---
         // Preview "SNEAK" virou a barrinha lateral esquerda (só visível com uma Part ativa — ver
@@ -571,8 +591,29 @@ public class DevCosmeticsSubPage extends DevSubPage {
         // do formulário, e o campo do item real que ela representa logo abaixo.
         if (this.editingIsArmorCosmetic) {
             addDivider(L("devstudio.cosmetic.divider.identification_armor", "id", this.editingId));
-            addStringField(L("devstudio.cosmetic.field.real_item"), this.editingData.realItemId, text -> this.editingData.realItemId = text.toLowerCase().trim())
-                    .withTooltip(L("devstudio.cosmetic.tooltip.real_item"));
+            addStringField(L("devstudio.cosmetic.field.real_item"), this.editingData.realItemId, text -> {
+                this.editingData.realItemId = text.toLowerCase().trim();
+                // AUTO-SPLIT ao trocar pra um item de armadura de várias partes, MAS só quando as
+                // parts ainda estão "cruas" (sem model configurado) — pra não apagar o trabalho do
+                // admin. Pra re-dividir com parts já configuradas, tem o botão abaixo.
+                java.util.List<CosmeticData.Anchor> a = armorAnchorsFor(this.editingData.realItemId);
+                if (a != null && armorPartsArePristine() && !anchorsMatch(this.editingData.parts, a)) {
+                    applyArmorAnchorLayout(a);
+                    this.pendingArmorSplitRebuild = true; // rebuild fora do listener (ver render)
+                }
+            }).withTooltip(L("devstudio.cosmetic.tooltip.real_item"));
+            java.util.List<CosmeticData.Anchor> autoAnchors = armorAnchorsFor(this.editingData.realItemId);
+            if (autoAnchors != null && autoAnchors.size() > 1) {
+                this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.split_armor_parts", "n", autoAnchors.size()), () ->
+                        openConfirmPopup(L("devstudio.cosmetic.confirm.split_armor_title"),
+                                L("devstudio.cosmetic.confirm.split_armor_body", "n", autoAnchors.size()), () -> {
+                            applyArmorAnchorLayout(autoAnchors);
+                            hasUnsavedChanges = true;
+                            loadEditor(this.editingId);
+                        }))
+                        .withId("btn_split_armor_parts")
+                        .withTooltip(L("devstudio.cosmetic.tooltip.split_armor_parts")));
+            }
         } else {
             addDivider(L("devstudio.cosmetic.divider.identification"));
             addStringField(L("devstudio.cosmetic.field.main_id"), this.tempId, text -> this.tempId = text)
@@ -592,6 +633,10 @@ public class DevCosmeticsSubPage extends DevSubPage {
                 : "&d" + id.substring(0, 1).toUpperCase() + id.substring(1);
         addStringField(L("devstudio.cosmetic.field.display_name"), safeNameToLoad, text -> { this.editingData.DisplayName = text; })
                 .withTooltip(L("devstudio.cosmetic.tooltip.display_name"));
+        if (this.editingData.tooltipDescription == null) this.editingData.tooltipDescription = "";
+        addStringField(L("devstudio.cosmetic.field.tooltip_description"), this.editingData.tooltipDescription,
+                text -> this.editingData.tooltipDescription = text == null ? "" : text)
+                .withTooltip(L("devstudio.cosmetic.tooltip.tooltip_description"));
 
         addStringField(L("devstudio.cosmetic.field.slot"), this.editingData.slot != null ? this.editingData.slot.name() : "HEAD", null,
                 () -> java.util.Arrays.stream(CosmeticData.VirtualSlot.values()).map(Enum::name).collect(java.util.stream.Collectors.toList()),
@@ -602,6 +647,23 @@ public class DevCosmeticsSubPage extends DevSubPage {
                 .withTooltip(L("devstudio.cosmetic.tooltip.type"));
         addStringField(L("devstudio.cosmetic.field.permission"), this.editingData.permission, text -> this.editingData.permission = text)
                 .withTooltip(L("devstudio.cosmetic.tooltip.permission"));
+        addStringField(L("devstudio.cosmetic.field.granted_permissions"), String.join(", ", this.editingData.grantedPermissions),
+                text -> this.editingData.grantedPermissions = parseList(text))
+                .withTooltip(L("devstudio.cosmetic.tooltip.granted_permissions"));
+        addStringField(L("devstudio.cosmetic.field.minecraft_tags"), String.join(", ", this.editingData.minecraftTags),
+                text -> this.editingData.minecraftTags = parseList(text))
+                .withTooltip(L("devstudio.cosmetic.tooltip.minecraft_tags"));
+
+        // --- AUTO-UNLOCK: quem tiver a permissão OU a tag ganha o cosmético (dinâmico) ---
+        addDivider(L("devstudio.cosmetic.divider.auto_unlock"));
+        if (this.editingData.unlockPermission == null) this.editingData.unlockPermission = "";
+        if (this.editingData.unlockTag == null) this.editingData.unlockTag = "";
+        addStringField(L("devstudio.cosmetic.field.unlock_permission"), this.editingData.unlockPermission,
+                text -> this.editingData.unlockPermission = text == null ? "" : text.trim())
+                .withTooltip(L("devstudio.cosmetic.tooltip.unlock_permission"));
+        addStringField(L("devstudio.cosmetic.field.unlock_tag"), this.editingData.unlockTag,
+                text -> this.editingData.unlockTag = text == null ? "" : text.trim())
+                .withTooltip(L("devstudio.cosmetic.tooltip.unlock_tag"));
 
         // --- PARTES 3D: offset/rotação/escala por parte, igual cosmético normal.
         // "GeckoLib Model ID" tem PRIORIDADE sobre tudo (inclusive sobre o item real de armadura-
@@ -626,19 +688,31 @@ public class DevCosmeticsSubPage extends DevSubPage {
                     L("devstudio.cosmetic.hint.part_geo"),
                     t -> part.geoModelId = t)
                     .withTooltip(L("devstudio.cosmetic.tooltip.part_geo"));
+            // Âncora direto na lista pra armadura-cosmético (nos cosméticos normais ela fica no
+            // popup "Config Part" junto do gizmo). Afeta os caminhos de ícone chapado e GeckoLib;
+            // no modelo de armadura 3D real a peça continua no lugar natural dela.
+            if (this.editingIsArmorCosmetic) {
+                addStringField(L("devstudio.cosmetic.field.part_anchor", "i", i),
+                        part.anchor != null ? part.anchor.name() : "HEAD", null,
+                        () -> java.util.Arrays.stream(CosmeticData.Anchor.values()).map(Enum::name).collect(java.util.stream.Collectors.toList()),
+                        t -> { try { part.anchor = CosmeticData.Anchor.valueOf(t.toUpperCase().trim()); } catch (Exception ignored) {} })
+                        .withTooltip(L("devstudio.cosmetic.tooltip.part_anchor"));
+            }
             // Alterna entre "nome solto" (busca por qualquer pasta, só pelo nome do arquivo, e no
             // caso do Model/ID restrita ao namespace greatcosmetics) e "caminho exato" (o texto
-            // acima vira o caminho relativo completo, ex: "sas/cigarro", buscado em qualquer
+            // acima vira o caminho relativo completo, ex: "hats/wizard_hat", buscado em qualquer
             // namespace) — ver CosmeticPart#useExactPath.
             this.rows.add(new EditorRow(L("devstudio.cosmetic.field.part_exact_path", "i", i), part.useExactPath, v -> part.useExactPath = v)
                     .withTooltip(L("devstudio.cosmetic.tooltip.part_exact_path")));
             outlinerParts.add(part);
             outlinerPartRowIndex.add(this.rows.size());
-            boolean usesRealArmorModel = partUsesRealArmorRender(part);
+            // Config Part fica sempre habilitado — inclusive pra armadura-cosmético (item real).
+            // O caminho de render de armadura de verdade (ArmorFeatureRendererMixin#
+            // greatcosmetics$renderRealArmor) agora aplica Offset/Rotação/Escala/Sneak da Part por
+            // cima do modelo 3D real; só a Âncora e o gizmo 3D é que não têm efeito nesse caminho.
             this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.config_part", "i", i), () -> openPartPopup(part, partIndex))
                     .withId("btn_config_part_" + i)
-                    .withDisabled(usesRealArmorModel)
-                    .withTooltip(usesRealArmorModel ? L("devstudio.cosmetic.tooltip.config_part_disabled_armor") : L("devstudio.cosmetic.tooltip.config_part")));
+                    .withTooltip(L("devstudio.cosmetic.tooltip.config_part")));
             this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.remove_part", "i", i), () -> {
                 openConfirmPopup(L("devstudio.cosmetic.confirm.remove_part_title"), L("devstudio.cosmetic.confirm.remove_part_body", "i", partIndex), () -> {
                     hasUnsavedChanges = true;
@@ -679,7 +753,11 @@ public class DevCosmeticsSubPage extends DevSubPage {
                 CosmeticData.CosmeticVariant nv = new CosmeticData.CosmeticVariant();
                 nv.variantId = "variant" + (this.editingData.variants.size() + 1);
                 this.editingData.variants.add(nv);
+                int newIdx = this.editingData.variants.size() - 1;
                 loadEditor(this.editingId);
+                // Já entra direto na tela de config da variante nova (pedido do usuário — antes só
+                // recarregava o editor do cosmético).
+                openVariantPopup(nv, newIdx);
             }).withId("btn_add_variant").withTooltip(L("devstudio.variant.tooltip.add")));
         }
 
@@ -720,10 +798,15 @@ public class DevCosmeticsSubPage extends DevSubPage {
         addStringField(L("devstudio.cosmetic.field.fly_particle"), String.join(", ", this.editingData.flyParticle), text -> this.editingData.flyParticle = parseList(text))
                 .withTooltip(L("devstudio.cosmetic.tooltip.fly_particle"));
 
-        // --- LURE ---
-        addDivider(L("devstudio.cosmetic.divider.lure"));
-        this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.config_lure"), this::openCobblemonCosmeticsPopup).withId("btn_config_lure")
-                .withTooltip(L("devstudio.cosmetic.tooltip.config_lure")));
+        // --- COBBLEMON EFFECTS (lure + scanners) ---
+        // SOFT-DEP: só aparece se o SERVIDOR tem Cobblemon (ver ClientPermissionCache /
+        // SyncDevPermissionsPayload). Sem ele, lure/scanner não fazem nada — os dados ficam no
+        // arquivo, só ignorados (decisão do usuário).
+        if (com.f4xizzz.greatcosmetics.client.ClientPermissionCache.serverHasCobblemon) {
+            addDivider(L("devstudio.cosmetic.divider.lure"));
+            this.rows.add(new EditorRow(L("devstudio.cosmetic.btn.config_lure"), this::openCobblemonCosmeticsPopup).withId("btn_config_lure")
+                    .withTooltip(L("devstudio.cosmetic.tooltip.config_lure")));
+        }
 
         this.hasUnsavedChanges = false;
 
@@ -734,9 +817,6 @@ public class DevCosmeticsSubPage extends DevSubPage {
         addStringField("Idle Sound", this.editingData.sounds.idleSound, text -> this.editingData.sounds.idleSound = text);
         addDoubleField("Idle Volume", this.editingData.sounds.idleVolume, val -> this.editingData.sounds.idleVolume = val);
         addDoubleField("Idle Pitch", this.editingData.sounds.idlePitch, val -> this.editingData.sounds.idlePitch = val);
-
-        addStringField("Equip Sound", this.editingData.sounds.equipSound, text -> this.editingData.sounds.equipSound = text);
-        addStringField("Unequip Sound", this.editingData.sounds.unequipSound, text -> this.editingData.sounds.unequipSound = text);
 
         addStringField("Walk Sound", this.editingData.sounds.walkSound, text -> this.editingData.sounds.walkSound = text);
         addDoubleField("Walk Volume", this.editingData.sounds.walkVolume, val -> this.editingData.sounds.walkVolume = val);
@@ -749,10 +829,9 @@ public class DevCosmeticsSubPage extends DevSubPage {
         addStringField("Shift Sound", this.editingData.sounds.shiftSound, text -> this.editingData.sounds.shiftSound = text);
         addDoubleField("Shift Volume", this.editingData.sounds.shiftVolume, val -> this.editingData.sounds.shiftVolume = val);
         addDoubleField("Shift Pitch", this.editingData.sounds.shiftPitch, val -> this.editingData.sounds.shiftPitch = val);
-
-        addStringField("Backpack Sound", this.editingData.sounds.backpackSound, text -> this.editingData.sounds.backpackSound = text);
-        addDoubleField("Backpack Volume", this.editingData.sounds.backpackVolume, val -> this.editingData.sounds.backpackVolume = val);
-        addDoubleField("Backpack Pitch", this.editingData.sounds.backpackPitch, val -> this.editingData.sounds.backpackPitch = val);
+        // Equip / Unequip / Backpack sounds REMOVIDOS (pedido do usuário). Os campos continuam no
+        // CosmeticData.CosmeticSounds só pra não quebrar Gson em config antiga — não são mais
+        // editáveis nem tocados.
     }
 
 
@@ -811,26 +890,6 @@ public class DevCosmeticsSubPage extends DevSubPage {
         return list;
     }
 
-    /** true quando essa Part vai renderizar pelo modelo 3D de armadura de VERDADE (ver
-     *  ArmorFeatureRendererMixin#greatcosmetics$renderRealArmor) em vez do ícone chapado
-     *  configurável — mesma condição usada lá, replicada aqui só pra decidir a UI (desabilitar o
-     *  botão "Config Part", já que offset/rotação/escala não têm efeito nenhum nesse caso). Só
-     *  vale pra armadura-cosmético (item real) sem GeckoLib e com anchor HEAD apontando pra um
-     *  ArmorItem de slot HEAD de verdade — qualquer outra combinação (GeckoLib setado, anchor
-     *  diferente, item não-armadura) continua usando os campos normalmente. */
-    private boolean partUsesRealArmorRender(CosmeticData.CosmeticPart part) {
-        if (!this.editingIsArmorCosmetic || this.editingData == null) return false;
-        if (part.geoModelId != null && !part.geoModelId.isBlank()) return false;
-        if (part.anchor != CosmeticData.Anchor.HEAD) return false;
-
-        String realItemId = this.editingData.realItemId;
-        if (realItemId == null || realItemId.isBlank()) return false;
-        net.minecraft.util.Identifier id = net.minecraft.util.Identifier.tryParse(realItemId);
-        net.minecraft.item.Item item = id != null ? net.minecraft.registry.Registries.ITEM.get(id) : null;
-        return item instanceof net.minecraft.item.ArmorItem armorItem
-                && armorItem.getSlotType() == net.minecraft.entity.EquipmentSlot.HEAD;
-    }
-
     private void openPartPopup(CosmeticData.CosmeticPart part, int index) {
         boolean wasUnsaved = this.hasUnsavedChanges;
 
@@ -878,28 +937,110 @@ public class DevCosmeticsSubPage extends DevSubPage {
         this.hasUnsavedChanges = wasUnsaved;
     }
 
+    /** Copia TODOS os campos de posicionamento/model de uma part pra outra (menos o resolvedCmd
+     *  transient, que o servidor recalcula). Usado ao criar a part herdada de uma variante. */
+    private static void copyPartInto(CosmeticData.CosmeticPart dst, CosmeticData.CosmeticPart src) {
+        dst.customModelData_or_ID = src.customModelData_or_ID;
+        dst.geoModelId = src.geoModelId;
+        dst.useExactPath = src.useExactPath;
+        dst.anchor = src.anchor != null ? src.anchor : CosmeticData.Anchor.HEAD;
+        dst.resolvedCmd = src.resolvedCmd; // ajuda o preview imediato (antes do round-trip de save)
+        dst.offsetX = src.offsetX; dst.offsetY = src.offsetY; dst.offsetZ = src.offsetZ;
+        dst.rotationX = src.rotationX; dst.rotationY = src.rotationY; dst.rotationZ = src.rotationZ;
+        dst.scaleX = src.scaleX; dst.scaleY = src.scaleY; dst.scaleZ = src.scaleZ;
+        dst.shiftOffsetX = src.shiftOffsetX; dst.shiftOffsetY = src.shiftOffsetY; dst.shiftOffsetZ = src.shiftOffsetZ;
+        dst.shiftRotationX = src.shiftRotationX; dst.shiftRotationY = src.shiftRotationY; dst.shiftRotationZ = src.shiftRotationZ;
+    }
+
+    /** Âncoras que uma armadura desse item ocupa no corpo:
+     *  capacete → [HEAD]; peitoral → [BODY, RIGHT_ARM, LEFT_ARM]; calça → [BODY, RIGHT_LEG, LEFT_LEG];
+     *  bota → [RIGHT_LEG, LEFT_LEG]. {@code null} se o item não for uma armadura vestível. */
+    private static java.util.List<CosmeticData.Anchor> armorAnchorsFor(String itemId) {
+        if (itemId == null || itemId.isBlank()) return null;
+        net.minecraft.util.Identifier id = net.minecraft.util.Identifier.tryParse(itemId.toLowerCase().trim());
+        if (id == null) return null;
+        net.minecraft.item.Item item = net.minecraft.registry.Registries.ITEM.get(id);
+        if (!(item instanceof net.minecraft.item.ArmorItem armor)) return null;
+        return switch (armor.getSlotType()) {
+            case HEAD -> java.util.List.of(CosmeticData.Anchor.HEAD);
+            case CHEST -> java.util.List.of(CosmeticData.Anchor.BODY, CosmeticData.Anchor.RIGHT_ARM, CosmeticData.Anchor.LEFT_ARM);
+            case LEGS -> java.util.List.of(CosmeticData.Anchor.BODY, CosmeticData.Anchor.RIGHT_LEG, CosmeticData.Anchor.LEFT_LEG);
+            case FEET -> java.util.List.of(CosmeticData.Anchor.RIGHT_LEG, CosmeticData.Anchor.LEFT_LEG);
+            default -> null;
+        };
+    }
+
+    /** As parts atuais são só o "molde cru" (nenhum model configurado em nenhuma)? Se sim, pode
+     *  re-dividir sem perder trabalho. */
+    private boolean armorPartsArePristine() {
+        if (this.editingData.parts == null) return true;
+        for (CosmeticData.CosmeticPart p : this.editingData.parts) {
+            boolean hasModel = (p.customModelData_or_ID != null && !p.customModelData_or_ID.isBlank())
+                    || (p.geoModelId != null && !p.geoModelId.isBlank());
+            if (hasModel) return false;
+        }
+        return true;
+    }
+
+    private static boolean anchorsMatch(java.util.List<CosmeticData.CosmeticPart> parts, java.util.List<CosmeticData.Anchor> anchors) {
+        if (parts == null || parts.size() != anchors.size()) return false;
+        for (int i = 0; i < anchors.size(); i++) if (parts.get(i).anchor != anchors.get(i)) return false;
+        return true;
+    }
+
+    /** Reconstrói {@code editingData.parts} com uma part por âncora da lista, herdando os model refs
+     *  (customModelData/geoModelId/useExactPath) da 1a part atual, se houver. */
+    private void applyArmorAnchorLayout(java.util.List<CosmeticData.Anchor> anchors) {
+        CosmeticData.CosmeticPart template = (this.editingData.parts != null && !this.editingData.parts.isEmpty())
+                ? this.editingData.parts.get(0) : null;
+        java.util.List<CosmeticData.CosmeticPart> fresh = new ArrayList<>();
+        for (CosmeticData.Anchor a : anchors) {
+            CosmeticData.CosmeticPart p = new CosmeticData.CosmeticPart(a);
+            if (template != null) {
+                p.customModelData_or_ID = template.customModelData_or_ID;
+                p.geoModelId = template.geoModelId;
+                p.useExactPath = template.useExactPath;
+            }
+            fresh.add(p);
+        }
+        this.editingData.parts = fresh;
+        if (GizmoManager.activePart != null && !fresh.contains(GizmoManager.activePart)) GizmoManager.activePart = null;
+    }
+
     /** Editor de uma variante: nome, slot, e o posicionamento (anchor + offset/rotação/escala) de
      *  uma part. A variante reusa os models do cosmético base — os campos de model NÃO aparecem
-     *  aqui de propósito ("só posicionamento", decisão do usuário). */
+     *  aqui de propósito ("só posicionamento", decisão do usuário). Enquanto o popup está aberto o
+     *  preview 3D mostra a VARIANTE (não as parts base) e o gizmo de setas fica atrelado à part. */
     private void openVariantPopup(CosmeticData.CosmeticVariant v, int index) {
         boolean wasUnsaved = this.hasUnsavedChanges;
 
-        // Garante 1 part, herdando os model refs da 1a part do cosmético base.
+        // Garante 1 part, CLONANDO a 1a part do cosmético base (mesmo model E mesma pose inicial —
+        // assim a variante já nasce visível/no lugar, o admin só ajusta em cima).
         if (v.parts == null) v.parts = new ArrayList<>();
         if (v.parts.isEmpty()) {
             CosmeticData.CosmeticPart p = new CosmeticData.CosmeticPart(CosmeticData.Anchor.HEAD);
             if (editingData.parts != null && !editingData.parts.isEmpty()) {
-                CosmeticData.CosmeticPart base0 = editingData.parts.get(0);
-                p.customModelData_or_ID = base0.customModelData_or_ID;
-                p.geoModelId = base0.geoModelId;
-                p.useExactPath = base0.useExactPath;
-                p.anchor = base0.anchor != null ? base0.anchor : CosmeticData.Anchor.HEAD;
+                copyPartInto(p, editingData.parts.get(0));
             }
             v.parts.add(p);
         }
         CosmeticData.CosmeticPart part = v.parts.get(0);
 
-        activePopup = new FloatingPopup(L("devstudio.variant.popup_title", "i", index), 80, 40, 240, 300);
+        // Preview ao vivo da variante + gizmo (mesma mecânica do "Config Part" dos cosméticos).
+        Wardrobe3DScreen.previewVariantId = v.variantId;
+        GizmoManager.activePart = part;
+        GizmoManager.currentAxis = GizmoManager.Axis.NONE;
+        com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog(
+                "[openVariantPopup] cosmetic='" + this.editingId + "' variantId='" + v.variantId
+                + "' vParts=" + v.parts.size() + " activePart=" + System.identityHashCode(part)
+                + " editingIsArmorCosmetic=" + this.editingIsArmorCosmetic
+                + " sameMapObj=" + (this.editingData == CosmeticsConfig.cosmeticsMap.get(this.editingId)));
+        GizmoManager.onUpdate = () -> {
+            this.hasUnsavedChanges = true;
+            if (activePopup != null) activePopup.syncGizmoToFields();
+        };
+
+        activePopup = new FloatingPopup(L("devstudio.variant.popup_title", "i", index), 80, 40, 240, 320);
 
         activePopup.addString(L("devstudio.variant.field.name"), v.displayName, t -> v.displayName = t)
                 .withTooltip(L("devstudio.variant.tooltip.name"));
@@ -919,6 +1060,9 @@ public class DevCosmeticsSubPage extends DevSubPage {
                 () -> java.util.Arrays.stream(CosmeticData.Anchor.values()).map(Enum::name).collect(java.util.stream.Collectors.toList()),
                 text -> { try { part.anchor = CosmeticData.Anchor.valueOf(text.toUpperCase().trim()); } catch (Exception ignored) {} })
                 .withTooltip(L("devstudio.variant.tooltip.anchor"));
+
+        activePopup.addDivider(L("devstudio.part.divider.gizmo_tool"));
+        activePopup.addGizmoControls();
 
         activePopup.addDivider(L("devstudio.part.divider.normal_values"));
         activePopup.addFloat("Offset X", part.offsetX, val -> part.offsetX = val);
@@ -981,6 +1125,12 @@ public class DevCosmeticsSubPage extends DevSubPage {
         activePopup.addDivider(L("devstudio.cobcos.divider.scanner"));
         activePopup.addToggle(L("devstudio.cobcos.field.ivs_scanner"), editingData.ivScanner, v -> editingData.ivScanner = v)
                 .withTooltip(L("devstudio.cobcos.tooltip.ivs_scanner"));
+        activePopup.addToggle(L("devstudio.cobcos.field.nature_scanner"), editingData.natureScanner, v -> editingData.natureScanner = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.nature_scanner"));
+        activePopup.addToggle(L("devstudio.cobcos.field.ability_scanner"), editingData.abilityScanner, v -> editingData.abilityScanner = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.ability_scanner"));
+        activePopup.addToggle(L("devstudio.cobcos.field.size_scanner"), editingData.sizeScanner, v -> editingData.sizeScanner = v)
+                .withTooltip(L("devstudio.cobcos.tooltip.size_scanner"));
 
         this.hasUnsavedChanges = wasUnsaved;
     }
@@ -1196,6 +1346,14 @@ public class DevCosmeticsSubPage extends DevSubPage {
             GizmoManager.release();
         }
 
+        // Auto-split das parts de armadura foi feito dentro do changed-listener do campo Real Item —
+        // o rebuild das rows tem que rodar FORA do listener (mexe na lista que está sendo iterada).
+        if (this.pendingArmorSplitRebuild && currentState == State.EDITOR) {
+            this.pendingArmorSplitRebuild = false;
+            this.hasUnsavedChanges = true;
+            loadEditor(this.editingId);
+        }
+
         int topY = y + 35;
 
         if (currentState == State.LIST) {
@@ -1206,9 +1364,9 @@ public class DevCosmeticsSubPage extends DevSubPage {
             int newBtnMid = x + 10 + (width - 20) / 2;
             boolean hovNew = mouseX >= x + 10 && mouseX <= newBtnMid - 2 && mouseY >= topY + 15 && mouseY <= topY + 30;
             boolean hovNewArmor = mouseX >= newBtnMid + 2 && mouseX <= x + width - 10 && mouseY >= topY + 15 && mouseY <= topY + 30;
-            c.fill(x + 10, topY + 15, newBtnMid - 2, topY + 30, hovNew ? 0xFF55FF55 : 0xFF22AA22);
+            c.fill(x + 10, topY + 15, newBtnMid - 2, topY + 30, hovNew ? 0xFF33CC33 : 0xFF22AA22);
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.cosmetic.btn.new_cosmetic"), x + 10 + (newBtnMid - 2 - (x + 10)) / 2, topY + 19, 0xFFFFFF);
-            c.fill(newBtnMid + 2, topY + 15, x + width - 10, topY + 30, hovNewArmor ? 0xFF66AAFF : 0xFF3377CC);
+            c.fill(newBtnMid + 2, topY + 15, x + width - 10, topY + 30, hovNewArmor ? 0xFF33CC33 : 0xFF1E8A3A);
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.cosmetic.btn.new_armor"), newBtnMid + 2 + (x + width - 10 - (newBtnMid + 2)) / 2, topY + 19, 0xFFFFFF);
 
             // ==========================================
@@ -1472,10 +1630,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
                 }
                 else if (row.type == RowType.BUTTON) {
                     boolean hovBtn = mouseX >= propsX + 15 && mouseX <= propsX + propsW - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
-                    int bgColor = row.disabled ? 0x33888888
-                            : row.id.equals("btn_add_part") ? (hovBtn ? 0x6655FF55 : 0x4422AA22)
-                            : row.id.startsWith("btn_remove_part") ? (hovBtn ? 0x66FF5555 : 0x44CC3333)
-                            : (hovBtn ? 0x66FFAA00 : 0x44FFAA00);
+                    int bgColor = row.disabled ? 0x33888888 : devButtonFill(row.id, hovBtn);
 
                     c.fill(propsX + 15, rowY + 12, propsX + propsW - 20, rowY + 28, bgColor);
                     c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, propsX + (propsW/2), rowY + 16, row.disabled ? 0xFF999999 : 0xFFFFFFFF);
@@ -1658,7 +1813,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
         }
         else if (currentState == State.EDITOR) {
             if (mx >= x + 10 && mx <= x + 30 && my >= topY && my <= topY + 12) {
-                playClick(); tryExit(() -> { this.currentState = State.LIST; this.activePopup = null; this.scrollY = this.listScrollY; Wardrobe3DScreen.previewCosmeticId = null; GizmoManager.activePart = null; }); return true;
+                playClick(); tryExit(() -> { this.currentState = State.LIST; this.activePopup = null; this.scrollY = this.listScrollY; Wardrobe3DScreen.previewCosmeticId = null; Wardrobe3DScreen.previewVariantId = null; GizmoManager.activePart = null; }); return true;
             }
             if (mx >= x + width - 25 && mx <= x + width - 10 && my >= topY && my <= topY + 12) {
                 playClick(); saveChanges(); hasUnsavedChanges = false; return true;
@@ -1678,6 +1833,7 @@ public class DevCosmeticsSubPage extends DevSubPage {
                     this.activePopup = null;
                     this.scrollY = this.listScrollY;
                     Wardrobe3DScreen.previewCosmeticId = null;
+                    Wardrobe3DScreen.previewVariantId = null;
                     GizmoManager.activePart = null;
                 });
                 return true;

@@ -48,6 +48,11 @@ public class TagsPage extends WardrobePage {
     // sem precisar de referência à instância da página.
     public static String devPreviewEquippedId = null;
 
+    // Botões "Add" (verde) / "Set" (amarelo) do Dev Mode — só aparecem com uma tag em preview.
+    private static final int DEVBTN_H = 20;
+    private boolean showSetConfirm = false;
+    private String setConfirmTagId = null;
+
     private String editingId = null; // null = criando tag nova
     private boolean editingIsGroupTag = false;
     private TextFieldWidget idField, displayNameField, descriptionField, tagField, permissionsField, minecraftTagField;
@@ -216,8 +221,51 @@ public class TagsPage extends WardrobePage {
         }
         RenderSystem.disableScissor();
 
+        // --- Botões "Add" / "Set" do Dev Mode (aparecem quando uma tag está em preview) ---
+        if (devMode && devPreviewEquippedId != null) {
+            TagData prev = ClientTagsCache.allTags.get(devPreviewEquippedId);
+            boolean isGroup = prev != null && prev.isGroupTag;
+            int bw = (width - 24) / 2;
+            int bAddX = x + 12;
+            int bSetX = x + 12 + bw + 0;
+            int by = y + height + 5;
+
+            boolean hovAdd = over(mouseX, mouseY, bAddX, by, bw - 2, DEVBTN_H);
+            c.fill(bAddX, by, bAddX + bw - 2, by + DEVBTN_H, hovAdd ? 0x6633CC33 : 0x4422AA22);
+            c.drawBorder(bAddX, by, bw - 2, DEVBTN_H, hovAdd ? 0xFF55FF55 : 0xFF22AA22);
+            c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.dev.add"), bAddX + (bw - 2) / 2, by + 6, 0xFFFFFF);
+
+            if (isGroup) {
+                boolean hovSet = over(mouseX, mouseY, bSetX, by, bw - 2, DEVBTN_H);
+                c.fill(bSetX, by, bSetX + bw - 2, by + DEVBTN_H, hovSet ? 0x66DDCC22 : 0x44AA9911);
+                c.drawBorder(bSetX, by, bw - 2, DEVBTN_H, hovSet ? 0xFFFFDD44 : 0xFFCCAA22);
+                c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.dev.set"), bSetX + (bw - 2) / 2, by + 6, 0xFFFFFF);
+            }
+        }
+
         if (activeTooltip != null) {
             c.drawTooltip(getTextRenderer(), activeTooltip, mouseX, mouseY);
+        }
+
+        // --- Popup de confirmação do "Set" ---
+        if (showSetConfirm) {
+            c.getMatrices().push();
+            c.getMatrices().translate(0, 0, 400);
+            int pw = 220, ph = 92;
+            int px = x + (width / 2) - pw / 2;
+            int py = y + (height / 2) - ph / 2;
+            c.fill(-4000, -4000, 8000, 8000, 0xC0000000);
+            c.fill(px, py, px + pw, py + ph, 0xFF222222);
+            c.drawBorder(px, py, pw, ph, 0xFFFFDD44);
+            c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.dev.set_confirm_title"), px + pw / 2, py + 10, 0xFFFFDD44);
+            c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("tags.dev.set_confirm_body"), px + pw / 2, py + 26, 0xFFAAAAAA);
+            boolean hY = over(mouseX, mouseY, px + 12, py + 62, 90, 20);
+            boolean hN = over(mouseX, mouseY, px + pw - 102, py + 62, 90, 20);
+            c.fill(px + 12, py + 62, px + 102, py + 82, hY ? 0x66DDCC22 : 0x44AA9911);
+            c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.common.confirm"), px + 57, py + 68, 0xFFFFFF);
+            c.fill(px + pw - 102, py + 62, px + pw - 12, py + 82, hN ? 0x66FFFFFF : 0x44444444);
+            c.drawCenteredTextWithShadow(getTextRenderer(), com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.common.cancel"), px + pw - 57, py + 68, 0xFFFFFF);
+            c.getMatrices().pop();
         }
     }
 
@@ -322,7 +370,42 @@ public class TagsPage extends WardrobePage {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button != 0) return false;
+
+        // Popup do "Set" — intercepta tudo.
+        if (showSetConfirm) {
+            int pw = 220, ph = 92;
+            int px = PANEL_X + (PANEL_W / 2) - pw / 2;
+            int py = PANEL_Y + (PANEL_H / 2) - ph / 2;
+            if (over(mouseX, mouseY, px + 12, py + 62, 90, 20)) {
+                playClick();
+                if (setConfirmTagId != null) ClientPlayNetworking.send(new com.f4xizzz.greatcosmetics.network.DevGrantTagPayload(setConfirmTagId, true));
+                showSetConfirm = false; setConfirmTagId = null;
+                return true;
+            }
+            showSetConfirm = false; setConfirmTagId = null;
+            return true;
+        }
+
         if (devState == DevState.EDITOR) return editorMouseClicked(mouseX, mouseY);
+
+        // Botões Add / Set do Dev Mode
+        if (isDevModeActive() && devPreviewEquippedId != null) {
+            int bw = (PANEL_W - 24) / 2;
+            int by = PANEL_Y + PANEL_H + 5;
+            TagData prev = ClientTagsCache.allTags.get(devPreviewEquippedId);
+            boolean isGroup = prev != null && prev.isGroupTag;
+            if (over(mouseX, mouseY, PANEL_X + 12, by, bw - 2, DEVBTN_H)) {
+                playClick();
+                ClientPlayNetworking.send(new com.f4xizzz.greatcosmetics.network.DevGrantTagPayload(devPreviewEquippedId, false));
+                return true;
+            }
+            if (isGroup && over(mouseX, mouseY, PANEL_X + 12 + bw, by, bw - 2, DEVBTN_H)) {
+                playClick();
+                showSetConfirm = true;
+                setConfirmTagId = devPreviewEquippedId;
+                return true;
+            }
+        }
 
         if (hasDevPermission()) {
             int devBtnW = 40;

@@ -46,45 +46,81 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 		super(context);
 	}
 
-	// Único membro PRIVADO do ArmorFeatureRenderer vanilla que a gente precisa (ver
+	// Membros PRIVADOS do ArmorFeatureRenderer vanilla que a gente precisa (ver
 	// greatcosmetics$renderRealArmor) — o resto do algoritmo de render de armadura de verdade
 	// (copyBipedStateTo/setVisible/render do BipedEntityModel, RenderLayer.getArmorCutoutNoCull)
-	// é tudo público. "outerModel" serve pra QUALQUER slot exceto LEGS (que usa "innerModel") —
-	// como esse mixin inteiro só trata EquipmentSlot.HEAD (ver o early-return logo abaixo), nunca
-	// precisamos do innerModel.
+	// é tudo público. "outerModel" serve pra HEAD/CHEST/FEET; "innerModel" (camada fina) é só de
+	// LEGS — igual o vanilla (usesInnerModel(slot) == slot==LEGS).
 	@Shadow private A outerModel;
+	@Shadow private A innerModel;
 
 	// Evita spammar o console com a mesma linha todo frame — ver uso abaixo.
 	private static final Set<String> greatcosmetics$loggedMissingIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private static long greatcosmetics$lastPreviewLogMs = 0L;
+
+	/** true no máx 1x/segundo — pra o log de diagnóstico do preview de variante não inundar. */
+	private static boolean greatcosmetics$devPreviewLogTick() {
+		long now = System.currentTimeMillis();
+		if (now - greatcosmetics$lastPreviewLogMs < 1000L) return false;
+		greatcosmetics$lastPreviewLogMs = now;
+		return true;
+	}
 
 	/** Desenha uma armadura-cosmético (ver ArmorCosmeticsConfig) que representa um ArmorItem de
-	 *  slot HEAD de verdade usando o MESMO algoritmo que o Minecraft usa pra armadura realmente
-	 *  equipada — modelo 3D biped (capacete de verdade, não um ícone chapado) + a(s) textura(s) da
-	 *  camada do material — em vez do caminho genérico de ícone (itemRenderer.renderItem com
-	 *  ModelTransformationMode.HEAD) que o resto deste mixin usa pra QUALQUER outro item.
+	 *  VERDADE (qualquer slot — HEAD/CHEST/LEGS/FEET) usando o MESMO algoritmo que o Minecraft usa
+	 *  pra armadura realmente equipada — modelo 3D biped (peça de verdade, não um ícone chapado) +
+	 *  a(s) textura(s) da camada do material — em vez do caminho genérico de ícone
+	 *  (itemRenderer.renderItem com ModelTransformationMode.HEAD) que o resto deste mixin usa.
 	 *
-	 *  Replicado a partir do bytecode real de ArmorFeatureRenderer#renderArmor (decompilado do jar
-	 *  vanilla via javap pra confirmar a ordem exata das chamadas — sem isso seria só chute):
-	 *  copyBipedStateTo (copia a pose do corpo pro modelo de armadura) -> setVisible(false) +
-	 *  liga só head/hat -> pra cada Layer do ArmorMaterial, resolve a textura (com tint de
-	 *  dye se aplicável) e desenha via RenderLayer.getArmorCutoutNoCull -> brilho de encantamento
-	 *  se o item tiver. NÃO replica os trims (ArmorTrim) — precisaria de outro campo privado
-	 *  (armorTrimsAtlas) e é bem mais raro num cosmético de exemplo; item com trim configurado
-	 *  simplesmente não mostra o trim (ainda mostra o capacete certo, só sem o overlay decorativo).
+	 *  Replicado a partir do bytecode real de ArmorFeatureRenderer#renderArmor + #setVisible +
+	 *  #usesInnerModel (decompilado do jar vanilla via javap): copyBipedStateTo (copia a pose do
+	 *  corpo pro modelo de armadura) -> setVisible(false) + liga só as partes do slot (head/hat pra
+	 *  HEAD, body+braços pra CHEST, body+pernas pra LEGS, pernas pra FEET) -> escolhe innerModel só
+	 *  pra LEGS -> pra cada Layer do ArmorMaterial resolve a textura (com tint de dye) e desenha
+	 *  via RenderLayer.getArmorCutoutNoCull -> brilho de encantamento se tiver. NÃO replica os
+	 *  trims (ArmorTrim — precisaria de outro campo privado, e é raro num cosmético).
 	 *
-	 *  Ao contrário do caminho de ícone, essa renderização IGNORA offset/rotação/escala da Part de
-	 *  propósito — o modelo de armadura de verdade já encaixa perfeitamente na cabeça sozinho
-	 *  (é a MESMA geometria que o Minecraft usa quando o item está equipado de verdade no slot),
-	 *  então não tem "ajuste fino" nenhum pra fazer; os campos continuam existindo/editáveis no Dev
-	 *  Studio (não afetam nada nesse caso) só porque são compartilhados com os outros dois
-	 *  caminhos (GeckoLib e ícone chapado). NÃO testado ao vivo (sem client Minecraft neste
-	 *  ambiente) — validado só por leitura/compile contra a API pública confirmada via bytecode. */
-	private void greatcosmetics$renderRealArmor(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, M contextModel, ItemStack stack, ArmorItem armorItem) {
-		A armorModel = this.outerModel;
+	 *  Offset/Rotação/Escala da Part são aplicados no modelo INTEIRO (em model space, ~1.0 = 1
+	 *  bloco), ANTES do render — padrão 0/0/0 + 1/1/1 = encaixe exato do vanilla. Na prática só o
+	 *  Offset costuma ser útil aqui (rotacionar/escalar um biped inteiro gira em torno dos pés);
+	 *  quem quer controle fino de verdade usa um GeckoLib Model ID, que cai no caminho geo. */
+	private void greatcosmetics$renderRealArmor(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light,
+			M contextModel, ItemStack stack, ArmorItem armorItem, CosmeticData.CosmeticPart part, boolean sneaking) {
+		EquipmentSlot armorSlot = armorItem.getSlotType();
+		boolean usesInner = armorSlot == EquipmentSlot.LEGS;
+		A armorModel = usesInner ? this.innerModel : this.outerModel;
+
 		contextModel.copyBipedStateTo(armorModel);
 		armorModel.setVisible(false);
-		armorModel.head.visible = true;
-		armorModel.hat.visible = true;
+		// Mostra SÓ o osso da âncora desta Part (BODY = torso, RIGHT_ARM = manga direita, etc). Com
+		// o "split into body parts" no Dev Studio, um peitoral vira 3 Parts (BODY/RIGHT_ARM/LEFT_ARM),
+		// cada uma posicionável sozinha. Uma Part com âncora que não bate com o modelo da peça
+		// (ex: capacete com âncora BODY) simplesmente não desenha nada.
+		switch (part.anchor) {
+			case HEAD -> { armorModel.head.visible = true; armorModel.hat.visible = true; }
+			case BODY -> armorModel.body.visible = true;
+			case RIGHT_ARM -> armorModel.rightArm.visible = true;
+			case LEFT_ARM -> armorModel.leftArm.visible = true;
+			case RIGHT_LEG -> armorModel.rightLeg.visible = true;
+			case LEFT_LEG -> armorModel.leftLeg.visible = true;
+			default -> { return; }
+		}
+
+		// Ajuste fino opcional (padrão = sem efeito). translate -> rotation -> scale, model space.
+		matrices.translate(part.offsetX, part.offsetY, part.offsetZ);
+		if (part.rotationX != 0.0F) matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(part.rotationX));
+		if (part.rotationY != 0.0F) matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(part.rotationY));
+		if (part.rotationZ != 0.0F) matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(part.rotationZ));
+		if (sneaking) {
+			matrices.translate(part.shiftOffsetX, part.shiftOffsetY, part.shiftOffsetZ);
+			if (part.shiftRotationX != 0.0F) matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(part.shiftRotationX));
+			if (part.shiftRotationY != 0.0F) matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(part.shiftRotationY));
+			if (part.shiftRotationZ != 0.0F) matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(part.shiftRotationZ));
+		}
+		float sX = part.scaleX == 0.0F ? 1.0F : part.scaleX;
+		float sY = part.scaleY == 0.0F ? 1.0F : part.scaleY;
+		float sZ = part.scaleZ == 0.0F ? 1.0F : part.scaleZ;
+		if (sX != 1.0F || sY != 1.0F || sZ != 1.0F) matrices.scale(sX, sY, sZ);
 
 		ArmorMaterial material = armorItem.getMaterial().value();
 
@@ -96,9 +132,7 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 
 		for (ArmorMaterial.Layer layer : material.layers()) {
 			int color = layer.isDyeable() ? dyeColor : -1;
-			// "false" = não é o innerModel (única situação em que seria true é slot LEGS, que
-			// esse mixin nunca trata — ver o early-return "if (slot != EquipmentSlot.HEAD) return").
-			Identifier texture = layer.getTexture(false);
+			Identifier texture = layer.getTexture(usesInner);
 			VertexConsumer vc = vertexConsumers.getBuffer(RenderLayer.getArmorCutoutNoCull(texture));
 			armorModel.render(matrices, vc, light, net.minecraft.client.render.OverlayTexture.DEFAULT_UV, color);
 		}
@@ -107,6 +141,39 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 			VertexConsumer glintVc = vertexConsumers.getBuffer(RenderLayer.getArmorEntityGlint());
 			armorModel.render(matrices, glintVc, light, net.minecraft.client.render.OverlayTexture.DEFAULT_UV);
 		}
+	}
+
+	/** Desenha as setas/anéis do gizmo 3D numa origem já resolvida ({@code pos}) — versão compacta
+	 *  pro caminho de ARMADURA-COSMÉTICO (o caminho de ícone tem o seu próprio bloco inline com
+	 *  toda a compensação de transform "head" do item). {@code entry} só é usado pras normais. */
+	private void greatcosmetics$drawPartGizmoAt(VertexConsumerProvider vertexConsumers, MatrixStack.Entry entry, Matrix4f pos) {
+		VertexConsumer vc = vertexConsumers.getBuffer(GizmoManager.GIZMO_LINES_NO_DEPTH);
+		float size = GizmoManager.AXIS_WORLD_LENGTH;
+		if (GizmoManager.currentMode == GizmoManager.Mode.ROTATE) {
+			boolean anyDragging = GizmoManager.isDragging;
+			greatcosmetics$drawGizmoRing(vc, pos, entry, GizmoManager.Axis.X, size, 255, 60, 60, !anyDragging || GizmoManager.currentAxis == GizmoManager.Axis.X);
+			greatcosmetics$drawGizmoRing(vc, pos, entry, GizmoManager.Axis.Y, size, 60, 255, 60, !anyDragging || GizmoManager.currentAxis == GizmoManager.Axis.Y);
+			greatcosmetics$drawGizmoRing(vc, pos, entry, GizmoManager.Axis.Z, size, 70, 130, 255, !anyDragging || GizmoManager.currentAxis == GizmoManager.Axis.Z);
+		} else {
+			vc.vertex(pos, 0f, 0f, 0f).color(255, 0, 0, 255).normal(entry, 1f, 0f, 0f);
+			vc.vertex(pos, size, 0f, 0f).color(255, 0, 0, 255).normal(entry, 1f, 0f, 0f);
+			vc.vertex(pos, 0f, 0f, 0f).color(0, 255, 0, 255).normal(entry, 0f, 1f, 0f);
+			vc.vertex(pos, 0f, size, 0f).color(0, 255, 0, 255).normal(entry, 0f, 1f, 0f);
+			vc.vertex(pos, 0f, 0f, 0f).color(0, 0, 255, 255).normal(entry, 0f, 0f, 1f);
+			vc.vertex(pos, 0f, 0f, size).color(0, 0, 255, 255).normal(entry, 0f, 0f, 1f);
+		}
+		Vector3f hoverPoint = GizmoManager.getHoverLocalPoint();
+		if (hoverPoint != null) {
+			int[] hc = GizmoManager.isDragging ? greatcosmetics$axisColor(GizmoManager.currentAxis) : new int[]{200, 200, 200};
+			greatcosmetics$drawHoverDot(vc, pos, entry, hoverPoint, hc[0], hc[1], hc[2]);
+		}
+		GizmoManager.updateScreenProjection(pos);
+	}
+
+	/** true se {@code slot} é um dos 4 slots de armadura vestível (HEAD/CHEST/LEGS/FEET). */
+	private static boolean greatcosmetics$isWearableArmorSlot(EquipmentSlot slot) {
+		return slot == EquipmentSlot.HEAD || slot == EquipmentSlot.CHEST
+				|| slot == EquipmentSlot.LEGS || slot == EquipmentSlot.FEET;
 	}
 
 	@Inject(method = "renderArmor", at = @At("HEAD"), cancellable = true)
@@ -118,6 +185,15 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 		// de código totalmente separado e nunca são afetados, então não tem nada pra proteger.
 
 		if (slot == EquipmentSlot.MAINHAND || slot == EquipmentSlot.OFFHAND) return;
+
+		// Setting local "esconder cosmético dos outros jogadores" (performance) — só o PRÓPRIO
+		// jogador continua com cosmético (e o preview do Dev Studio). Ver ClientLocalSettings.
+		if (ClientCosmeticCache.hideOtherPlayersCosmetics
+				&& !ArmorCosmeticResolver.isDevPreview(entity)
+				&& (net.minecraft.client.MinecraftClient.getInstance().player == null
+					|| !entity.getUuid().equals(net.minecraft.client.MinecraftClient.getInstance().player.getUuid()))) {
+			return;
+		}
 
 		ClientCosmeticCache.PlayerSettings settings = ClientCosmeticCache.getSettings(entity.getUuid());
 
@@ -131,11 +207,21 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 
 		boolean isDevPreview = ArmorCosmeticResolver.isDevPreview(entity);
 
-		Set<String> equippedIds = isDevPreview
-				? (com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen.previewCosmeticId == null
-						|| com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen.previewCosmeticId.isEmpty()
-						? Set.of() : Set.of(com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen.previewCosmeticId))
-				: ClientCosmeticCache.getEquipped(entity.getUuid());
+		Set<String> equippedIds;
+		if (isDevPreview) {
+			String greatcosmetics$prev = com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen.previewCosmeticId;
+			String greatcosmetics$prevVar = com.f4xizzz.greatcosmetics.client.gui.Wardrobe3DScreen.previewVariantId;
+			if (greatcosmetics$prev == null || greatcosmetics$prev.isEmpty()) {
+				equippedIds = Set.of();
+			} else if (greatcosmetics$prevVar != null && !greatcosmetics$prevVar.isEmpty()) {
+				// Editor de variante: mostra as parts DAQUELA variante (gizmo + preview ao vivo).
+				equippedIds = Set.of(greatcosmetics$prev + "#" + greatcosmetics$prevVar);
+			} else {
+				equippedIds = Set.of(greatcosmetics$prev);
+			}
+		} else {
+			equippedIds = ClientCosmeticCache.getEquipped(entity.getUuid());
+		}
 
 		if (shouldHideVanilla) {
 			ci.cancel();
@@ -214,6 +300,16 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 				CosmeticData.CosmeticVariant greatcosmetics$v = data.findVariant(greatcosmetics$variantId).orElse(null);
 				if (greatcosmetics$v != null && greatcosmetics$v.parts != null && !greatcosmetics$v.parts.isEmpty())
 					greatcosmetics$partsToDraw = greatcosmetics$v.parts;
+				if (isDevPreview && greatcosmetics$devPreviewLogTick()) {
+					com.f4xizzz.greatcosmetics.GreatCosmeticsClient.debugLog(
+							"[variant preview] id='" + id + "' variantId='" + greatcosmetics$variantId
+							+ "' variantFound=" + (greatcosmetics$v != null)
+							+ " variantParts=" + (greatcosmetics$v != null && greatcosmetics$v.parts != null ? greatcosmetics$v.parts.size() : -1)
+							+ " usingVariantParts=" + (greatcosmetics$partsToDraw != data.parts)
+							+ " activePart=" + System.identityHashCode(GizmoManager.activePart)
+							+ " part0=" + (greatcosmetics$partsToDraw.isEmpty() ? "none" : System.identityHashCode(greatcosmetics$partsToDraw.get(0)))
+							+ " match=" + (!greatcosmetics$partsToDraw.isEmpty() && GizmoManager.activePart == greatcosmetics$partsToDraw.get(0)));
+				}
 			}
 			if (greatcosmetics$partsToDraw == null || greatcosmetics$partsToDraw.isEmpty()) {
 				if (greatcosmetics$loggedMissingIds.add(id + "#noparts")) {
@@ -253,17 +349,24 @@ public abstract class ArmorFeatureRendererMixin<T extends LivingEntity, M extend
 				int modelToRender = part.resolvedCmd != 0 ? part.resolvedCmd : data.cmd;
 				boolean isGecko = com.f4xizzz.greatcosmetics.geckolib.GeoModelRegistry.has(modelToRender);
 
-				// ARMADURA DE VERDADE (capacete real, não ícone) — só quando NADA de custom foi
-				// configurado pra essa Part (sem GeckoLib) e o item real é um ArmorItem de slot
-				// HEAD de verdade. Usa "matrices" no estado CRU de agora (logo após o push, ainda
-				// sem a rotação de âncora abaixo) — é o mesmo espaço que o ArmorFeatureRenderer
-				// vanilla usa pra desenhar armadura equipada de verdade (ver
-				// greatcosmetics$renderRealArmor). Sai do loop pra essa Part aqui — nada do resto
-				// (ícone chapado, transform de âncora, gizmo) se aplica nesse caminho.
-				if (!isGecko && part.anchor == CosmeticData.Anchor.HEAD && realStack != null
-						&& realStack.getItem() instanceof ArmorItem realArmorItem
-						&& realArmorItem.getSlotType() == EquipmentSlot.HEAD) {
-					greatcosmetics$renderRealArmor(matrices, vertexConsumers, light, contextModel, realStack, realArmorItem);
+				// ARMADURA-COSMÉTICO: desenha o MODELO 3D de armadura vestido (não o ícone chapado),
+				// mas agora POR ÂNCORA (BODY = torso, RIGHT_ARM = manga direita, etc — ver
+				// applyArmorAnchorLayout no Dev Studio, "split into body parts") e COM o gizmo 3D.
+				// GeckoLib continua com prioridade (cai no caminho geo mais abaixo).
+				if (!isGecko && realStack != null && realStack.getItem() instanceof ArmorItem realArmorItem) {
+					// gizmo (só no preview do Dev Studio) — capturado ANTES do renderRealArmor mexer na matriz.
+					if (isDevPreview && GizmoManager.activePart == part) {
+						Matrix4f gzBasis = new Matrix4f(matrices.peek().getPositionMatrix());
+						matrices.push();
+						greatcosmetics$renderRealArmor(matrices, vertexConsumers, light, contextModel, realStack, realArmorItem, part, entity.isInSneakingPose());
+						Vector3f gzOrigin = matrices.peek().getPositionMatrix().getTranslation(new Vector3f());
+						matrices.pop();
+						greatcosmetics$drawPartGizmoAt(vertexConsumers, matrices.peek(), new Matrix4f(gzBasis).setTranslation(gzOrigin));
+					} else {
+						matrices.push();
+						greatcosmetics$renderRealArmor(matrices, vertexConsumers, light, contextModel, realStack, realArmorItem, part, entity.isInSneakingPose());
+						matrices.pop();
+					}
 					matrices.pop();
 					continue;
 				}

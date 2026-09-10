@@ -36,8 +36,10 @@ public class PartyPage extends WardrobePage {
     // NOVO: Temporizador de atualização da página
     private long pendingRefreshTime = 0;
 
-    public static boolean waitingForPcToOpen = false;
-    public static boolean reopenAfterPC = false;
+    // SOFT-DEP COBBLEMON: os sinalizadores do fluxo do botão PC moraram aqui, mas são lidos por
+    // código sempre-carregado — mudaram pra client.PartyPcState (sem Cobblemon). Aliases mantidos
+    // pra não espalhar a mudança em todo o corpo desta classe.
+    // (ver PartyPcState.waitingForPcToOpen / .reopenAfterPC)
 
     private final Pokemon[] partyCache = new Pokemon[6];
     private final ModelWidget[] slotWidgets = new ModelWidget[6];
@@ -1158,7 +1160,7 @@ public class PartyPage extends WardrobePage {
         if (over(mx, my, pcBtnX, startY, pcBtnW, slotSize)) {
             playClick();
             if (client.player != null) {
-                waitingForPcToOpen = true;
+                com.f4xizzz.greatcosmetics.client.PartyPcState.waitingForPcToOpen = true;
                 client.setScreen(null);
                 ClientPlayNetworking.send(new com.f4xizzz.greatcosmetics.network.OpenPcFromWardrobePayload());
             }

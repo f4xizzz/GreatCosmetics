@@ -143,7 +143,7 @@ public class DevTypesSubPage extends DevSubPage {
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.type.list_title"), x + (width / 2) + 8, topY + 2, 0xFFFFFF);
 
             boolean hovNew = mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= topY + 15 && mouseY <= topY + 30;
-            c.fill(x + 10, topY + 15, x + width - 10, topY + 30, hovNew ? 0xFF5555FF : 0xFF2222AA);
+            c.fill(x + 10, topY + 15, x + width - 10, topY + 30, hovNew ? 0xFF33CC33 : 0xFF22AA22);
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.type.new"), x + (width/2), topY + 19, 0xFFFFFF);
 
             List<String> ids = new ArrayList<>(ClientMainConfigCache.config.types.keySet());
@@ -238,10 +238,8 @@ public class DevTypesSubPage extends DevSubPage {
                     row.textField.render(c, mouseX, mouseY, delta);
                 }
                 else if (row.type == RowType.BUTTON) {
-                    boolean isDelete = row.id.equals("delete");
                     boolean hovBtn = mouseX >= x + 15 && mouseX <= x + width - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
-
-                    c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, hovBtn ? (isDelete ? 0x66FF0000 : 0x66FFAA00) : (isDelete ? 0x44AA0000 : 0x44FFAA00));
+                    c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, devButtonFill(row.id, hovBtn));
                     // DESENHA O NOME DA AÇÃO DENTRO DO BOTÃO!
                     c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, x + (width/2), rowY + 16, 0xFFFFFF);
                 }

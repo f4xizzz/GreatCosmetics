@@ -3,12 +3,12 @@ package com.f4xizzz.greatcosmetics.util;
 import com.cobblemon.mod.common.Cobblemon;
 import com.cobblemon.mod.common.api.events.CobblemonEvents;
 import com.cobblemon.mod.common.api.events.entity.SpawnBucketChosenEvent;
-import com.cobblemon.mod.common.api.events.entity.SpawnEvent;
 import com.cobblemon.mod.common.api.events.fishing.BobberSpawnPokemonEvent;
 import com.cobblemon.mod.common.api.events.fishing.PokerodCastEvent;
 import com.cobblemon.mod.common.entity.fishing.PokeRodFishingBobberEntity;
 import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
 import com.cobblemon.mod.common.api.events.pokeball.PokeBallCaptureCalculatedEvent;
+import com.cobblemon.mod.common.api.events.pokemon.EvGainedEvent;
 import com.cobblemon.mod.common.api.events.pokemon.ExperienceGainedEvent;
 import com.cobblemon.mod.common.api.events.pokemon.FriendshipUpdatedEvent;
 import com.cobblemon.mod.common.api.events.pokemon.PokemonCapturedEvent;
@@ -23,7 +23,6 @@ import com.cobblemon.mod.common.api.spawning.influence.SpawningInfluence;
 import com.cobblemon.mod.common.api.spawning.position.SpawnablePosition;
 import com.cobblemon.mod.common.api.spawning.spawner.PlayerSpawnerFactory;
 import com.cobblemon.mod.common.api.storage.party.PlayerPartyStore;
-import com.cobblemon.mod.common.api.types.ElementalType;
 import com.cobblemon.mod.common.pokemon.IVs;
 import com.cobblemon.mod.common.pokemon.Pokemon;
 import kotlin.jvm.functions.Function1;
@@ -73,8 +72,8 @@ import java.util.function.ToDoubleFunction;
  *     ganhou, 1.0 = igual). NÃO compartilha quando a fonte é doce (CandyExperienceSource).
  *   - FRIENDSHIP_UPDATED: multiplicador de amizade.
  *
- * NÃO implementados (sem hook público viável):
- *   - lureEV (ganho de EV acontece dentro da lógica de batalha, sem evento público pra isso).
+ *   - EV_GAINED_EVENT_PRE: multiplicador de EV (lureEV) — Cobblemon 1.8 passou a expor esse hook
+ *     com setAmount().
  */
 public class LureManager {
 
@@ -86,22 +85,21 @@ public class LureManager {
 
     public static void register() {
         CobblemonEvents.SPAWN_BUCKET_CHOSEN.subscribe(LureManager::onSpawnBucketChosen);
-        CobblemonEvents.POKEMON_ENTITY_SPAWN.subscribe(LureManager::onPokemonEntitySpawn);
         CobblemonEvents.POKEMON_CAPTURED.subscribe(LureManager::onPokemonCaptured);
         CobblemonEvents.BOBBER_SPAWN_POKEMON_POST.subscribe(LureManager::onFishCaught);
         CobblemonEvents.POKEROD_CAST_PRE.subscribe(LureManager::onPokerodCast);
         CobblemonEvents.POKE_BALL_CAPTURE_CALCULATED.subscribe(LureManager::onCaptureCalculated);
         CobblemonEvents.EXPERIENCE_GAINED_EVENT_PRE.subscribe(LureManager::onExperienceGained);
+        CobblemonEvents.EV_GAINED_EVENT_PRE.subscribe(LureManager::onEvGained);
         CobblemonEvents.FRIENDSHIP_UPDATED.subscribe(LureManager::onFriendshipUpdated);
         registerTypeLureSpawnInfluence();
     }
 
     /** Injeta uma influência de spawn POR JOGADOR no PlayerSpawner do Cobblemon: com um lure de
-     *  tipo ativo, só os SpawnDetail cujas labels de tipo (auto-geradas pelo Cobblemon a partir
-     *  dos tipos da espécie — ex "fire") batem com o(s) tipo(s) do lure ficam elegíveis. O
-     *  Cobblemon então escolhe/spawna normalmente entre esses; se NENHUM detail de tipo estiver
-     *  disponível naquele bioma/posição, nada spawna (comportamento pedido pelo dev). A influência
-     *  lê os lures ao vivo (cache de 2s), então equipar/desequipar não precisa de relog. */
+     *  tipo ativo, o PESO dos SpawnDetail do(s) tipo(s) do lure é multiplicado MUITO e o do resto é
+     *  reduzido bastante (não zerado). Resultado: ~95% dos spawns em volta do jogador são do tipo,
+     *  mas o spawn continua rápido (sem "buracos" — sempre sobra algo pro spawner escolher). A
+     *  influência lê os lures ao vivo (cache de 2s), então equipar/desequipar não precisa de relog. */
     private static void registerTypeLureSpawnInfluence() {
         try {
             PlayerSpawnerFactory factory = PlayerSpawnerFactory.INSTANCE;
@@ -119,9 +117,13 @@ public class LureManager {
         }
     }
 
-    /** Filtro de spawn do lure de tipo, um por jogador. Vetar via {@code affectSpawnable} tira o
-     *  SpawnDetail da seleção do Cobblemon por completo. */
+    /** Influência de spawn do lure de tipo, uma por jogador. Em vez de VETAR (que criava buracos de
+     *  10-15s sem spawn), multiplica o peso: tipo do lure ×{@link #MATCH_BOOST}, resto
+     *  ×{@link #MISS_SUPPRESS}. */
     private static final class TypeLureInfluence implements SpawningInfluence {
+        private static final float MATCH_BOOST = 30.0f;
+        private static final float MISS_SUPPRESS = 0.02f;
+
         private final net.minecraft.server.network.ServerPlayerEntity player;
         private long cachedAtMs = 0L;
         private Set<String> cachedTypes = Collections.emptySet();
@@ -142,14 +144,19 @@ public class LureManager {
             return w;
         }
 
-        @Override
-        public boolean affectSpawnable(SpawnDetail detail, SpawnablePosition position) {
+        private boolean matchesLure(SpawnDetail detail) {
             Set<String> wanted = wantedTypes();
-            if (wanted.isEmpty()) return true; // sem lure de tipo → não filtra nada
+            if (wanted.isEmpty()) return true;
             for (String label : detail.getLabels()) {
                 if (label != null && wanted.contains(label.toLowerCase(java.util.Locale.ROOT))) return true;
             }
-            return false; // não é do tipo do lure → veta o detail
+            return false;
+        }
+
+        @Override
+        public float affectWeight(SpawnDetail detail, SpawnablePosition position, float weight) {
+            if (wantedTypes().isEmpty()) return weight;
+            return matchesLure(detail) ? weight * MATCH_BOOST : weight * MISS_SUPPRESS;
         }
 
         @Override
@@ -180,37 +187,10 @@ public class LureManager {
         }
     }
 
-    // === Spawn: filtro de TIPO (lureTYPE). Um lure com "Tipo Afetado" faz os Pokémon SELVAGENS
-    // que tentam spawnar em volta do dono do spawner virem SÓ desse(s) tipo(s) — cancela o spawn
-    // de qualquer espécie que não bata. Nunca toca em Pokémon com dono (party do próprio player,
-    // NPC, etc.) nem em spawn sem causa de player. ===
-    private static void onPokemonEntitySpawn(SpawnEvent<PokemonEntity> event) {
-        if (event.isCanceled()) return;
-
-        SpawnCause cause = event.getCause();
-        Entity causeEntity = cause != null ? cause.getEntity() : null;
-        if (!(causeEntity instanceof ServerPlayerEntity player)) return;
-
-        Pokemon pokemon = event.getEntity().getPokemon();
-        if (!pokemon.isWild()) return;
-
-        List<CosmeticData.LureStats> lures = collectActiveLureStats(player);
-        if (lures.isEmpty()) return;
-
-        Set<String> wanted = new HashSet<>();
-        for (CosmeticData.LureStats l : lures) {
-            if (l.lureTYPE != null && !l.lureTYPE.isBlank()) wanted.add(l.lureTYPE.trim().toLowerCase());
-        }
-        if (wanted.isEmpty()) return;
-
-        for (ElementalType t : pokemon.getTypes()) {
-            if (t == null) continue;
-            if (wanted.contains(t.getName().toLowerCase()) || wanted.contains(t.getShowdownId().toLowerCase())) {
-                return; // bate — deixa spawnar
-            }
-        }
-        event.cancel();
-    }
+    // NOTA: o filtro de TIPO (lureTYPE) agora é 100% via TypeLureInfluence#affectWeight (boost de
+    // peso, não veto). O antigo hook POKEMON_ENTITY_SPAWN que CANCELAVA spawns de tipo errado foi
+    // removido de propósito — era ele que deixava o jogador sem NENHUM spawn por 10-15s em bioma
+    // pobre no tipo, e o usuário pediu "~95% do tipo, mas spawn rápido".
 
     // === Captura: shiny (reroll), IV garantido/chance, hidden ability — por pedido explícito do
     // dev, shiny/IV são decididos AQUI (na captura), não no spawn. ===
@@ -348,6 +328,21 @@ public class LureManager {
         }
     }
 
+    // === EV: multiplica os EVs ganhos em batalha pelo Pokémon do dono (lureEV). Cobblemon 1.8
+    // finalmente expõe EV_GAINED_EVENT_PRE com setAmount() — em 1.7 não tinha hook (era "impossível").
+    // O valor de lureEV é o EXTRA (0.5 = +50%); 0 = sem efeito. ===
+    private static void onEvGained(EvGainedEvent.Pre event) {
+        Pokemon pokemon = event.getPokemon();
+        ServerPlayerEntity owner = pokemon.getOwnerPlayer();
+        if (owner == null) return;
+
+        double extra = sumOf(collectActiveLureStats(owner), l -> l.lureEV);
+        if (extra <= 0) return;
+
+        int boosted = (int) Math.round(event.getAmount() * (1.0 + extra));
+        if (boosted != event.getAmount()) event.setAmount(Math.max(0, boosted));
+    }
+
     // === Amizade: multiplica o ganho positivo de amizade do Pokémon do dono ===
     private static void onFriendshipUpdated(FriendshipUpdatedEvent event) {
         Pokemon pokemon = event.getPokemon();
@@ -390,6 +385,9 @@ public class LureManager {
      *  reais convertidas em cosmético que ele está vestindo de verdade (ver ArmorCosmeticsConfig
      *  — essas não passam pela tabela de equip, "equipada" é literalmente estar no slot). */
     private static List<CosmeticData.LureStats> collectActiveLureStats(ServerPlayerEntity player) {
+        // Bloqueio de efeitos por grupo (MainConfig.effectBlockGroups) — nenhum lure vale.
+        if (GreatCosmetics.cosmeticEffectsBlockedFor(player)) return java.util.Collections.emptyList();
+
         List<CosmeticData.LureStats> result = new ArrayList<>();
         Set<String> seenIds = new HashSet<>();
 

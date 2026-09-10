@@ -82,23 +82,30 @@ public class DevSlotsSubPage extends DevSubPage {
 
         if (this.editingData == null) return;
 
-        addStringField(L("devstudio.slot.field.name"), this.tempId, text -> this.tempId = text)
-                .withTooltip(L("devstudio.slot.tooltip.name"));
+        // O NOME do slot NÃO é editável (pedido do usuário) — é sempre um dos 9 slots fixos
+        // (HEAD/FACE/NECK/CHEST/BACK/WAIST/LEGS/FEET/HAND, ver CosmeticData.VirtualSlot). Só o
+        // limite padrão e a permissão são configuráveis.
         addIntField(L("devstudio.slot.field.default_limit"), this.editingData.defaultLimit, val -> this.editingData.defaultLimit = val)
                 .withTooltip(L("devstudio.slot.tooltip.default_limit"));
 
-        // Verifica se a variável de permissão não é nula para evitar crash
         String startPerm = this.editingData.permission != null ? this.editingData.permission : "";
         addStringField(L("devstudio.slot.field.extra_permission"), startPerm, text -> this.editingData.permission = text)
                 .withTooltip(L("devstudio.slot.tooltip.extra_permission"));
+    }
 
-        this.rows.add(new EditorRow(L("devstudio.slot.delete"), () -> {
-            ClientMainConfigCache.config.slots.remove(this.editingId);
-            ClientMainConfigCache.sendSave();
-            this.hasUnsavedChanges = false;
-            this.currentState = State.LIST;
-            this.scrollY = 0;
-        }).withId("delete"));
+    /** Os 9 slots fixos, na ordem canônica. */
+    private static final String[] FIXED_SLOTS = {"HEAD", "FACE", "NECK", "CHEST", "BACK", "WAIST", "LEGS", "FEET", "HAND"};
+
+    /** Garante que os 9 slots existem no config (auto-cria os que faltam). */
+    private static void ensureAllSlots() {
+        for (String s : FIXED_SLOTS) {
+            if (!ClientMainConfigCache.config.slots.containsKey(s)) {
+                MainConfig.SlotLimit sl = new MainConfig.SlotLimit();
+                sl.defaultLimit = 1;
+                sl.permission = "gc.slot." + s.toLowerCase();
+                ClientMainConfigCache.config.slots.put(s, sl);
+            }
+        }
     }
 
     private EditorRow addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
@@ -143,16 +150,13 @@ public class DevSlotsSubPage extends DevSubPage {
             c.drawTextWithShadow(parent.getTextRenderer(), L("devstudio.common.back"), x + 12, topY + 2, hovBack ? 0xFF5555 : 0xAAAAAA);
             c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.slot.list_title"), x + (width / 2) + 8, topY + 2, 0xFFFFFF);
 
-            boolean hovNew = mouseX >= x + 10 && mouseX <= x + width - 10 && mouseY >= topY + 15 && mouseY <= topY + 30;
-            c.fill(x + 10, topY + 15, x + width - 10, topY + 30, hovNew ? 0xFF55FF55 : 0xFF22AA22);
-            c.drawCenteredTextWithShadow(parent.getTextRenderer(), L("devstudio.slot.new"), x + (width/2), topY + 19, 0xFFFFFF);
-
-            List<String> ids = new ArrayList<>(ClientMainConfigCache.config.slots.keySet());
-            int listY = topY + 35;
+            ensureAllSlots();
+            List<String> ids = new ArrayList<>(java.util.Arrays.asList(FIXED_SLOTS));
+            int listY = topY + 18;
             int itemHeight = 25;
 
-            this.maxScrollY = Math.max(0, (ids.size() * itemHeight) - (height - (topY - y + 40)));
-            parent.enablePerfectScissor(c, x, listY, width, height - (topY - y + 40));
+            this.maxScrollY = Math.max(0, (ids.size() * itemHeight) - (height - (topY - y + 23)));
+            parent.enablePerfectScissor(c, x, listY, width, height - (topY - y + 23));
 
             for (int i = 0; i < ids.size(); i++) {
                 int itemY = listY + (i * itemHeight) - (int)scrollY;
@@ -177,13 +181,13 @@ public class DevSlotsSubPage extends DevSubPage {
                     c.drawTextWithShadow(parent.getTextRenderer(), slotId, x + 18 - offset, textY, 0xFFFFFF);
                     RenderSystem.disableScissor();
 
-                    parent.enablePerfectScissor(c, x, listY, width, height - (topY - y + 40));
+                    parent.enablePerfectScissor(c, x, listY, width, height - (topY - y + 23));
                 } else {
                     c.drawTextWithShadow(parent.getTextRenderer(), slotId, x + 18, textY, 0xFFFFFF);
                 }
             }
             RenderSystem.disableScissor();
-            drawScrollbar(c, x + width - 6, listY, height - (topY - y + 40));
+            drawScrollbar(c, x + width - 6, listY, height - (topY - y + 23));
 
         } else if (currentState == State.EDITOR) {
             boolean hovBack = mouseX >= x + 10 && mouseX <= x + 30 && mouseY >= topY && mouseY <= topY + 12;
@@ -237,7 +241,7 @@ public class DevSlotsSubPage extends DevSubPage {
                 }
                 else if (row.type == RowType.BUTTON) {
                     boolean hovBtn = mouseX >= x + 15 && mouseX <= x + width - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
-                    c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, hovBtn ? 0x66FF0000 : 0x44AA0000);
+                    c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, devButtonFill(row.id, hovBtn));
                     c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, x + (width/2), rowY + 16, 0xFFFFFF);
                 }
             }
@@ -276,8 +280,8 @@ public class DevSlotsSubPage extends DevSubPage {
 
         int x = lastX; int y = lastY; int width = lastWidth; int height = lastHeight;
         int topY = y + 35;
-        int listY = currentState == State.LIST ? topY + 35 : topY + 20;
-        int trackHeight = currentState == State.LIST ? height - (topY - y + 40) : height - (topY - y + 25);
+        int listY = currentState == State.LIST ? topY + 18 : topY + 20;
+        int trackHeight = currentState == State.LIST ? height - (topY - y + 23) : height - (topY - y + 25);
         int sX = x + width - 6;
 
         if (maxScrollY > 0 && mx >= sX && mx <= sX + 4 && my >= listY && my <= listY + trackHeight) {
@@ -295,21 +299,9 @@ public class DevSlotsSubPage extends DevSubPage {
                 return true;
             }
 
-            if (mx >= x + 10 && mx <= x + width - 10 && my >= topY + 15 && my <= topY + 30) {
-                playClick();
-                String newId = "NEW_SLOT_" + (ClientMainConfigCache.config.slots.size() + 1);
-                MainConfig.SlotLimit newSlot = new MainConfig.SlotLimit();
-                newSlot.defaultLimit = 1;
-                newSlot.permission = "greatcosmetics.slot." + newId.toLowerCase();
-
-                ClientMainConfigCache.config.slots.put(newId, newSlot);
-                ClientMainConfigCache.sendSave();
-                loadEditor(newId);
-                return true;
-            }
-
-            List<String> ids = new ArrayList<>(ClientMainConfigCache.config.slots.keySet());
-            int iterListY = topY + 35; int itemHeight = 25;
+            ensureAllSlots();
+            List<String> ids = new ArrayList<>(java.util.Arrays.asList(FIXED_SLOTS));
+            int iterListY = topY + 18; int itemHeight = 25;
 
             for (int i = 0; i < ids.size(); i++) {
                 int itemY = iterListY + (i * itemHeight) - (int)scrollY;
@@ -373,7 +365,7 @@ public class DevSlotsSubPage extends DevSubPage {
         if (isDraggingScrollbar && maxScrollY > 0) {
             int y = lastY; int topY = y + 35;
             int listY = currentState == State.LIST ? topY + 35 : topY + 20;
-            int trackHeight = currentState == State.LIST ? lastHeight - (topY - y + 40) : lastHeight - (topY - y + 25);
+            int trackHeight = currentState == State.LIST ? lastHeight - (topY - y + 23) : lastHeight - (topY - y + 25);
 
             float proportion = (float) (my - listY) / trackHeight;
             scrollY = proportion * maxScrollY;
@@ -411,11 +403,7 @@ public class DevSlotsSubPage extends DevSubPage {
 
     @Override
     public void saveChanges() {
-        if (this.tempId != null && !this.tempId.trim().isEmpty() && !this.tempId.equals(this.editingId)) {
-            ClientMainConfigCache.config.slots.remove(this.editingId);
-            ClientMainConfigCache.config.slots.put(this.tempId, this.editingData);
-            this.editingId = this.tempId;
-        }
+        // Nome do slot não é editável — sem lógica de rename.
         ClientMainConfigCache.sendSave();
         this.backupJson = ClientMainConfigCache.snapshotJson();
     }

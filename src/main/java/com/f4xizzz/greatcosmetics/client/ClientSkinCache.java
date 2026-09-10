@@ -36,8 +36,11 @@ public class ClientSkinCache {
                 SKIN_COOLDOWNS.clear();
                 SKIN_COOLDOWNS.putAll(payload.cooldowns());
 
-                // Se o cara estiver com a Wardrobe aberta, ela atualiza na hora
-                if (com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage.INSTANCE != null) {
+                // Se o cara estiver com a Wardrobe aberta, ela atualiza na hora.
+                // SOFT-DEP COBBLEMON: PartyPage toca com.cobblemon.* — o && curto-circuita antes
+                // de tocar na classe quando não há Cobblemon. Ver ModCompat.
+                if (com.f4xizzz.greatcosmetics.util.ModCompat.cobblemon()
+                        && com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage.INSTANCE != null) {
                     // Força a UI atualizar os botões sem fechar o menu
                     com.f4xizzz.greatcosmetics.client.gui.pages.PartyPage.INSTANCE.onOpen();
                 }

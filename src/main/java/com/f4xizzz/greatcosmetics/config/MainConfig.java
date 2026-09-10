@@ -64,6 +64,13 @@ public class MainConfig {
         // escolhível pelo player). Nome do grupo, não case-sensitive.
         public java.util.List<String> tagGroupBlacklist = new java.util.ArrayList<>(java.util.List.of("default"));
 
+        // --- BLOQUEIO DE EFEITOS DE COSMÉTICO POR GRUPO ---
+        // Jogadores em QUALQUER um destes grupos do LuckPerms: os cosméticos deles continuam
+        // APARECENDO (model renderiza), mas não dão NENHUM efeito — partículas, efeitos de poção,
+        // voo, velocidade, lure, scanners, permissões/tags concedidas. Nome do grupo, não
+        // case-sensitive. Vazio = ninguém bloqueado.
+        public java.util.List<String> effectBlockGroups = new java.util.ArrayList<>();
+
         // --- VARIÁVEIS DE DATABASE ---
         public boolean useMySQL = false;
         public String mysqlHost = "localhost";

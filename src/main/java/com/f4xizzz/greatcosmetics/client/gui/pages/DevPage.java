@@ -30,7 +30,7 @@ public class DevPage extends WardrobePage {
         // aberta, usa o tamanho padrão de sempre (null == deixa o Wardrobe3DScreen decidir).
         // +26 de altura (260x220 -> 260x246) pra caber a linha de ajuda do Discord abaixo do
         // último botão sem espremer/cortar nada.
-        return this.activeSubPage == null ? new int[]{260, 246} : null;
+        return this.activeSubPage == null ? new int[]{260, 280} : null;
     }
 
     @Override
@@ -48,22 +48,16 @@ public class DevPage extends WardrobePage {
 
         int btnW = Math.min(220, width - 32);
         int btnH = 26, gap = 8, startY = y + 52;
-        String[] labels = {
-                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.cosmetics"),
-                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.effects"),
-                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.types"),
-                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.server_config"),
-                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.slots")
-        };
-        for (int i = 0; i < labels.length; i++) {
-            drawMenuButton(c, labels[i], x + 16, startY + i * (btnH + gap), btnW, btnH, mouseX, mouseY);
+        java.util.List<String> labels = menuLabels();
+        for (int i = 0; i < labels.size(); i++) {
+            drawMenuButton(c, labels.get(i), x + 16, startY + i * (btnH + gap), btnW, btnH, mouseX, mouseY);
         }
 
         // Nota pedida pelo usuário: jogador iniciante travado no Dev Studio precisa saber que tem
         // onde pedir ajuda. Abaixo do último botão, uma linha por vez (a string do Lang já vem com
         // "\n" pra caber na largura apertada do painel — ver preferredPanelSize, +26 de altura só
         // pra isso).
-        int helpY = startY + labels.length * (btnH + gap) + 6;
+        int helpY = startY + labels.size() * (btnH + gap) + 6;
         for (String line : com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.help").split("\n")) {
             c.drawCenteredTextWithShadow(getTextRenderer(), line, x + (width / 2), helpY, 0xAAAAAA);
             helpY += 10;
@@ -89,22 +83,46 @@ public class DevPage extends WardrobePage {
         int btnW = Math.min(220, width - 32);
         int btnH = 26, gap = 8, startY = y + 52;
 
-        Runnable[] actions = {
-                () -> this.activeSubPage = new DevCosmeticsSubPage(parent, () -> this.activeSubPage = null),
-                () -> this.activeSubPage = new DevEffectsSubPage(parent, () -> this.activeSubPage = null),
-                () -> this.activeSubPage = new DevTypesSubPage(parent, () -> this.activeSubPage = null),
-                () -> this.activeSubPage = new DevServerConfigSubPage(parent, () -> this.activeSubPage = null),
-                () -> this.activeSubPage = new DevSlotsSubPage(parent, () -> this.activeSubPage = null)
-        };
-        for (int i = 0; i < actions.length; i++) {
+        java.util.List<Runnable> actions = menuActions();
+        for (int i = 0; i < actions.size(); i++) {
             if (over(mx, my, x + 16, startY + i * (btnH + gap), btnW, btnH)) {
                 playClick();
-                actions[i].run();
+                actions.get(i).run();
                 return true;
             }
         }
 
         return false;
+    }
+
+    /** "Chat Tags" só aparece se o SERVIDOR tiver LuckPerms (ver ClientPermissionCache /
+     *  SyncDevPermissionsPayload) — sem ele, prefixo/permissão de tag não faz nada. */
+    private static boolean chatTagsVisible() {
+        return com.f4xizzz.greatcosmetics.client.ClientPermissionCache.serverHasLuckPerms;
+    }
+
+    private java.util.List<String> menuLabels() {
+        java.util.List<String> l = new java.util.ArrayList<>(java.util.List.of(
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.cosmetics"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.effects"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.types"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.server_config"),
+                com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.slots")));
+        if (chatTagsVisible())
+            l.add(com.f4xizzz.greatcosmetics.config.LangConfig.legacy("devstudio.menu.tags"));
+        return l;
+    }
+
+    private java.util.List<Runnable> menuActions() {
+        java.util.List<Runnable> a = new java.util.ArrayList<>(java.util.List.of(
+                () -> this.activeSubPage = new DevCosmeticsSubPage(parent, () -> this.activeSubPage = null),
+                () -> this.activeSubPage = new DevEffectsSubPage(parent, () -> this.activeSubPage = null),
+                () -> this.activeSubPage = new DevTypesSubPage(parent, () -> this.activeSubPage = null),
+                () -> this.activeSubPage = new DevServerConfigSubPage(parent, () -> this.activeSubPage = null),
+                () -> this.activeSubPage = new DevSlotsSubPage(parent, () -> this.activeSubPage = null)));
+        if (chatTagsVisible())
+            a.add(() -> this.activeSubPage = new DevTagsSubPage(parent, () -> this.activeSubPage = null));
+        return a;
     }
 
     @Override

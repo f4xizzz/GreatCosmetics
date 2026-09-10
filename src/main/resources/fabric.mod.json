@@ -3,7 +3,7 @@
 	"id": "greatcosmetics",
 	"version": "${version}",
 	"name": "GreatCosmetics",
-	"description": "Server-side cosmetics for Cobblemon: hats, accessories, armor skins, particle effects, backpacks, NPC cosmetics, Pokémon skins and a Lure bonus system.",
+	"description": "Server-side cosmetics for any Fabric server: hats, accessories, armor skins, particle effects, backpacks and NPC cosmetics. With Cobblemon installed it also adds Pokémon skins, a Lure bonus system and scanners; with LuckPerms it adds chat tags.",
 	"authors": [
 		"f4xizzz"
 	],
@@ -30,7 +30,10 @@
 		"fabricloader": ">=0.18.3",
 		"minecraft": "~1.21.1",
 		"java": ">=21",
-		"fabric-api": "*",
-		"cobblemon": ">=1.8.0"
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"cobblemon": ">=1.8.0",
+		"luckperms": "*"
 	}
 }

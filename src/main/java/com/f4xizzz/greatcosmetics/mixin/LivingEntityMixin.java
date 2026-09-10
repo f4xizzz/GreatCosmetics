@@ -25,10 +25,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class LivingEntityMixin {
 
 	// ==========================================
-	// 1. O SEU MÉTODO ORIGINAL
+	// 1. SLOT DE ARMADURA PREFERIDO DO GHOST ITEM (carved_pumpkin cosmético)
 	// ==========================================
 	@Inject(method = "getPreferredEquipmentSlot", at = @At("HEAD"), cancellable = true)
-	private void sascosmetics$onGetPreferredEquipmentSlot(ItemStack stack, CallbackInfoReturnable<EquipmentSlot> cir) {
+	private void greatcosmetics$onGetPreferredEquipmentSlot(ItemStack stack, CallbackInfoReturnable<EquipmentSlot> cir) {
 		if (stack.isOf(Items.CARVED_PUMPKIN)) {
 			CustomModelDataComponent cmdComp = stack.get(DataComponentTypes.CUSTOM_MODEL_DATA);
 			if (cmdComp != null) {

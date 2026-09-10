@@ -74,6 +74,18 @@ public class DevServerConfigSubPage extends DevSubPage {
                 .withTooltip(L("devstudio.serverconfig.tooltip.auto_detect_models"));
         addToggleField(L("devstudio.serverconfig.field.lure_hud"), ClientMainConfigCache.config.lureHud, val -> ClientMainConfigCache.config.lureHud = val)
                 .withTooltip(L("devstudio.serverconfig.tooltip.lure_hud"));
+
+        // Grupos do LuckPerms cujos jogadores NÃO recebem efeito nenhum de cosmético (o model
+        // continua aparecendo). Separado por vírgula. Autocomplete com os grupos conhecidos.
+        if (ClientMainConfigCache.config.effectBlockGroups == null) ClientMainConfigCache.config.effectBlockGroups = new java.util.ArrayList<>();
+        addStringField(L("devstudio.serverconfig.field.effect_block_groups"),
+                String.join(", ", ClientMainConfigCache.config.effectBlockGroups),
+                val -> {
+                    java.util.List<String> out = new java.util.ArrayList<>();
+                    for (String p : val.split(",")) { String t = p.trim(); if (!t.isEmpty()) out.add(t); }
+                    ClientMainConfigCache.config.effectBlockGroups = out;
+                })
+                .withTooltip(L("devstudio.serverconfig.tooltip.effect_block_groups"));
         addToggleField(L("devstudio.serverconfig.field.use_mysql"), ClientMainConfigCache.config.useMySQL, val -> ClientMainConfigCache.config.useMySQL = val)
                 .withTooltip(L("devstudio.serverconfig.tooltip.use_mysql"));
         addStringField(L("devstudio.serverconfig.field.mysql_host"), ClientMainConfigCache.config.mysqlHost, val -> ClientMainConfigCache.config.mysqlHost = val)
@@ -119,7 +131,7 @@ public class DevServerConfigSubPage extends DevSubPage {
             ClientMainConfigCache.config.startupCommands.add("");
             hasUnsavedChanges = true;
             loadEditor();
-        }).withTooltip(L("devstudio.serverconfig.tooltip.add_command")));
+        }).withId("btn_add_command").withTooltip(L("devstudio.serverconfig.tooltip.add_command")));
     }
 
     private EditorRow addStringField(String label, String startVal, java.util.function.Consumer<String> action) {
@@ -210,9 +222,8 @@ public class DevServerConfigSubPage extends DevSubPage {
                 c.drawCenteredTextWithShadow(parent.getTextRenderer(), L(row.toggleValue ? "devstudio.common.on" : "devstudio.common.off"), x + (width/2), rowY + 16, 0xFFFFFF);
             }
             else if (row.type == RowType.BUTTON) {
-                boolean isRemove = row.id.equals("btn_remove_command");
                 boolean hovBtn = mouseX >= x + 15 && mouseX <= x + width - 20 && mouseY >= rowY + 12 && mouseY <= rowY + 28;
-                c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, hovBtn ? (isRemove ? 0x66FF0000 : 0x66FFAA00) : (isRemove ? 0x44AA0000 : 0x44FFAA00));
+                c.fill(x + 15, rowY + 12, x + width - 20, rowY + 28, devButtonFill(row.id, hovBtn));
                 c.drawCenteredTextWithShadow(parent.getTextRenderer(), row.label, x + (width/2), rowY + 16, 0xFFFFFF);
             }
         }

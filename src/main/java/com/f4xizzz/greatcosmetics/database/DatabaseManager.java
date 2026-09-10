@@ -157,6 +157,15 @@ public class DatabaseManager {
                     "PRIMARY KEY (uuid, tag_id))";
             try (PreparedStatement stmt = connection.prepareStatement(sqlTags)) { stmt.execute(); }
 
+            // Slots EXTRAS por jogador por slot (aditivo, somado por cima da permissão) — gerido
+            // pelo comando /gc extraslot. slot = nome do slot virtual OU "ALL" (vale pra todos).
+            String sqlExtraSlots = "CREATE TABLE IF NOT EXISTS player_extra_slots (" +
+                    "uuid VARCHAR(36) NOT NULL, " +
+                    "slot VARCHAR(16) NOT NULL, " +
+                    "amount INT NOT NULL DEFAULT 0, " +
+                    "PRIMARY KEY (uuid, slot))";
+            try (PreparedStatement stmt = connection.prepareStatement(sqlExtraSlots)) { stmt.execute(); }
+
             GreatCosmetics.debugLog("DatabaseManager.createTables: all tables verified/created successfully.");
         } catch (Exception e) {
             GreatCosmetics.LOGGER.error("[GreatCosmetics] Error creating/updating DB tables: " + e.getMessage());
@@ -624,6 +633,56 @@ public class DatabaseManager {
         } catch (Exception e) {
             GreatCosmetics.debugLog("DatabaseManager.removeAllOwnershipOfTag: FAILED tag='" + tagId + "' — " + e);
         }
+    }
+
+    // ==========================================================
+    // SLOTS EXTRAS (comando /gc extraslot) — aditivo, guardado no banco
+    // ==========================================================
+
+    /** Slots extras que o jogador tem pra um slot específico ({@code slot} em MAIÚSCULA, ou "ALL"). 0 se nada. */
+    public static int getExtraSlots(UUID playerUuid, String slot) {
+        String sql = "SELECT amount FROM player_extra_slots WHERE uuid = ? AND slot = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            stmt.setString(2, slot.toUpperCase());
+            try (ResultSet rs = stmt.executeQuery()) { if (rs.next()) return rs.getInt("amount"); }
+        } catch (Exception e) {
+            GreatCosmetics.debugLog("DatabaseManager.getExtraSlots: FAILED for " + playerUuid + " slot=" + slot + " — " + e);
+        }
+        return 0;
+    }
+
+    /** Define (não soma) os slots extras pro slot. amount <= 0 apaga a linha. Retorna o novo valor. */
+    public static int setExtraSlots(UUID playerUuid, String slot, int amount) {
+        String s = slot.toUpperCase();
+        if (amount <= 0) {
+            try (PreparedStatement stmt = connection.prepareStatement("DELETE FROM player_extra_slots WHERE uuid = ? AND slot = ?")) {
+                stmt.setString(1, playerUuid.toString()); stmt.setString(2, s); stmt.executeUpdate();
+            } catch (Exception e) { GreatCosmetics.debugLog("DatabaseManager.setExtraSlots(delete): FAILED — " + e); }
+            return 0;
+        }
+        // UPSERT — SQLite e MySQL diferem; tenta ON CONFLICT, cai pro DELETE+INSERT.
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "INSERT INTO player_extra_slots (uuid, slot, amount) VALUES (?, ?, ?) " +
+                "ON CONFLICT(uuid, slot) DO UPDATE SET amount = excluded.amount")) {
+            stmt.setString(1, playerUuid.toString()); stmt.setString(2, s); stmt.setInt(3, amount);
+            stmt.executeUpdate();
+            return amount;
+        } catch (Exception ignored) {
+            try (PreparedStatement del = connection.prepareStatement("DELETE FROM player_extra_slots WHERE uuid = ? AND slot = ?")) {
+                del.setString(1, playerUuid.toString()); del.setString(2, s); del.executeUpdate();
+            } catch (Exception ignored2) {}
+            try (PreparedStatement ins = connection.prepareStatement("INSERT INTO player_extra_slots (uuid, slot, amount) VALUES (?, ?, ?)")) {
+                ins.setString(1, playerUuid.toString()); ins.setString(2, s); ins.setInt(3, amount); ins.executeUpdate();
+            } catch (Exception e) { GreatCosmetics.debugLog("DatabaseManager.setExtraSlots(fallback): FAILED — " + e); }
+            return amount;
+        }
+    }
+
+    /** Soma {@code delta} (pode ser negativo) aos slots extras do slot. Retorna o novo valor (>= 0). */
+    public static int addExtraSlots(UUID playerUuid, String slot, int delta) {
+        int novo = Math.max(0, getExtraSlots(playerUuid, slot) + delta);
+        return setExtraSlots(playerUuid, slot, novo);
     }
 
     public static int getEquippedCountBySlot(UUID playerUuid, String virtualSlot) {

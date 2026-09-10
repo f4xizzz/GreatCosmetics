@@ -41,3 +41,9 @@ replay_*.log
 
 # nested repo (separate GitHub repo f4xizzz/wiki-greatcosmetics)
 /wiki/
+
+# leftover multiloader/NeoForge dirs on master — só cache do Gradle, sem código aqui.
+# O port NeoForge vive na branch NAO-MEXER-neoforge-multiloader-CONGELADO. NÃO MEXER no master.
+/NEOFORGE-NAO-MEXER/
+/common/
+/fabric/

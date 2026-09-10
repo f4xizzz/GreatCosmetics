@@ -420,6 +420,14 @@ public class AcessoriesPage extends WardrobePage {
                 // literal em vez de quebrar a tooltip em várias linhas.
                 activeTooltip.addAll(safeNameLines); // Título principal
 
+                // Descrição livre editável no Dev Studio (CosmeticData.tooltipDescription). Vazio =
+                // nada aparece. "\n" (as 2 letras) OU 0x0A quebram linha; cada pedaço vai por MiniMessage.
+                if (data.tooltipDescription != null && !data.tooltipDescription.trim().isEmpty()) {
+                    for (String line : data.tooltipDescription.split("\\\\n|\n", -1)) {
+                        activeTooltip.add(com.f4xizzz.greatcosmetics.util.TextUtils.parseToText(line, regs));
+                    }
+                }
+
                 if (data.armor > 0 || data.toughness > 0) {
                     activeTooltip.add(Text.literal(" "));
                     activeTooltip.add(LangConfig.text("accessories.tooltip.attributes"));
@@ -427,7 +435,7 @@ public class AcessoriesPage extends WardrobePage {
                     if (data.toughness > 0) activeTooltip.add(LangConfig.text("accessories.tooltip.toughness", "value", data.toughness));
                 }
 
-                if (data.EnableFly || data.isBackpack || data.AutoFeed) {
+                if (data.EnableFly || data.isBackpack || data.AutoFeed || data.ivScanner) {
                     activeTooltip.add(Text.literal(" "));
                     activeTooltip.add(LangConfig.text("accessories.tooltip.abilities"));
                     if (data.EnableFly) activeTooltip.add(LangConfig.text("accessories.tooltip.fly"));
@@ -436,6 +444,7 @@ public class AcessoriesPage extends WardrobePage {
                         activeTooltip.add(LangConfig.text("accessories.tooltip.backpack", "info", backpackInfo));
                     }
                     if (data.AutoFeed) activeTooltip.add(LangConfig.text("accessories.tooltip.autofeed"));
+                    if (data.ivScanner) activeTooltip.add(LangConfig.text("accessories.tooltip.iv_scanner"));
                 }
 
                 if (data.effects != null && !data.effects.isEmpty()) {
@@ -497,7 +506,14 @@ public class AcessoriesPage extends WardrobePage {
         }
         RenderSystem.disableScissor();
 
-        if (variantPicker != null) variantPicker.render(c, mouseX, mouseY);
+        if (variantPicker != null) {
+            // Z alto (igual o dropdown de categoria) — os ícones do grid renderizam num passe de
+            // item próprio que flusha por cima do fill() normal, deixando o menu atrás deles.
+            c.getMatrices().push();
+            c.getMatrices().translate(0, 0, 400);
+            variantPicker.render(c, mouseX, mouseY);
+            c.getMatrices().pop();
+        }
 
         if (activeTooltip != null) {
             c.drawTooltip(getTextRenderer(), activeTooltip, mouseX, mouseY);
@@ -508,10 +524,13 @@ public class AcessoriesPage extends WardrobePage {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button != 0) return false;
 
+        // Popup de variante aberto: o clique é DELE e só dele. Clicou numa opção → equipa e fecha.
+        // Clicou fora → só fecha. Nunca "vaza" pro grid (não dá pra selecionar/equipar outro
+        // cosmético com o popup aberto — pedido do usuário).
         if (variantPicker != null) {
-            boolean handled = variantPicker.click(mouseX, mouseY);
+            variantPicker.click(mouseX, mouseY);
             variantPicker = null;
-            if (handled) return true;
+            return true;
         }
 
         int panelX = lastX;
@@ -629,7 +648,21 @@ public class AcessoriesPage extends WardrobePage {
             }
 
             if (over(mouseX, mouseY, itemX, itemY, iconRealSize, iconRealSize)) {
-                if (data.variants != null && !data.variants.isEmpty()) {
+                java.util.Set<String> eqNow = ClientCosmeticCache.getEquipped(MinecraftClient.getInstance().player.getUuid());
+                String equippedEntry = null;
+                for (String e : eqNow) {
+                    if (com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(e).equalsIgnoreCase(data.id)) { equippedEntry = e; break; }
+                }
+                if (equippedEntry != null) {
+                    // Já equipado (Padrão ou variante) → só DESEQUIPA. O menu de variante só aparece na
+                    // hora de EQUIPAR (pedido do usuário).
+                    playClick();
+                    ClientPlayNetworking.send(new EquipCosmeticPayload(
+                            com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.base(equippedEntry),
+                            com.f4xizzz.greatcosmetics.util.EquippedCosmeticId.variant(equippedEntry),
+                            ClientCosmeticCache.isDevModeActive));
+                    playEquipSound();
+                } else if (data.variants != null && !data.variants.isEmpty()) {
                     playClick();
                     this.variantPicker = new VariantPicker(data, (int) mouseX, (int) mouseY);
                 } else {
@@ -646,7 +679,7 @@ public class AcessoriesPage extends WardrobePage {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (isDropdownOpen) return true;
+        if (isDropdownOpen || variantPicker != null) return true;
 
         // mouseX já chega em coordenada "virtual" (Wardrobe3DScreen#mouseScrolled já fez essa
         // conversão antes de chamar aqui, igual mouseClicked nesta mesma classe já assume) —

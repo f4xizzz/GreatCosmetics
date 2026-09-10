@@ -15,17 +15,25 @@ import net.minecraft.util.Identifier;
  * GreatCosmetics.isRealOperator() + checkPermission() (fallback booleano, nunca hasPermissionLevel)
  * e mandando o resultado pronto, o cliente só precisa confiar no que chegou.
  */
-public record SyncDevPermissionsPayload(boolean isOperator, boolean hasGcDev, boolean hasGcPermDevmode) implements CustomPayload {
+public record SyncDevPermissionsPayload(boolean isOperator, boolean hasGcDev, boolean hasGcPermDevmode,
+                                        boolean serverHasCobblemon, boolean serverHasLuckPerms) implements CustomPayload {
 
     public static final CustomPayload.Id<SyncDevPermissionsPayload> ID = new CustomPayload.Id<>(Identifier.of("greatcosmetics", "sync_dev_permissions"));
 
+    // serverHasCobblemon / serverHasLuckPerms: SOFT-DEP. O CLIENTE não pode decidir sozinho se
+    // mostra a aba Party (Cobblemon) ou Tags (LuckPerms) — LuckPerms costuma ser só server-side, e
+    // um client com Cobblemon pode entrar num server sem. O servidor manda o que ELE tem; o client
+    // combina com o que ele mesmo tem (ver Wardrobe3DScreen.init / util.ModCompat).
     public static final PacketCodec<RegistryByteBuf, SyncDevPermissionsPayload> CODEC = PacketCodec.of(
             (payload, buf) -> {
                 buf.writeBoolean(payload.isOperator);
                 buf.writeBoolean(payload.hasGcDev);
                 buf.writeBoolean(payload.hasGcPermDevmode);
+                buf.writeBoolean(payload.serverHasCobblemon);
+                buf.writeBoolean(payload.serverHasLuckPerms);
             },
-            buf -> new SyncDevPermissionsPayload(buf.readBoolean(), buf.readBoolean(), buf.readBoolean())
+            buf -> new SyncDevPermissionsPayload(buf.readBoolean(), buf.readBoolean(), buf.readBoolean(),
+                    buf.readBoolean(), buf.readBoolean())
     );
 
     @Override

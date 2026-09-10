@@ -35,6 +35,11 @@ public class CustomizePage extends WardrobePage {
         drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.chestplate"), settings.hideChestplate(), x + 16, y + 85, mouseX, mouseY);
         drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.leggings"), settings.hideLeggings(), x + 16, y + 110, mouseX, mouseY);
         drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.boots"), settings.hideBoots(), x + 16, y + 135, mouseX, mouseY);
+
+        // 5º botão: setting LOCAL do cliente (não vai pro servidor) — esconde o cosmético dos
+        // OUTROS jogadores pra aliviar FPS. "Hidden" aqui = escondido / ligado.
+        drawToggleButton(c, com.f4xizzz.greatcosmetics.config.LangConfig.legacy("wardrobe.customize.hide_others"),
+                ClientCosmeticCache.hideOtherPlayersCosmetics, x + 16, y + 170, mouseX, mouseY);
     }
 
     private void drawToggleButton(DrawContext c, String label, boolean isHidden, int bx, int by, int mx, int my) {
@@ -71,6 +76,12 @@ public class CustomizePage extends WardrobePage {
         }
         if (over(mx, my, lastX + 16, lastY + 135, 148, 20)) {
             toggleSetting("hide_boots", settings.hideBoots(), settings);
+            return true;
+        }
+        if (over(mx, my, lastX + 16, lastY + 170, 148, 20)) {
+            ClientCosmeticCache.hideOtherPlayersCosmetics = !ClientCosmeticCache.hideOtherPlayersCosmetics;
+            com.f4xizzz.greatcosmetics.client.ClientLocalSettings.save();
+            playClick();
             return true;
         }
 
